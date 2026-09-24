@@ -2,10 +2,10 @@ package main
 
 import "core:fmt"
 import "core:log"
+import "core:math/linalg"
 import "core:mem"
 import "core:os"
 import "core:strings"
-
 import sdl "vendor:sdl3"
 
 DEBUG :: true
@@ -28,6 +28,7 @@ load_shader :: proc(
 	$filepath: string,
 	gpu_device: ^sdl.GPUDevice,
 	stage: sdl.GPUShaderStage,
+	num_uniform_buffers: u32,
 ) -> ^sdl.GPUShader {
 	shader_code := #load(filepath)
 	shader := sdl.CreateGPUShader(
@@ -38,6 +39,7 @@ load_shader :: proc(
 			entrypoint = stage == .VERTEX ? "vertexMain" : "pixelMain",
 			format = {.MSL},
 			stage = stage,
+			num_uniform_buffers = num_uniform_buffers,
 		},
 	)
 	if shader == nil {
@@ -55,8 +57,23 @@ main :: proc() {
 	gpu_device := sdl.CreateGPUDevice({.MSL, .SPIRV}, DEBUG, nil); assert(gpu_device != nil)
 	ok = sdl.ClaimWindowForGPUDevice(gpu_device, window); assert(ok)
 
-	vert_shader := load_shader("../shaders/generated/triangle.vert.msl", gpu_device, .VERTEX)
-	frag_shader := load_shader("../shaders/generated/triangle.frag.msl", gpu_device, .FRAGMENT)
+	rotation_speed := linalg.to_radians(f32(90))
+	rotation := f32(0)
+	window_size: [2]i32
+	ok = sdl.GetWindowSize(window, &window_size.x, &window_size.y); assert(ok)
+	aspect := window_size
+	projection := linalg.matrix4_perspective(
+		linalg.to_radians(f32(70)),
+		f32(window_size.x) / f32(window_size.y),
+		0.000001,
+		1000,
+	)
+	model := linalg.matrix4_rotate_f32(rotation, {0, 1, 0})
+	UniformBuffer :: struct #max_field_align(16) {
+		mvp: matrix[4, 4]f32,
+	}
+	vert_shader := load_shader("../shaders/generated/triangle.vert.msl", gpu_device, .VERTEX, 1)
+	frag_shader := load_shader("../shaders/generated/triangle.frag.msl", gpu_device, .FRAGMENT, 0)
 
 	pipeline := sdl.CreateGPUGraphicsPipeline(
 		gpu_device,
@@ -72,10 +89,14 @@ main :: proc() {
 			},
 		},
 	)
-	// sdl.ReleaseGPUShader(gpu_device, vert_shader)
-	// sdl.ReleaseGPUShader(gpu_device, frag_shader)
-
+	sdl.ReleaseGPUShader(gpu_device, vert_shader)
+	sdl.ReleaseGPUShader(gpu_device, frag_shader)
+	last_ticks := sdl.GetTicks()
 	main_loop: for {
+		current_ticks := sdl.GetTicks()
+		delta_time := f32(current_ticks - last_ticks) / 1000
+		last_ticks = sdl.GetTicks()
+
 		event: sdl.Event
 		for sdl.PollEvent(&event) {
 			#partial switch event.type {
@@ -96,6 +117,13 @@ main :: proc() {
 			nil,
 		); assert(ok)
 
+		rotation += rotation_speed * delta_time
+		model =
+			linalg.matrix4_translate_f32({0, 0, -5}) *
+			linalg.matrix4_rotate_f32(rotation, {0, 1, 0})
+		uniform_buffer := UniformBuffer {
+			mvp = projection * model,
+		}
 		if swapchain_tex != nil {
 			color_target := sdl.GPUColorTargetInfo {
 				texture     = swapchain_tex,
@@ -105,6 +133,12 @@ main :: proc() {
 			}
 			render_pass := sdl.BeginGPURenderPass(command_buffer, &color_target, 1, nil)
 			sdl.BindGPUGraphicsPipeline(render_pass, pipeline)
+			sdl.PushGPUVertexUniformData(
+				command_buffer,
+				0,
+				&uniform_buffer,
+				size_of(uniform_buffer),
+			)
 			sdl.DrawGPUPrimitives(render_pass, 3, 1, 0, 0)
 			sdl.EndGPURenderPass(render_pass)
 		}
