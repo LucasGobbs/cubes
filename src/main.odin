@@ -76,8 +76,9 @@ main :: proc() {
 	)
 
 	img_size: [2]i32
+	// stbi.set_flip_vertically_on_load(1)
 	pixels := stbi.load(
-		"static/muddy_ground.jpg",
+		"static/colormap.png",
 		&img_size.x,
 		&img_size.y,
 		nil,
@@ -96,6 +97,18 @@ main :: proc() {
 		},
 	)
 
+	depth_texture := sdl.CreateGPUTexture(
+		gpu_device,
+		{
+			format = .D16_UNORM,
+			usage = {.DEPTH_STENCIL_TARGET},
+			width = u32(window_size.x),
+			height = u32(window_size.y),
+			layer_count_or_depth = 1,
+			num_levels = 1,
+		},
+	)
+
 	VertexData :: struct {
 		position: Vec3,
 		color:    sdl.FColor,
@@ -108,10 +121,11 @@ main :: proc() {
 	vertices: []VertexData = make([]VertexData, len(obj.faces))
 	indices: []u16 = make([]u16, len(obj.faces))
 	for face, i in obj.faces {
+		uv := obj.uv[face.uv]
 		vertices[i] = {
 			position = obj.positions[face.pos],
 			color    = WHITE,
-			uv       = obj.uv[face.uv],
+			uv       = {uv.x, 1 - uv.y},
 		}
 		indices[i] = u16(i)
 	}
@@ -203,11 +217,18 @@ main :: proc() {
 				num_vertex_attributes = u32(len(vertex_attrs)),
 				vertex_attributes = raw_data(vertex_attrs),
 			},
+			depth_stencil_state = {
+				enable_depth_test = true,
+				enable_depth_write = true,
+				compare_op = .LESS,
+			},
 			target_info = {
 				num_color_targets = 1,
 				color_target_descriptions = &(sdl.GPUColorTargetDescription {
 						format = sdl.GetGPUSwapchainTextureFormat(gpu_device, window),
 					}),
+				has_depth_stencil_target = true,
+				depth_stencil_format = .D16_UNORM,
 			},
 		},
 	)
@@ -241,7 +262,8 @@ main :: proc() {
 
 		rotation += rotation_speed * delta_time
 		model =
-			linalg.matrix4_translate_f32({0, 0, -5}) *
+			linalg.matrix4_scale_f32({.0001, .0001, .0001}) *
+			linalg.matrix4_translate_f32({0, -.5, -12}) *
 			linalg.matrix4_rotate_f32(rotation, {0, 1, 0})
 
 		uniform_buffer := UniformBuffer {
@@ -254,7 +276,20 @@ main :: proc() {
 				clear_color = {0.2, 0.2, 0.5, 1},
 				store_op    = .STORE,
 			}
-			render_pass := sdl.BeginGPURenderPass(command_buffer, &color_target, 1, nil)
+
+			depth_target_info := sdl.GPUDepthStencilTargetInfo {
+				texture     = depth_texture,
+				load_op     = .CLEAR,
+				clear_depth = 1,
+				store_op    = .DONT_CARE,
+			}
+
+			render_pass := sdl.BeginGPURenderPass(
+				command_buffer,
+				&color_target,
+				1,
+				&depth_target_info,
+			)
 			sdl.BindGPUGraphicsPipeline(render_pass, pipeline)
 			sdl.BindGPUVertexBuffers(
 				render_pass,
