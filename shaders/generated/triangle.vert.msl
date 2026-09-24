@@ -4,16 +4,18 @@
 using namespace metal;
 
 #line 90 "core"
-struct vertexOutput_0
+struct vertexMain_Result_0
 {
-    float4 output_0 [[position]];
+    float4 position_0 [[position]];
+    float4 color_0 [[user(COLOR)]];
 };
 
 
 #line 14 "shaders/triangle.slang"
 struct vertexInput_0
 {
-    float3 position_0 [[attribute(0)]];
+    float3 position_1 [[attribute(0)]];
+    float4 color_1 [[attribute(1)]];
 };
 
 
@@ -37,14 +39,32 @@ struct SLANG_ParameterGroup_UniformBlock_natural_0
     Uniforms_natural_0 u_data_0;
 };
 
-[[vertex]] vertexOutput_0 vertexMain(vertexInput_0 _S1 [[stage_in]], SLANG_ParameterGroup_UniformBlock_natural_0 constant* UniformBlock_0 [[buffer(0)]])
+struct VertexOutput_0
 {
+    float4 position_2;
+    float4 color_2;
+};
+
 
 #line 19
-    vertexOutput_0 _S2 = { (((float4(_S1.position_0, 1.0f)) * (matrix<float,int(4),int(4)> ((&UniformBlock_0->u_data_0)->mvp_0.data_0[int(0)][int(0)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(1)][int(0)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(2)][int(0)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(3)][int(0)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(0)][int(1)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(1)][int(1)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(2)][int(1)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(3)][int(1)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(0)][int(2)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(1)][int(2)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(2)][int(2)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(3)][int(2)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(0)][int(3)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(1)][int(3)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(2)][int(3)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(3)][int(3)])))) };
+[[vertex]] vertexMain_Result_0 vertexMain(vertexInput_0 _S1 [[stage_in]], SLANG_ParameterGroup_UniformBlock_natural_0 constant* UniformBlock_0 [[buffer(0)]])
+{
 
+#line 29
+    thread VertexOutput_0 output_0;
+    (&output_0)->position_2 = (((float4(_S1.position_1, 1.0f)) * (matrix<float,int(4),int(4)> ((&UniformBlock_0->u_data_0)->mvp_0.data_0[int(0)][int(0)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(1)][int(0)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(2)][int(0)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(3)][int(0)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(0)][int(1)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(1)][int(1)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(2)][int(1)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(3)][int(1)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(0)][int(2)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(1)][int(2)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(2)][int(2)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(3)][int(2)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(0)][int(3)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(1)][int(3)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(2)][int(3)], (&UniformBlock_0->u_data_0)->mvp_0.data_0[int(3)][int(3)]))));
+    (&output_0)->color_2 = _S1.color_1;
 
+#line 31
+    thread vertexMain_Result_0 _S2;
 
+#line 31
+    (&_S2)->position_0 = output_0.position_2;
+
+#line 31
+    (&_S2)->color_0 = output_0.color_2;
+
+#line 31
     return _S2;
 }
 

@@ -61,6 +61,8 @@ main :: proc() {
 	rotation := f32(0)
 	window_size: [2]i32
 	ok = sdl.GetWindowSize(window, &window_size.x, &window_size.y); assert(ok)
+
+
 	aspect := window_size
 	projection := linalg.matrix4_perspective(
 		linalg.to_radians(f32(70)),
@@ -76,7 +78,15 @@ main :: proc() {
 	frag_shader := load_shader("../shaders/generated/triangle.frag.msl", gpu_device, .FRAGMENT, 0)
 
 	Vertex :: [3]f32
-	vertices: []Vertex = {{-.5, -.5, 0}, {0, .5, 0}, {.5, -.5, 0}}
+	VertexData :: struct {
+		position: Vertex,
+		color:    sdl.FColor,
+	}
+	vertices: []VertexData = {
+		{position = {-.5, -.5, 0}, color = {1, 0, 0, 1}},
+		{position = {0, .5, 0}, color = {0, 1, 0, 1}},
+		{position = {.5, -.5, 0}, color = {0, 0, 1, 1}},
+	}
 
 	vertex_buffer_size := len(vertices) * size_of(vertices[0])
 	vertex_buffer := sdl.CreateGPUBuffer(
@@ -105,7 +115,10 @@ main :: proc() {
 
 	ok = sdl.SubmitGPUCommandBuffer(copy_command_buffer); assert(ok)
 
-	vertex_attrs := []sdl.GPUVertexAttribute{{location = 0, format = .FLOAT3, offset = 0}}
+	vertex_attrs := []sdl.GPUVertexAttribute {
+		{location = 0, format = .FLOAT3, offset = u32(offset_of(VertexData, position))},
+		{location = 1, format = .FLOAT4, offset = u32(offset_of(VertexData, color))},
+	}
 
 
 	pipeline := sdl.CreateGPUGraphicsPipeline(
@@ -118,7 +131,7 @@ main :: proc() {
 				num_vertex_buffers = 1,
 				vertex_buffer_descriptions = &(sdl.GPUVertexBufferDescription {
 						slot = 0,
-						pitch = size_of(Vertex),
+						pitch = size_of(VertexData),
 					}),
 				num_vertex_attributes = u32(len(vertex_attrs)),
 				vertex_attributes = raw_data(vertex_attrs),

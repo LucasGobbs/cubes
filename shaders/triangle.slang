@@ -13,18 +13,28 @@ cbuffer UniformBlock
 
 struct VertexInput {
     [[vk::location(0)]]float3 position : POSITION;
+    [[vk::location(1)]]float4 color : COLOR;
+};
+
+struct VertexOutput {
+    float4 position : SV_POSITION;
+    float4 color : COLOR;
 };
 
 [shader("vertex")]
-float4 vertexMain(VertexInput vertexInput)
+VertexOutput vertexMain(VertexInput vertexInput)
 {
     float4 position = float4(vertexInput.position, 1.0);
 
-    return mul(u_data.mvp, position);
+    VertexOutput output;
+    output.position = mul(u_data.mvp, position);
+    output.color = vertexInput.color;
+
+    return output;
 }
 
 [shader("fragment")]
-float4 pixelMain(float4 position) : SV_Target0
+float4 pixelMain(VertexOutput vertexOutput) : SV_Target0
 {
-    return float4(1.0,0.0,0.0,1.0);
+    return vertexOutput.color;
 }
