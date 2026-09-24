@@ -3,64 +3,105 @@
 #include <metal_texture>
 using namespace metal;
 
-#line 6 "shaders/triangle.slang"
+#line 90 "core"
 struct vertexOutput_0
 {
     float4 output_0 [[position]];
 };
 
 
-#line 6
-[[vertex]] vertexOutput_0 vertexMain(uint vertexIndex_0 [[vertex_id]])
+#line 90
+struct _MatrixStorage_float4x4_ColMajornatural_0
+{
+    array<float4, int(4)> data_0;
+};
+
+
+#line 90
+struct Uniforms_natural_0
+{
+    _MatrixStorage_float4x4_ColMajornatural_0 mvp_0;
+};
+
+
+#line 90
+struct SLANG_ParameterGroup_UniformBlock_natural_0
+{
+    Uniforms_natural_0 u_data_0;
+};
+
+
+#line 9 "shaders/triangle.slang"
+struct KernelContext_0
+{
+    SLANG_ParameterGroup_UniformBlock_natural_0 constant* UniformBlock_0;
+};
+
+
+[[vertex]] vertexOutput_0 vertexMain(uint vertexIndex_0 [[vertex_id]], SLANG_ParameterGroup_UniformBlock_natural_0 constant* UniformBlock_1 [[buffer(0)]])
 {
 
-#line 6
+#line 15
+    thread KernelContext_0 kernelContext_0;
+
+#line 15
+    (&kernelContext_0)->UniformBlock_0 = UniformBlock_1;
+
+    float4 _S1 = float4(int4(int(0)) );
+
+#line 17
     float4 position_0;
-
-
     if(vertexIndex_0 == 0U)
     {
 
-#line 9
+#line 18
         position_0 = float4(-0.5f, -0.5f, 0.0f, 1.0f);
 
-#line 9
+#line 18
     }
     else
     {
 
-#line 11
+#line 20
         if(vertexIndex_0 == 1U)
         {
 
-#line 11
+#line 20
             position_0 = float4(0.0f, 0.5f, 0.0f, 1.0f);
 
-#line 11
+#line 20
         }
         else
         {
 
-#line 13
+#line 22
             if(vertexIndex_0 == 2U)
             {
 
-#line 13
+#line 22
                 position_0 = float4(0.5f, -0.5f, 0.0f, 1.0f);
 
-#line 13
+#line 22
+            }
+            else
+            {
+
+#line 22
+                position_0 = _S1;
+
+#line 22
             }
 
-#line 11
+#line 20
         }
 
-#line 9
+#line 18
     }
 
-#line 9
-    vertexOutput_0 _S1 = { position_0 };
+#line 18
+    vertexOutput_0 _S2 = { (((position_0) * (matrix<float,int(4),int(4)> ((&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(0)][int(0)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(1)][int(0)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(2)][int(0)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(3)][int(0)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(0)][int(1)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(1)][int(1)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(2)][int(1)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(3)][int(1)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(0)][int(2)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(1)][int(2)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(2)][int(2)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(3)][int(2)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(0)][int(3)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(1)][int(3)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(2)][int(3)], (&(&kernelContext_0)->UniformBlock_0->u_data_0)->mvp_0.data_0[int(3)][int(3)])))) };
 
-#line 17
-    return _S1;
+#line 26
+    return _S2;
 }
 
