@@ -1,0 +1,66 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 6 "shaders/triangle.slang"
+struct vertexOutput_0
+{
+    float4 output_0 [[position]];
+};
+
+
+#line 6
+[[vertex]] vertexOutput_0 vertexMain(uint vertexIndex_0 [[vertex_id]])
+{
+
+#line 6
+    float4 position_0;
+
+
+    if(vertexIndex_0 == 0U)
+    {
+
+#line 9
+        position_0 = float4(-0.5f, -0.5f, 0.0f, 1.0f);
+
+#line 9
+    }
+    else
+    {
+
+#line 11
+        if(vertexIndex_0 == 1U)
+        {
+
+#line 11
+            position_0 = float4(0.0f, 0.5f, 0.0f, 1.0f);
+
+#line 11
+        }
+        else
+        {
+
+#line 13
+            if(vertexIndex_0 == 2U)
+            {
+
+#line 13
+                position_0 = float4(0.5f, -0.5f, 0.0f, 1.0f);
+
+#line 13
+            }
+
+#line 11
+        }
+
+#line 9
+    }
+
+#line 9
+    vertexOutput_0 _S1 = { position_0 };
+
+#line 17
+    return _S1;
+}
+
