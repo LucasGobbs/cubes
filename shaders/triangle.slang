@@ -11,17 +11,14 @@ cbuffer UniformBlock
     Uniforms u_data;
 }
 
+struct VertexInput {
+    [[vk::location(0)]]float3 position : POSITION;
+};
+
 [shader("vertex")]
-float4 vertexMain(uint vertexIndex : SV_VertexID)
+float4 vertexMain(VertexInput vertexInput)
 {
-    float4 position = float4(0);
-    if (vertexIndex == 0) {
-        position = float4(-.5, -.5, 0, 1);
-    } else if (vertexIndex == 1) {
-        position = float4(0, .5,0, 1);
-    } else if (vertexIndex == 2) {
-        position = float4(0.5, -.5, 0, 1);
-    }
+    float4 position = float4(vertexInput.position, 1.0);
 
     return mul(u_data.mvp, position);
 }
