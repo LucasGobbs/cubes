@@ -3,26 +3,26 @@
 #include <metal_texture>
 using namespace metal;
 
-#line 27 "shaders/triangle.slang"
+#line 19 "shaders/triangle.slang"
 struct pixelOutput_0
 {
     float4 output_0 [[color(0)]];
 };
 
 
-#line 27
+#line 19
 struct pixelInput_0
 {
-    float4 position_0 [[user(_SLANG_ATTR)]];
+    float4 color_0 [[user(COLOR)]];
 };
 
 
-#line 27
-[[fragment]] pixelOutput_0 pixelMain(pixelInput_0 _S1 [[stage_in]])
+#line 37
+[[fragment]] pixelOutput_0 pixelMain(pixelInput_0 _S1 [[stage_in]], float4 position_0 [[position]])
 {
 
-#line 27
-    pixelOutput_0 _S2 = { float4(1.0f, 0.0f, 0.0f, 1.0f) };
+#line 37
+    pixelOutput_0 _S2 = { _S1.color_0 };
 
     return _S2;
 }
