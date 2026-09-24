@@ -1,0 +1,32 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 8 "shaders/compute.slang"
+struct KernelContext_0
+{
+    float device* outputData_0;
+    float device* inputData_0;
+};
+
+
+[[kernel]] void computeMain(uint3 index_0 [[thread_position_in_grid]], float device* outputData_1 [[buffer(1)]], float device* inputData_1 [[buffer(0)]])
+{
+
+#line 15
+    thread KernelContext_0 kernelContext_0;
+
+#line 15
+    (&kernelContext_0)->outputData_0 = outputData_1;
+
+#line 15
+    (&kernelContext_0)->inputData_0 = inputData_1;
+
+#line 15
+    uint index_1 = index_0.x;
+
+    *(outputData_1+index_1) = inputData_1[index_1] * 2.0f + 1.0f;
+    return;
+}
+

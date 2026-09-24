@@ -6,3 +6,5 @@ output.ppm
 output.qoi
 odin_bin
 *.bin
+mai
+main_debug.dSYM
