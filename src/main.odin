@@ -75,12 +75,54 @@ main :: proc() {
 	vert_shader := load_shader("../shaders/generated/triangle.vert.msl", gpu_device, .VERTEX, 1)
 	frag_shader := load_shader("../shaders/generated/triangle.frag.msl", gpu_device, .FRAGMENT, 0)
 
+	Vertex :: [3]f32
+	vertices: []Vertex = {{-.5, -.5, 0}, {0, .5, 0}, {.5, -.5, 0}}
+
+	vertex_buffer_size := len(vertices) * size_of(vertices[0])
+	vertex_buffer := sdl.CreateGPUBuffer(
+		gpu_device,
+		{usage = {.VERTEX}, size = u32(vertex_buffer_size)},
+	)
+
+	transfer_buffer := sdl.CreateGPUTransferBuffer(
+		gpu_device,
+		{usage = .UPLOAD, size = u32(vertex_buffer_size)},
+	)
+
+	transfer_mem := sdl.MapGPUTransferBuffer(gpu_device, transfer_buffer, false)
+	mem.copy(transfer_mem, raw_data(vertices), vertex_buffer_size)
+	sdl.UnmapGPUTransferBuffer(gpu_device, transfer_buffer)
+	copy_command_buffer := sdl.AcquireGPUCommandBuffer(gpu_device)
+
+	copy_pass := sdl.BeginGPUCopyPass(copy_command_buffer)
+	sdl.UploadToGPUBuffer(
+		copy_pass,
+		{transfer_buffer = transfer_buffer},
+		{buffer = vertex_buffer, size = u32(vertex_buffer_size)},
+		false,
+	)
+	sdl.EndGPUCopyPass(copy_pass)
+
+	ok = sdl.SubmitGPUCommandBuffer(copy_command_buffer); assert(ok)
+
+	vertex_attrs := []sdl.GPUVertexAttribute{{location = 0, format = .FLOAT3, offset = 0}}
+
+
 	pipeline := sdl.CreateGPUGraphicsPipeline(
 		gpu_device,
 		{
 			vertex_shader = vert_shader,
 			fragment_shader = frag_shader,
 			primitive_type = .TRIANGLELIST,
+			vertex_input_state = {
+				num_vertex_buffers = 1,
+				vertex_buffer_descriptions = &(sdl.GPUVertexBufferDescription {
+						slot = 0,
+						pitch = size_of(Vertex),
+					}),
+				num_vertex_attributes = u32(len(vertex_attrs)),
+				vertex_attributes = raw_data(vertex_attrs),
+			},
 			target_info = {
 				num_color_targets = 1,
 				color_target_descriptions = &(sdl.GPUColorTargetDescription {
@@ -121,6 +163,7 @@ main :: proc() {
 		model =
 			linalg.matrix4_translate_f32({0, 0, -5}) *
 			linalg.matrix4_rotate_f32(rotation, {0, 1, 0})
+
 		uniform_buffer := UniformBuffer {
 			mvp = projection * model,
 		}
@@ -133,6 +176,12 @@ main :: proc() {
 			}
 			render_pass := sdl.BeginGPURenderPass(command_buffer, &color_target, 1, nil)
 			sdl.BindGPUGraphicsPipeline(render_pass, pipeline)
+			sdl.BindGPUVertexBuffers(
+				render_pass,
+				0,
+				&(sdl.GPUBufferBinding{buffer = vertex_buffer}),
+				1,
+			)
 			sdl.PushGPUVertexUniformData(
 				command_buffer,
 				0,
