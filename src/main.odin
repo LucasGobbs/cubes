@@ -7,28 +7,18 @@ import "core:mem"
 import "core:os"
 import "core:strings"
 import sdl "vendor:sdl3"
+import stbi "vendor:stb/image"
 
 DEBUG :: true
 PLATFORM :: "METAL"
-
-// vert_code := #load("../shaders/generated/triangle.vert.msl")
-// frag_code := #load("../shaders/generated/triangle.frag.msl")
-// format := sdl.GPUShaderFormat{.MSL}
-
-// if strings.starts_with(string(sdl.GetGPUDeviceDriver(r.device)), "vulkan") {
-// 	vert_code = #load("../shaders/generated/triangle.vert.spv")
-// 	frag_code = #load("../shaders/generated/triangle.frag.spv")
-// 	format = {.SPIRV}
-// }
-
-// vert_shader := load_shader(vert_code, format, .VERTEX, "vertexMain")
-// frag_shader := load_shader(frag_code, format, .FRAGMENT, "pixelMain")
-
+Vec3 :: [3]f32
+Vec2 :: [2]f32
 load_shader :: proc(
 	$filepath: string,
 	gpu_device: ^sdl.GPUDevice,
 	stage: sdl.GPUShaderStage,
 	num_uniform_buffers: u32,
+	num_samplers: u32,
 ) -> ^sdl.GPUShader {
 	shader_code := #load(filepath)
 	shader := sdl.CreateGPUShader(
@@ -40,6 +30,7 @@ load_shader :: proc(
 			format = {.MSL},
 			stage = stage,
 			num_uniform_buffers = num_uniform_buffers,
+			num_samplers = num_samplers,
 		},
 	)
 	if shader == nil {
@@ -56,6 +47,7 @@ main :: proc() {
 	window := sdl.CreateWindow("Odin SDL3 gpu", 1280, 780, {}); assert(window != nil)
 	gpu_device := sdl.CreateGPUDevice({.MSL, .SPIRV}, DEBUG, nil); assert(gpu_device != nil)
 	ok = sdl.ClaimWindowForGPUDevice(gpu_device, window); assert(ok)
+
 
 	rotation_speed := linalg.to_radians(f32(90))
 	rotation := f32(0)
@@ -74,23 +66,60 @@ main :: proc() {
 	UniformBuffer :: struct #max_field_align(16) {
 		mvp: matrix[4, 4]f32,
 	}
-	vert_shader := load_shader("../shaders/generated/triangle.vert.msl", gpu_device, .VERTEX, 1)
-	frag_shader := load_shader("../shaders/generated/triangle.frag.msl", gpu_device, .FRAGMENT, 0)
+	vert_shader := load_shader("../shaders/generated/triangle.vert.msl", gpu_device, .VERTEX, 1, 0)
+	frag_shader := load_shader(
+		"../shaders/generated/triangle.frag.msl",
+		gpu_device,
+		.FRAGMENT,
+		0,
+		1,
+	)
 
-	Vertex :: [3]f32
+	img_size: [2]i32
+	pixels := stbi.load(
+		"static/muddy_ground.jpg",
+		&img_size.x,
+		&img_size.y,
+		nil,
+		4,
+	); assert(pixels != nil)
+	pixels_byte_size := img_size.x * img_size.y * 4
+	texture := sdl.CreateGPUTexture(
+		gpu_device,
+		{
+			format = .R8G8B8A8_UNORM,
+			usage = {.SAMPLER},
+			width = u32(img_size.x),
+			height = u32(img_size.y),
+			layer_count_or_depth = 1,
+			num_levels = 1,
+		},
+	)
+
 	VertexData :: struct {
-		position: Vertex,
+		position: Vec3,
 		color:    sdl.FColor,
+		uv:       [2]f32,
 	}
-	vertices: []VertexData = {
-		{position = {-.5, .5, 0}, color = {1, 0, 0, 1}}, // tl
-		{position = {.5, .5, 0}, color = {0, 1, 0, 1}}, // tr
-		{position = {-.5, -.5, 0}, color = {0, 0, 1, 1}}, // bl
-		{position = {.5, -.5, 0}, color = {0, 0, 1, 1}}, // br
-	}
-	vertices_byte_size := len(vertices) * size_of(vertices[0])
+	WHITE :: sdl.FColor{1.0, 1.0, 1.0, 1.0}
 
-	indices := []u16{0, 1, 2, 2, 1, 3}
+
+	obj := obj_load("./static/ship-large.obj")
+	vertices: []VertexData = make([]VertexData, len(obj.faces))
+	indices: []u16 = make([]u16, len(obj.faces))
+	for face, i in obj.faces {
+		vertices[i] = {
+			position = obj.positions[face.pos],
+			color    = WHITE,
+			uv       = obj.uv[face.uv],
+		}
+		indices[i] = u16(i)
+	}
+	obj_destroy(&obj)
+
+	num_indices := len(indices)
+
+	vertices_byte_size := len(vertices) * size_of(vertices[0])
 	indices_byte_size := len(indices) * size_of(indices[0])
 
 
@@ -108,11 +137,22 @@ main :: proc() {
 		{usage = .UPLOAD, size = u32(vertices_byte_size + indices_byte_size)},
 	)
 
+	texture_transfer_buffer := sdl.CreateGPUTransferBuffer(
+		gpu_device,
+		{usage = .UPLOAD, size = u32(pixels_byte_size)},
+	)
+
 	transfer_mem := transmute([^]byte)sdl.MapGPUTransferBuffer(gpu_device, transfer_buffer, false)
 	mem.copy(transfer_mem, raw_data(vertices), vertices_byte_size)
 	mem.copy(transfer_mem[vertices_byte_size:], raw_data(indices), indices_byte_size)
 
+	texture_transfer_mem := sdl.MapGPUTransferBuffer(gpu_device, texture_transfer_buffer, false)
+	mem.copy(texture_transfer_mem, pixels, int(pixels_byte_size))
+
 	sdl.UnmapGPUTransferBuffer(gpu_device, transfer_buffer)
+	delete(vertices)
+	delete(indices)
+	sdl.UnmapGPUTransferBuffer(gpu_device, texture_transfer_buffer)
 	copy_command_buffer := sdl.AcquireGPUCommandBuffer(gpu_device)
 
 	copy_pass := sdl.BeginGPUCopyPass(copy_command_buffer)
@@ -128,13 +168,23 @@ main :: proc() {
 		{buffer = index_buffer, size = u32(indices_byte_size)},
 		false,
 	)
+	sdl.UploadToGPUTexture(
+		copy_pass,
+		{transfer_buffer = texture_transfer_buffer},
+		{texture = texture, w = u32(img_size.x), h = u32(img_size.y), d = 1},
+		false,
+	)
 	sdl.EndGPUCopyPass(copy_pass)
 
 	ok = sdl.SubmitGPUCommandBuffer(copy_command_buffer); assert(ok)
+	sdl.ReleaseGPUTransferBuffer(gpu_device, transfer_buffer)
+	sdl.ReleaseGPUTransferBuffer(gpu_device, texture_transfer_buffer)
 
+	sampler := sdl.CreateGPUSampler(gpu_device, {})
 	vertex_attrs := []sdl.GPUVertexAttribute {
 		{location = 0, format = .FLOAT3, offset = u32(offset_of(VertexData, position))},
 		{location = 1, format = .FLOAT4, offset = u32(offset_of(VertexData, color))},
+		{location = 2, format = .FLOAT2, offset = u32(offset_of(VertexData, uv))},
 	}
 
 
@@ -219,8 +269,14 @@ main :: proc() {
 				&uniform_buffer,
 				size_of(uniform_buffer),
 			)
-			sdl.DrawGPUPrimitives(render_pass, 6, 1, 0, 0)
-			sdl.DrawGPUIndexedPrimitives(render_pass, 6, 1, 0, 0, 0)
+			sdl.BindGPUFragmentSamplers(
+				render_pass,
+				0,
+				&(sdl.GPUTextureSamplerBinding{texture = texture, sampler = sampler}),
+				1,
+			)
+			sdl.DrawGPUPrimitives(render_pass, u32(num_indices), 1, 0, 0)
+			sdl.DrawGPUIndexedPrimitives(render_pass, u32(num_indices), 1, 0, 0, 0)
 			sdl.EndGPURenderPass(render_pass)
 		}
 
