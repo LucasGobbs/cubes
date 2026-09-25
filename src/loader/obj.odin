@@ -1,8 +1,20 @@
-package main
-import "core:log"
+package loader
 import "core:os"
 import "core:strconv"
 import "core:strings"
+
+Vec2 :: [2]f32
+Vec3 :: [3]f32
+
+VertexData :: struct {
+	position: Vec3,
+	color:    [4]f32,
+	uv:       Vec2,
+}
+
+VertexLayout :: enum {
+	POS_COLOR_UV,
+}
 ObjData :: struct {
 	positions: []Vec3,
 	uv:        []Vec2,
@@ -44,13 +56,13 @@ obj_load :: proc(filename: string) -> ObjData {
 }
 
 obj_unwrap_buffers :: proc(obj: ^ObjData) -> ([]VertexData, []u16) {
-	vertices: []VertexData = make([]VertexData, len(obj.faces), context.temp_allocator)
-	indices: []u16 = make([]u16, len(obj.faces), context.temp_allocator)
+	vertices := make([]VertexData, len(obj.faces))
+	indices := make([]u16, len(obj.faces))
 	for face, i in obj.faces {
 		uv := obj.uv[face.uv]
 		vertices[i] = {
 			position = obj.positions[face.pos],
-			color    = WHITE,
+			color    = {1, 1, 1, 1},
 			uv       = {uv.x, 1 - uv.y},
 		}
 		indices[i] = u16(i)
