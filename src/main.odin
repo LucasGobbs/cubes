@@ -1,26 +1,14 @@
 package main
 
-import "core:fmt"
 import "core:log"
 import "core:math/linalg"
-import "core:mem"
-import "core:os"
-import "core:strings"
-
+import loader "loader"
 import sdl "vendor:sdl3"
-import stbi "vendor:stb/image"
 
 DEBUG :: true
 PLATFORM :: "METAL"
 Vec3 :: [3]f32
-Vec2 :: [2]f32
-WHITE :: sdl.FColor{1.0, 1.0, 1.0, 1.0}
 key_down: #sparse[sdl.Scancode]bool
-VertexData :: struct {
-	position: Vec3,
-	color:    sdl.FColor,
-	uv:       [2]f32,
-}
 
 camera: struct {
 	position: Vec3,
@@ -37,11 +25,14 @@ main :: proc() {
 		target   = {0, 0, 0},
 	}
 	basic_material_pipeline := gfx_basic_pipeline(&gfx)
+	sampler := sdl.CreateGPUSampler(gfx.gpu, {})
 	uploader := Uploader {
 		gfx = &gfx,
 	}
-	model := model_load_from_obj(&gfx, "static/ship-large.obj", "static/colormap.png")
-	model_upload_to_gpu(&model, &gfx, &uploader)
+	imported_model := loader.model_import_from_obj("static/ship-large.obj", "static/colormap.png")
+	model := model_create(&gfx, &imported_model, sampler, basic_material_pipeline)
+	model_upload_to_gpu(&model, &uploader)
+	loader.model_import_destroy(&imported_model)
 	rotation_speed := linalg.to_radians(f32(90))
 	rotation := f32(0)
 
@@ -57,9 +48,6 @@ main :: proc() {
 	UniformBuffer :: struct #max_field_align(16) {
 		mvp: matrix[4, 4]f32,
 	}
-
-
-	sampler := sdl.CreateGPUSampler(gfx.gpu, {})
 
 
 	last_ticks := sdl.GetTicks()
@@ -81,7 +69,6 @@ main :: proc() {
 				key_down[event.key.scancode] = false
 			}
 		}
-		log.info(key_down[.S])
 		if key_down[.S] {
 			camera.position.z += 5 * delta_time
 			camera.target.z += 5 * delta_time
@@ -131,27 +118,26 @@ main :: proc() {
 				1,
 				&depth_target_info,
 			)
-			sdl.BindGPUGraphicsPipeline(render_pass, basic_material_pipeline)
-			sdl.BindGPUVertexBuffers(
+
+			sdl.BindGPUGraphicsPipeline(render_pass, model.material.pipeline)
+			sdl.BindGPUFragmentSamplers(
 				render_pass,
 				0,
-				&(sdl.GPUBufferBinding{buffer = model.vertex_buffer.handle}),
+				&(sdl.GPUTextureSamplerBinding {
+						texture = model.material.texture.handle,
+						sampler = model.material.sampler,
+					}),
 				1,
 			)
-			sdl.BindGPUIndexBuffer(render_pass, {buffer = model.index_buffer.handle}, ._16BIT)
+
 			sdl.PushGPUVertexUniformData(
 				gfx.command_buffer,
 				0,
 				&uniform_buffer,
 				size_of(uniform_buffer),
 			)
-			sdl.BindGPUFragmentSamplers(
-				render_pass,
-				0,
-				&(sdl.GPUTextureSamplerBinding{texture = model.texture.handle, sampler = sampler}),
-				1,
-			)
-			sdl.DrawGPUIndexedPrimitives(render_pass, u32(model.index_buffer.size), 1, 0, 0, 0)
+
+			mesh_draw(&model.mesh, render_pass)
 			sdl.EndGPURenderPass(render_pass)
 		}
 
