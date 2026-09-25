@@ -10,6 +10,11 @@ SHADER_FILES := $(SHADER_OUT)/triangle.vert.msl $(SHADER_OUT)/triangle.frag.msl 
                 $(SHADER_OUT)/triangle.vert.spv $(SHADER_OUT)/triangle.frag.spv \
                 $(SHADER_OUT)/compute.msl $(SHADER_OUT)/compute.spv
 
+# Reflection JSON is emitted as a byproduct of the Metal compiles (one per
+# entry point). Used by the binding generator, not loaded at runtime.
+REFL_FILES := $(SHADER_OUT)/triangle.vert.refl.json $(SHADER_OUT)/triangle.frag.refl.json \
+              $(SHADER_OUT)/compute.refl.json
+
 RELEASE_FLAGS := -o:aggressive -microarch:native -no-bounds-check -disable-assert
 DEBUG_FLAGS   := -debug -o:none
 
@@ -21,11 +26,13 @@ shaders: $(SHADER_FILES)
 
 $(SHADER_OUT)/triangle.vert.msl: $(SHADER_SRC)
 	@mkdir -p $(SHADER_OUT)
-	$(SLANG) $(SHADER_SRC) -entry vertexMain -target metal -o $@
+	$(SLANG) $(SHADER_SRC) -entry vertexMain -target metal \
+		-reflection-json $(SHADER_OUT)/triangle.vert.refl.json -o $@
 
 $(SHADER_OUT)/triangle.frag.msl: $(SHADER_SRC)
 	@mkdir -p $(SHADER_OUT)
-	$(SLANG) $(SHADER_SRC) -entry pixelMain -target metal -o $@
+	$(SLANG) $(SHADER_SRC) -entry pixelMain -target metal \
+		-reflection-json $(SHADER_OUT)/triangle.frag.refl.json -o $@
 
 $(SHADER_OUT)/triangle.vert.spv: $(SHADER_SRC)
 	@mkdir -p $(SHADER_OUT)
@@ -37,7 +44,8 @@ $(SHADER_OUT)/triangle.frag.spv: $(SHADER_SRC)
 
 $(SHADER_OUT)/compute.msl: shaders/compute.slang
 	@mkdir -p $(SHADER_OUT)
-	$(SLANG) shaders/compute.slang -entry computeMain -target metal -o $@
+	$(SLANG) shaders/compute.slang -entry computeMain -target metal \
+		-reflection-json $(SHADER_OUT)/compute.refl.json -o $@
 
 $(SHADER_OUT)/compute.spv: shaders/compute.slang
 	@mkdir -p $(SHADER_OUT)
@@ -68,4 +76,4 @@ test-optimized: shaders
 	$(ODIN) test $(SRC) $(RELEASE_FLAGS)
 
 clean:
-	rm -f $(BIN) $(BIN_DEBUG) $(SHADER_FILES)
+	rm -f $(BIN) $(BIN_DEBUG) $(SHADER_FILES) $(REFL_FILES)

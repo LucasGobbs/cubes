@@ -1,0 +1,131 @@
+{
+    "version": "1.1",
+    "parameters": [
+        {
+            "name": "inputData",
+            "binding": {"kind": "constantBuffer", "index": 0},
+            "type": {
+                "kind": "resource",
+                "baseShape": "structuredBuffer",
+                "resultType": {
+                    "kind": "scalar",
+                    "scalarType": "float32",
+                    "sizes": [
+                        {"kind": "uniform", "value": 4, "alignment": 4}
+                    ]
+                },
+                "sizes": [
+                    {"kind": "constantBuffer", "value": 1}
+                ]
+            }
+        },
+        {
+            "name": "outputData",
+            "binding": {"kind": "constantBuffer", "index": 1},
+            "type": {
+                "kind": "resource",
+                "baseShape": "structuredBuffer",
+                "access": "readWrite",
+                "resultType": {
+                    "kind": "scalar",
+                    "scalarType": "float32",
+                    "sizes": [
+                        {"kind": "uniform", "value": 4, "alignment": 4}
+                    ]
+                },
+                "sizes": [
+                    {"kind": "constantBuffer", "value": 1}
+                ]
+            }
+        }
+    ],
+    "globalScope": {
+        "kind": "none",
+        "parameters": [
+            {
+                "name": "inputData",
+                "binding": {"kind": "constantBuffer", "index": 0},
+                "type": {
+                    "kind": "resource",
+                    "baseShape": "structuredBuffer",
+                    "resultType": {
+                        "kind": "scalar",
+                        "scalarType": "float32",
+                        "sizes": [
+                            {"kind": "uniform", "value": 4, "alignment": 4}
+                        ]
+                    },
+                    "sizes": [
+                        {"kind": "constantBuffer", "value": 1}
+                    ]
+                }
+            },
+            {
+                "name": "outputData",
+                "binding": {"kind": "constantBuffer", "index": 1},
+                "type": {
+                    "kind": "resource",
+                    "baseShape": "structuredBuffer",
+                    "access": "readWrite",
+                    "resultType": {
+                        "kind": "scalar",
+                        "scalarType": "float32",
+                        "sizes": [
+                            {"kind": "uniform", "value": 4, "alignment": 4}
+                        ]
+                    },
+                    "sizes": [
+                        {"kind": "constantBuffer", "value": 1}
+                    ]
+                }
+            }
+        ]
+    },
+    "entryPoints": [
+        {
+            "name": "computeMain",
+            "stage": "compute",
+            "scope": {
+                "kind": "none",
+                "parameters": [
+                    {
+                        "name": "index",
+                        "semanticName": "SV_DISPATCHTHREADID",
+                        "type": {
+                            "kind": "scalar",
+                            "scalarType": "uint32",
+                            "sizes": [
+
+                            ]
+                        }
+                    }
+                ]
+            },
+            "parameters": [
+                {
+                    "name": "index",
+                    "semanticName": "SV_DISPATCHTHREADID",
+                    "type": {
+                        "kind": "scalar",
+                        "scalarType": "uint32",
+                        "sizes": [
+
+                        ]
+                    }
+                }
+            ],
+            "threadGroupSize": [64, 1, 1],
+            "bindings": [
+                {
+                    "name": "inputData",
+                    "binding": {"kind": "constantBuffer", "index": 0, "used": 1}
+                },
+                {
+                    "name": "outputData",
+                    "binding": {"kind": "constantBuffer", "index": 1, "used": 1}
+                }
+            ]
+        }
+    ],
+    "bindlessSpaceIndex": 1
+}

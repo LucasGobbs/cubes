@@ -24,7 +24,6 @@ obj_load :: proc(filename: string) -> ObjData {
 	faces := make([dynamic]ObjFaceIndex)
 	for line in strings.split_lines_iterator(&input_string) {
 		if len(line) == 0 do continue
-		log.debug(line)
 		switch line[0] {
 		case 'v':
 			switch line[1] {
@@ -44,6 +43,23 @@ obj_load :: proc(filename: string) -> ObjData {
 	return {positions = positions[:], uv = uvs[:], faces = faces[:]}
 }
 
+obj_unwrap_buffers :: proc(obj: ^ObjData) -> ([]VertexData, []u16) {
+	vertices: []VertexData = make([]VertexData, len(obj.faces), context.temp_allocator)
+	indices: []u16 = make([]u16, len(obj.faces), context.temp_allocator)
+	for face, i in obj.faces {
+		uv := obj.uv[face.uv]
+		vertices[i] = {
+			position = obj.positions[face.pos],
+			color    = WHITE,
+			uv       = {uv.x, 1 - uv.y},
+		}
+		indices[i] = u16(i)
+	}
+
+	return vertices, indices
+}
+
+
 obj_destroy :: proc(obj: ^ObjData) {
 	delete(obj.positions)
 	delete(obj.uv)
@@ -56,7 +72,11 @@ parse_position :: proc(s: string) -> Vec3 {
 	y := extract_separated(&s, ' ')
 	z := extract_separated(&s, ' ')
 
-	return {parse_f32(strings.trim_space(x)), parse_f32(strings.trim_space(y)), parse_f32(strings.trim_space(z))}
+	return {
+		parse_f32(strings.trim_space(x)),
+		parse_f32(strings.trim_space(y)),
+		parse_f32(strings.trim_space(z)),
+	}
 }
 
 parse_uv :: proc(s: string) -> Vec2 {
