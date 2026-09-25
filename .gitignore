@@ -8,3 +8,4 @@ odin_bin
 *.bin
 mai
 main_debug.dSYM
+docs/
