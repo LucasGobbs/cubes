@@ -1,0 +1,129 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 10 "shaders/blur.slang"
+struct KernelContext_0
+{
+    texture2d<float, access::read_write> output_image_0;
+    texture2d<float, access::sample> input_image_0;
+    sampler input_sampler_0;
+};
+
+
+#line 16
+[[kernel]] void computeMain(uint3 tid_0 [[thread_position_in_grid]], texture2d<float, access::read_write> output_image_1 [[texture(1)]], texture2d<float, access::sample> input_image_1 [[texture(0)]], sampler input_sampler_1 [[sampler(0)]])
+{
+
+#line 16
+    thread KernelContext_0 kernelContext_0;
+
+#line 16
+    (&kernelContext_0)->output_image_0 = output_image_1;
+
+#line 16
+    (&kernelContext_0)->input_image_0 = input_image_1;
+
+#line 16
+    (&kernelContext_0)->input_sampler_0 = input_sampler_1;
+
+#line 16
+    uint2 tid_1 = tid_0.xy;
+
+    thread uint width_0;
+
+#line 18
+    thread uint height_0;
+    (*((&width_0)) = (output_image_1).get_width(0)),(*((&height_0)) = (output_image_1).get_height(0));
+
+#line 19
+    bool _S1;
+    if((tid_1.x) >= width_0)
+    {
+
+#line 20
+        _S1 = true;
+
+#line 20
+    }
+    else
+    {
+
+#line 20
+        _S1 = (tid_1.y) >= height_0;
+
+#line 20
+    }
+
+#line 20
+    if(_S1)
+    {
+
+#line 20
+        return;
+    }
+    float2 size_0 = float2(float(width_0), float(height_0));
+    float2 _S2 = (float2(tid_1) + float2(0.5f) ) / size_0;
+    float2 _S3 = float2(1.0f)  / size_0;
+
+    float4 _S4 = float4(int4(int(0)) );
+
+#line 26
+    int y_0 = int(-2);
+
+#line 26
+    float4 sum_0 = _S4;
+    for(;;)
+    {
+
+#line 27
+        if(y_0 <= int(2))
+        {
+        }
+        else
+        {
+
+#line 27
+            break;
+        }
+
+#line 27
+        int x_0 = int(-2);
+        for(;;)
+        {
+
+#line 28
+            if(x_0 <= int(2))
+            {
+            }
+            else
+            {
+
+#line 28
+                break;
+            }
+
+#line 29
+            float4 sum_1 = sum_0 + (((&kernelContext_0)->input_image_0).sample(((&kernelContext_0)->input_sampler_0), (_S2 + float2(float(x_0), float(y_0)) * _S3), level((0.0f))));
+
+#line 28
+            x_0 = x_0 + int(1);
+
+#line 28
+            sum_0 = sum_1;
+
+#line 28
+        }
+
+#line 27
+        y_0 = y_0 + int(1);
+
+#line 27
+    }
+
+#line 32
+    (&kernelContext_0)->output_image_0.write(sum_0 / float4(25.0f) ,tid_1);
+    return;
+}
+

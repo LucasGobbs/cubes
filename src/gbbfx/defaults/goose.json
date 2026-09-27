@@ -1,0 +1,20 @@
+{
+  "outputDir": "src/gbbfx/defaults/generated",
+  "parameterOutputDir": "src/gbbfx/defaults",
+  "package": "defaults",
+  "gooseImport": "../../goose",
+  "shaders": [
+    {
+      "name": "default_textured",
+      "source": "src/gbbfx/defaults/shaders/textured.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "default_unlit_color",
+      "source": "src/gbbfx/defaults/shaders/unlit_color.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    }
+  ]
+}
