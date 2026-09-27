@@ -31,6 +31,10 @@ Graphics_Pipeline_Desc :: struct {
 	// transparency. A pipeline with neither depth flag is created without a
 	// depth-stencil target, matching depth-less overlay passes.
 	blend:             bool,
+	// Face culling. Zero values keep the previous behavior (no culling,
+	// counter-clockwise front); closed meshes should cull .BACK.
+	cull_mode:         sdl.GPUCullMode,
+	front_face:        sdl.GPUFrontFace,
 	bind_draw:         Pipeline_Bind_Draw_Proc,
 	user_data:         rawptr,
 }
@@ -92,6 +96,10 @@ gfx_pipeline_create :: proc(gfx: ^Gfx, desc: Graphics_Pipeline_Desc) -> Pipeline
 					}),
 				num_vertex_attributes = u32(len(attributes)),
 				vertex_attributes = raw_data(attributes),
+			},
+			rasterizer_state = {
+				cull_mode = desc.cull_mode,
+				front_face = desc.front_face,
 			},
 			depth_stencil_state = {
 				enable_depth_test = desc.depth_test,

@@ -13,6 +13,8 @@ create_textured_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
 			vertex_stride = u32(size_of(gbbfx.VertexData)),
 			depth_test = true,
 			depth_write = true,
+			cull_mode = .BACK,
+			front_face = .CLOCKWISE,
 			bind_draw = bind_textured_draw,
 		},
 	)
@@ -29,6 +31,8 @@ create_unlit_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
 			vertex_stride = u32(size_of(gbbfx.VertexData)),
 			depth_test = true,
 			depth_write = true,
+			cull_mode = .BACK,
+			front_face = .CLOCKWISE,
 			bind_draw = bind_unlit_draw,
 		},
 	)
