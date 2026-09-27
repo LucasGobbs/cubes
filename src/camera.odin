@@ -1,6 +1,8 @@
 package main
 import "core:math"
 import "core:math/linalg"
+
+Vec3 :: [3]f32
 CameraType :: enum {
 	FLY_BY,
 }

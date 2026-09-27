@@ -9,7 +9,7 @@
 //   (bind pipeline, bind buffers, dispatch) -> download output -> CPU verify.
 package main
 
-import shader "../src/shader"
+import goose_sdl "../src/goose/adapters/sdl_gpu"
 import shader_parameters "../src/shader_parameters"
 import "core:fmt"
 import "core:mem"
@@ -29,7 +29,7 @@ fail :: proc(msg: cstring) -> ! {
 }
 
 load_compute_pipeline :: proc() -> ^sdl.GPUComputePipeline {
-	pipeline := shader.create_compute(device, shader_parameters.compute())
+	pipeline := goose_sdl.create_compute_pipeline(device, shader_parameters.compute())
 	if pipeline == nil {
 		fail(sdl.GetError())
 	}

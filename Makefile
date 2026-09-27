@@ -4,180 +4,56 @@ SRC       := ./src
 BIN       := main
 BIN_DEBUG := main_debug
 
-SHADER_SRC   := shaders/triangle.slang
-SHADER_OUT   := shaders/generated
-SHADER_FILES := $(SHADER_OUT)/triangle.vert.msl $(SHADER_OUT)/triangle.frag.msl \
-                $(SHADER_OUT)/triangle.vert.spv $(SHADER_OUT)/triangle.frag.spv \
-                $(SHADER_OUT)/compute.msl $(SHADER_OUT)/compute.spv
-
-# Reflection JSON is emitted as a byproduct of the Metal compiles (one per
-# entry point). Used by the binding generator, not loaded at runtime.
-REFL_FILES := $(SHADER_OUT)/triangle.vert.refl.json $(SHADER_OUT)/triangle.frag.refl.json \
-              $(SHADER_OUT)/compute.refl.json
-
-SHADER_GENERATOR := src/shader/tools/generator
-SHADER_GENERATOR_SRC := $(SHADER_GENERATOR)/main.odin
-SHADER_PARAMETER_DIR := src/shader_parameters
-TRIANGLE_PARAMETERS := $(SHADER_PARAMETER_DIR)/triangle_shader_parameters.odin
-COMPUTE_PARAMETERS := $(SHADER_PARAMETER_DIR)/compute_shader_parameters.odin
-SHADER_PARAMETER_FILES := $(TRIANGLE_PARAMETERS) $(COMPUTE_PARAMETERS)
-
-SHADER_TEST_DIR := src/shader/tests
-SHADER_TEST_SRC := $(SHADER_TEST_DIR)/slang
-SHADER_TEST_OUT := $(SHADER_TEST_DIR)/generated
-SHADER_TEST_GRAPHICS := uniforms vertex_buffers graphics_pipeline
-SHADER_TEST_COMPUTE := compute_pipeline
-SHADER_TEST_FILES := $(foreach name,$(SHADER_TEST_GRAPHICS), \
-                       $(SHADER_TEST_OUT)/$(name).vert.msl \
-                       $(SHADER_TEST_OUT)/$(name).frag.msl \
-                       $(SHADER_TEST_OUT)/$(name).vert.spv \
-                       $(SHADER_TEST_OUT)/$(name).frag.spv) \
-                     $(SHADER_TEST_OUT)/$(SHADER_TEST_COMPUTE).compute.msl \
-                     $(SHADER_TEST_OUT)/$(SHADER_TEST_COMPUTE).compute.spv
-SHADER_TEST_REFL := $(foreach name,$(SHADER_TEST_GRAPHICS), \
-                      $(SHADER_TEST_OUT)/$(name).vert.refl.json \
-                      $(SHADER_TEST_OUT)/$(name).frag.refl.json) \
-                    $(SHADER_TEST_OUT)/$(SHADER_TEST_COMPUTE).compute.refl.json
-SHADER_TEST_PARAMETERS := $(foreach name,$(SHADER_TEST_GRAPHICS), \
-                            $(SHADER_TEST_DIR)/$(name)_shader_parameters.odin) \
-                          $(SHADER_TEST_DIR)/$(SHADER_TEST_COMPUTE)_shader_parameters.odin
+GOOSE_BUILD         := src/goose/tools/build
+GOOSE_MANIFEST      := shaders/goose.json
+GOOSE_TEST_MANIFEST := src/goose/tests/goose.json
+GOOSE_PLATFORM      ?= metal
 
 RELEASE_FLAGS := -o:aggressive -microarch:native -no-bounds-check -disable-assert
 DEBUG_FLAGS   := -debug -o:none
 
-.PHONY: all build run run-optimized debug debug-optimized test test-optimized shaders check-shader-parameters test-shader-generator shader-test-fixtures test-shader-uniforms test-shader-vertex-buffers test-shader-compute test-shader-graphics test-shader-runtime compute clean
-
+.PHONY: all build run run-optimized debug debug-optimized shaders goose-test-fixtures \
+        test-goose-core test-goose-build test-goose-uniforms test-goose-vertex-buffers \
+        test-goose-compute test-goose-graphics test-goose-runtime test-glove \
+        test-glove-optimized test test-optimized compute clean
 all: build
 
-shaders: $(SHADER_FILES) $(SHADER_PARAMETER_FILES)
+shaders:
+	$(ODIN) run $(GOOSE_BUILD) -- --manifest $(GOOSE_MANIFEST) \
+		--platform $(GOOSE_PLATFORM) --slang $(SLANG)
 
-$(SHADER_OUT)/triangle.vert.refl.json: $(SHADER_SRC)
-	@mkdir -p $(SHADER_OUT)
-	$(SLANG) $(SHADER_SRC) -entry vertexMain -target metal \
-		-reflection-json $@ -o $(SHADER_OUT)/triangle.vert.msl
+goose-test-fixtures:
+	$(ODIN) run $(GOOSE_BUILD) -- --manifest $(GOOSE_TEST_MANIFEST) \
+		--platform $(GOOSE_PLATFORM) --slang $(SLANG)
 
-$(SHADER_OUT)/triangle.vert.msl: $(SHADER_OUT)/triangle.vert.refl.json
+test-goose-core:
+	$(ODIN) test src/goose
+	$(ODIN) test src/goose/adapters/sdl_gpu
 
-$(SHADER_OUT)/triangle.frag.refl.json: $(SHADER_SRC)
-	@mkdir -p $(SHADER_OUT)
-	$(SLANG) $(SHADER_SRC) -entry pixelMain -target metal \
-		-reflection-json $@ -o $(SHADER_OUT)/triangle.frag.msl
+test-goose-build: goose-test-fixtures
+	$(ODIN) test $(GOOSE_BUILD)
 
-$(SHADER_OUT)/triangle.frag.msl: $(SHADER_OUT)/triangle.frag.refl.json
+test-goose-uniforms: goose-test-fixtures
+	$(ODIN) test src/goose/tests \
+		-define:ODIN_TEST_NAMES=goose_tests.shader_uniform_layout_is_reflected_independently
 
-$(SHADER_OUT)/triangle.vert.spv: $(SHADER_SRC)
-	@mkdir -p $(SHADER_OUT)
-	$(SLANG) $(SHADER_SRC) -entry vertexMain -target spirv -o $@
+test-goose-vertex-buffers: goose-test-fixtures
+	$(ODIN) test src/goose/tests \
+		-define:ODIN_TEST_NAMES=goose_tests.shader_vertex_attributes_are_reflected_independently
 
-$(SHADER_OUT)/triangle.frag.spv: $(SHADER_SRC)
-	@mkdir -p $(SHADER_OUT)
-	$(SLANG) $(SHADER_SRC) -entry pixelMain -target spirv -o $@
+test-goose-compute: goose-test-fixtures
+	$(ODIN) run src/goose/tests/runtime -- compute
 
-$(SHADER_OUT)/compute.refl.json: shaders/compute.slang
-	@mkdir -p $(SHADER_OUT)
-	$(SLANG) shaders/compute.slang -entry computeMain -target metal \
-		-reflection-json $@ -o $(SHADER_OUT)/compute.msl
+test-goose-graphics: goose-test-fixtures
+	$(ODIN) run src/goose/tests/runtime -- graphics
 
-$(SHADER_OUT)/compute.msl: $(SHADER_OUT)/compute.refl.json
+test-goose-runtime: test-goose-uniforms test-goose-vertex-buffers test-goose-compute test-goose-graphics
 
-$(SHADER_OUT)/compute.spv: shaders/compute.slang
-	@mkdir -p $(SHADER_OUT)
-	$(SLANG) shaders/compute.slang -entry computeMain -target spirv -o $@
+test-glove:
+	$(ODIN) test src/glove/tests
 
-$(TRIANGLE_PARAMETERS): $(SHADER_GENERATOR_SRC) \
-                        $(SHADER_OUT)/triangle.vert.refl.json \
-                        $(SHADER_OUT)/triangle.frag.refl.json
-	$(ODIN) run $(SHADER_GENERATOR) -- --name triangle \
-		--package shader_parameters --shader-import ../shader \
-		--reflection $(SHADER_OUT)/triangle.vert.refl.json \
-		--reflection $(SHADER_OUT)/triangle.frag.refl.json --output $@
-
-$(COMPUTE_PARAMETERS): $(SHADER_GENERATOR_SRC) $(SHADER_OUT)/compute.refl.json
-	$(ODIN) run $(SHADER_GENERATOR) -- --name compute \
-		--package shader_parameters --shader-import ../shader \
-		--reflection $(SHADER_OUT)/compute.refl.json --output $@
-
-check-shader-parameters: $(SHADER_PARAMETER_FILES)
-	$(ODIN) run $(SHADER_GENERATOR) -- --check --name triangle \
-		--package shader_parameters --shader-import ../shader \
-		--reflection $(SHADER_OUT)/triangle.vert.refl.json \
-		--reflection $(SHADER_OUT)/triangle.frag.refl.json \
-		--output $(TRIANGLE_PARAMETERS)
-	$(ODIN) run $(SHADER_GENERATOR) -- --check --name compute \
-		--package shader_parameters --shader-import ../shader \
-		--reflection $(SHADER_OUT)/compute.refl.json \
-		--output $(COMPUTE_PARAMETERS)
-
-test-shader-generator: $(REFL_FILES)
-	$(ODIN) test $(SHADER_GENERATOR)
-
-$(SHADER_TEST_OUT)/%.vert.refl.json: $(SHADER_TEST_SRC)/%.slang
-	@mkdir -p $(SHADER_TEST_OUT)
-	$(SLANG) $< -entry vertexMain -target metal -reflection-json $@ \
-		-o $(SHADER_TEST_OUT)/$*.vert.msl
-
-$(SHADER_TEST_OUT)/%.vert.msl: $(SHADER_TEST_OUT)/%.vert.refl.json
-	@test -f $@
-
-$(SHADER_TEST_OUT)/%.frag.refl.json: $(SHADER_TEST_SRC)/%.slang
-	@mkdir -p $(SHADER_TEST_OUT)
-	$(SLANG) $< -entry pixelMain -target metal -reflection-json $@ \
-		-o $(SHADER_TEST_OUT)/$*.frag.msl
-
-$(SHADER_TEST_OUT)/%.frag.msl: $(SHADER_TEST_OUT)/%.frag.refl.json
-	@test -f $@
-
-$(SHADER_TEST_OUT)/%.vert.spv: $(SHADER_TEST_SRC)/%.slang
-	@mkdir -p $(SHADER_TEST_OUT)
-	$(SLANG) $< -entry vertexMain -target spirv -o $@
-
-$(SHADER_TEST_OUT)/%.frag.spv: $(SHADER_TEST_SRC)/%.slang
-	@mkdir -p $(SHADER_TEST_OUT)
-	$(SLANG) $< -entry pixelMain -target spirv -o $@
-
-$(SHADER_TEST_OUT)/%.compute.refl.json: $(SHADER_TEST_SRC)/%.slang
-	@mkdir -p $(SHADER_TEST_OUT)
-	$(SLANG) $< -entry computeMain -target metal -reflection-json $@ \
-		-o $(SHADER_TEST_OUT)/$*.compute.msl
-
-$(SHADER_TEST_OUT)/%.compute.msl: $(SHADER_TEST_OUT)/%.compute.refl.json
-	@test -f $@
-
-$(SHADER_TEST_OUT)/%.compute.spv: $(SHADER_TEST_SRC)/%.slang
-	@mkdir -p $(SHADER_TEST_OUT)
-	$(SLANG) $< -entry computeMain -target spirv -o $@
-
-$(SHADER_TEST_DIR)/%_shader_parameters.odin: $(SHADER_GENERATOR_SRC) \
-                                                  $(SHADER_TEST_OUT)/%.vert.refl.json \
-                                                  $(SHADER_TEST_OUT)/%.frag.refl.json
-	$(ODIN) run $(SHADER_GENERATOR) -- --name $* --package shader_tests \
-		--shader-import .. --reflection $(SHADER_TEST_OUT)/$*.vert.refl.json \
-		--reflection $(SHADER_TEST_OUT)/$*.frag.refl.json --output $@
-
-$(SHADER_TEST_DIR)/$(SHADER_TEST_COMPUTE)_shader_parameters.odin: $(SHADER_GENERATOR_SRC) \
-                                                                    $(SHADER_TEST_OUT)/$(SHADER_TEST_COMPUTE).compute.refl.json
-	$(ODIN) run $(SHADER_GENERATOR) -- --name $(SHADER_TEST_COMPUTE) \
-		--package shader_tests --shader-import .. \
-		--reflection $(SHADER_TEST_OUT)/$(SHADER_TEST_COMPUTE).compute.refl.json \
-		--output $@
-
-shader-test-fixtures: $(SHADER_TEST_FILES) $(SHADER_TEST_REFL) $(SHADER_TEST_PARAMETERS)
-
-test-shader-uniforms: shader-test-fixtures
-	$(ODIN) test $(SHADER_TEST_DIR) \
-		-define:ODIN_TEST_NAMES=shader_tests.shader_uniform_layout_is_reflected_independently
-
-test-shader-vertex-buffers: shader-test-fixtures
-	$(ODIN) test $(SHADER_TEST_DIR) \
-		-define:ODIN_TEST_NAMES=shader_tests.shader_vertex_attributes_are_reflected_independently
-
-test-shader-compute: shader-test-fixtures
-	$(ODIN) run $(SHADER_TEST_DIR)/runtime -- compute
-
-test-shader-graphics: shader-test-fixtures
-	$(ODIN) run $(SHADER_TEST_DIR)/runtime -- graphics
-
-test-shader-runtime: test-shader-uniforms test-shader-vertex-buffers test-shader-compute test-shader-graphics
+test-glove-optimized:
+	$(ODIN) test src/glove/tests $(RELEASE_FLAGS)
 
 build: shaders
 	$(ODIN) build $(SRC) -out:$(BIN) $(RELEASE_FLAGS)
@@ -197,12 +73,14 @@ debug-optimized: shaders
 compute: shaders
 	$(ODIN) run compute
 
-test: shaders check-shader-parameters test-shader-generator test-shader-runtime
+test: shaders test-goose-core test-goose-build test-goose-runtime test-glove
 	$(ODIN) test $(SRC) -all-packages
 
-test-optimized: shaders check-shader-parameters test-shader-generator test-shader-runtime
+test-optimized: shaders test-goose-core test-goose-build test-goose-runtime test-glove-optimized
 	$(ODIN) test $(SRC) -all-packages $(RELEASE_FLAGS)
 
 clean:
-	rm -f $(BIN) $(BIN_DEBUG) $(SHADER_FILES) $(REFL_FILES) $(SHADER_PARAMETER_FILES) \
-		$(SHADER_TEST_FILES) $(SHADER_TEST_REFL) $(SHADER_TEST_PARAMETERS)
+	rm -f $(BIN) $(BIN_DEBUG)
+	rm -rf shaders/generated src/goose/tests/generated
+	rm -f src/shader_parameters/*_shader_parameters.odin \
+		src/goose/tests/*_shader_parameters.odin

@@ -1,0 +1,25 @@
+{
+  "outputDir": "shaders/generated",
+  "parameterOutputDir": "src/shader_parameters",
+  "package": "shader_parameters",
+  "gooseImport": "../goose",
+  "shaders": [
+    {
+      "name": "triangle",
+      "source": "shaders/triangle.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "unlit_color",
+      "source": "shaders/unlit_color.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "compute",
+      "source": "shaders/compute.slang",
+      "compute": "computeMain"
+    }
+  ]
+}

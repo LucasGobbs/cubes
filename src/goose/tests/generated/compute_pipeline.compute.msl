@@ -1,0 +1,59 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 1 "src/goose/tests/slang/compute_pipeline.slang"
+struct ComputeUniforms_0
+{
+    float scale_0;
+    float bias_0;
+    uint count_0;
+};
+
+struct SLANG_ParameterGroup_UniformBlock_0
+{
+    ComputeUniforms_0 data_0;
+};
+
+
+#line 12
+struct KernelContext_0
+{
+    SLANG_ParameterGroup_UniformBlock_0 constant* UniformBlock_0;
+    float device* output_data_0;
+    float device* input_data_0;
+};
+
+
+#line 17
+[[kernel]] void computeMain(uint3 id_0 [[thread_position_in_grid]], SLANG_ParameterGroup_UniformBlock_0 constant* UniformBlock_1 [[buffer(0)]], float device* output_data_1 [[buffer(2)]], float device* input_data_1 [[buffer(1)]])
+{
+
+#line 17
+    thread KernelContext_0 kernelContext_0;
+
+#line 17
+    (&kernelContext_0)->UniformBlock_0 = UniformBlock_1;
+
+#line 17
+    (&kernelContext_0)->output_data_0 = output_data_1;
+
+#line 17
+    (&kernelContext_0)->input_data_0 = input_data_1;
+    uint _S1 = id_0.x;
+
+#line 18
+    if(_S1 < ((&UniformBlock_1->data_0)->count_0))
+    {
+
+#line 19
+        *((&kernelContext_0)->output_data_0+_S1) = (&kernelContext_0)->input_data_0[_S1] * (&UniformBlock_1->data_0)->scale_0 + (&UniformBlock_1->data_0)->bias_0;
+
+#line 18
+    }
+
+
+    return;
+}
+

@@ -2,129 +2,103 @@ package main
 
 import "core:log"
 import "core:math/linalg"
-import input "input"
-import loader "loader"
-import sdl "vendor:sdl3"
-DEBUG :: true
-PLATFORM :: "METAL"
-Vec3 :: [3]f32
+import glove "glove"
 
+Game_State :: struct {
+	assets:            Renderer_Assets,
+	scene:             Scene,
+	center_node:       int,
+	move_action:       glove.Axis_2D_Action,
+	quit_action:       glove.Button_Action,
+	mouse_sensitivity: f32,
+	rotation_speed:    f32,
+	rotation:          f32,
+	model_scale:       matrix[4, 4]f32,
+}
 
 main :: proc() {
 	context.logger = log.create_console_logger()
-	sdl.SetLogPriorities(.VERBOSE)
+	game: Game_State
+	gfx: Gfx
+	created := gfx_create(&gfx, rawptr(&game), game_create)
+	assert(created)
+	defer gfx_destroy(&gfx, rawptr(&game), game_destroy)
+	gfx_update(&gfx, rawptr(&game), game_tick)
+}
 
-	gfx := gfx_init()
-	defer gfx_destroy(&gfx)
-
-	inputs := input.system_create(input.sdl_adapter())
-	defer input.system_destroy(&inputs)
-
-	move_action := input.add_axis_2d(&inputs, "player.move")
-	quit_action := input.add_button(&inputs, "app.quit")
-
-	input.bind_button_axis_2d(
-		&inputs,
-		move_action,
+game_create :: proc(gfx: ^Gfx, raw_game: rawptr) -> bool {
+	game := cast(^Game_State)raw_game
+	inputs := gfx_input(gfx)
+	game.move_action = glove.add_axis_2d(inputs, "player.move")
+	game.quit_action = glove.add_button(inputs, "app.quit")
+	glove.bind_button_axis_2d(
+		inputs,
+		game.move_action,
 		{up = .W, down = .S, left = .A, right = .D, normalize = true},
 	)
+	glove.bind_key(inputs, game.quit_action, .ESCAPE)
 
-	input.bind_key(&inputs, quit_action, .ESCAPE)
-
-	renderer := renderer_init(&gfx)
-	defer renderer_destroy(&renderer)
-
-	uploader := Uploader {
-		gfx = &gfx,
-	}
-	defer uploader_destroy(&uploader)
-
-	imported_model := loader.model_import_from_obj("static/ship-large.obj", "static/colormap.png")
-	model := model_create(
-		&gfx,
-		&imported_model,
-		renderer.default_sampler,
-		&renderer.basic_pipeline,
+	game.assets = renderer_load(
+		&gfx.renderer,
+		{
+			model_path = "static/ship-large.obj",
+			texture_path = "static/colormap.png",
+			unlit_tint = {0.15, 0.85, 0.3, 1},
+		},
 	)
-	defer model_destroy(&gfx, &model)
-
-	model_upload_to_gpu(&model, &uploader)
-	loader.model_import_destroy(&imported_model)
-
-	scene: Scene
-	defer scene_destroy(&scene)
-
-	model_scale := linalg.matrix4_scale_f32({0.4, 0.4, 0.4})
-	scene_add_model(&scene, &model, linalg.matrix4_translate_f32({-5, -.5, -12}) * model_scale)
-	center_node := scene_add_model(
-		&scene,
-		&model,
-		linalg.matrix4_translate_f32({0, -.5, -12}) * model_scale,
+	game.model_scale = linalg.matrix4_scale_f32({0.4, 0.4, 0.4})
+	scene_add_model(
+		&game.scene,
+		&game.assets.textured_model,
+		linalg.matrix4_translate_f32({-5, -.5, -12}) * game.model_scale,
 	)
-	scene_add_model(&scene, &model, linalg.matrix4_translate_f32({5, -.5, -12}) * model_scale)
-
-	camera := camera_create(
-		position = Vec3{0, 0, 3.0},
-		target = Vec3{},
-		projection = linalg.matrix4_perspective(
-			linalg.to_radians(f32(70)),
-			f32(gfx.window_size.x) / f32(gfx.window_size.y),
-			0.1,
-			1000,
-		),
+	game.center_node = scene_add_model(
+		&game.scene,
+		&game.assets.textured_model,
+		linalg.matrix4_translate_f32({0, -.5, -12}) * game.model_scale,
 	)
-	mouse_sensitivity := linalg.to_radians(f32(0.1))
-	rotation_speed := linalg.to_radians(f32(90))
-	rotation := f32(0)
+	scene_add_model(
+		&game.scene,
+		&game.assets.unlit_model,
+		linalg.matrix4_translate_f32({5, -.5, -12}) * game.model_scale,
+	)
+	game.mouse_sensitivity = linalg.to_radians(f32(0.1))
+	game.rotation_speed = linalg.to_radians(f32(90))
+	return true
+}
 
-	last_ticks := sdl.GetTicks()
-	main_loop: for {
-		current_ticks := sdl.GetTicks()
-		delta_time := f32(current_ticks - last_ticks) / 1000
-		last_ticks = sdl.GetTicks()
-
-		event: sdl.Event
-		for sdl.PollEvent(&event) {
-			if !input.register_event(&inputs, &event) && event.type == .QUIT {
-				break main_loop
-			}
-		}
-
-		input.update(&inputs)
-		if input.pressed(&inputs, quit_action) do break main_loop
-
-		look_delta := input.mouse_delta(&inputs)
-		camera_rotate(&camera, look_delta.x * mouse_sensitivity, -look_delta.y * mouse_sensitivity)
-
-		move := input.axis_2d(&inputs, move_action)
-		move_direction := camera.direction * move.y + camera.right * move.x
-		move_velocity: f32 = 5.0
-
-		if move_direction != {} {
-			camera.position += move_direction * move_velocity * delta_time
-		}
-
-		has_swapchain := gfx_begin_frame(&gfx)
-
-		rotation += rotation_speed * delta_time
-
-		scene.nodes[center_node].transform =
-			linalg.matrix4_translate_f32({0, -.5, -12}) *
-			linalg.matrix4_rotate_f32(rotation, {0, 1, 0}) *
-			model_scale
-
-		if has_swapchain {
-			for &node in scene.nodes {
-				renderer_submit_model(&renderer, node.model, node.transform)
-			}
-
-			renderer_begin_pass(&renderer, camera_view_projection(&camera))
-			renderer_flush(&renderer)
-			renderer_end_pass(&renderer)
-		}
-
-		gfx_end_frame(&gfx)
-		free_all(context.temp_allocator)
+game_tick :: proc(gfx: ^Gfx, delta_time: f32, raw_game: rawptr) {
+	game := cast(^Game_State)raw_game
+	inputs := gfx_input(gfx)
+	if glove.pressed(inputs, game.quit_action) {
+		gfx_request_quit(gfx)
+		return
 	}
 
+	camera := gfx_camera(gfx)
+	look_delta := glove.mouse_delta(inputs)
+	camera_rotate(
+		camera,
+		look_delta.x * game.mouse_sensitivity,
+		-look_delta.y * game.mouse_sensitivity,
+	)
+	move := glove.axis_2d(inputs, game.move_action)
+	move_direction := camera.direction * move.y + camera.right * move.x
+	if move_direction != {} {
+		camera.position += move_direction * f32(5) * delta_time
+	}
+
+	game.rotation += game.rotation_speed * delta_time
+	game.scene.nodes[game.center_node].transform =
+		linalg.matrix4_translate_f32({0, -.5, -12}) *
+		linalg.matrix4_rotate_f32(game.rotation, {0, 1, 0}) *
+		game.model_scale
+	gfx_render(gfx, &game.scene)
+}
+
+game_destroy :: proc(gfx: ^Gfx, raw_game: rawptr) {
+	game := cast(^Game_State)raw_game
+	scene_destroy(&game.scene)
+	renderer_unload(&gfx.renderer, &game.assets)
+	game^ = {}
 }

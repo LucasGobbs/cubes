@@ -30,7 +30,8 @@ uploader_begin :: proc(uploader: ^Uploader) {
 	uploader.pass = sdl.BeginGPUCopyPass(uploader.command_buffer)
 }
 
-uploader_upload_buffer :: proc(uploader: ^Uploader, destination: ^Buffer) {
+uploader_upload_buffer :: proc(uploader: ^Uploader, handle: Buffer_Handle) {
+	destination := gfx_buffer_get(uploader.gfx, handle)
 	data := destination._temporary_raw_data
 	staging := uploader_acquire_staging(uploader, u32(len(data)))
 
@@ -57,7 +58,8 @@ uploader_upload_buffer :: proc(uploader: ^Uploader, destination: ^Buffer) {
 // mem.copy(texture_transfer_mem, pixels, int(pixels_byte_size))
 
 
-uploader_upload_texture :: proc(uploader: ^Uploader, destination: ^Texture) {
+uploader_upload_texture :: proc(uploader: ^Uploader, handle: Texture_Handle) {
+	destination := gfx_texture_get(uploader.gfx, handle)
 	data := destination._temporary_raw_data
 	staging := uploader_acquire_staging(uploader, u32(len(data)))
 
@@ -68,12 +70,7 @@ uploader_upload_texture :: proc(uploader: ^Uploader, destination: ^Texture) {
 	sdl.UploadToGPUTexture(
 		uploader.pass,
 		{transfer_buffer = staging.buffer},
-		{
-			texture = destination.handle,
-			w = u32(destination.width),
-			h = u32(destination.height),
-			d = 1,
-		},
+		{texture = destination.handle, w = destination.width, h = destination.height, d = 1},
 		false,
 	)
 
