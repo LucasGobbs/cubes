@@ -185,21 +185,31 @@ convert_vertex_attributes :: proc(
 	return result
 }
 
+push_uniform_data :: proc(
+	command_buffer: ^sdl.GPUCommandBuffer,
+	binding: goose.Uniform_Block,
+	data: rawptr,
+	size: u32,
+) {
+	assert(command_buffer != nil && data != nil)
+	assert(size == binding.size)
+	switch binding.stage {
+	case .Vertex:
+		sdl.PushGPUVertexUniformData(command_buffer, binding.location.slot, data, size)
+	case .Fragment:
+		sdl.PushGPUFragmentUniformData(command_buffer, binding.location.slot, data, size)
+	case .Compute:
+		sdl.PushGPUComputeUniformData(command_buffer, binding.location.slot, data, size)
+	}
+}
+
 push_uniform :: proc(
 	command_buffer: ^sdl.GPUCommandBuffer,
 	binding: goose.Uniform_Block,
 	data: ^$T,
 ) {
-	assert(command_buffer != nil)
 	assert(size_of(T) == binding.size)
-	switch binding.stage {
-	case .Vertex:
-		sdl.PushGPUVertexUniformData(command_buffer, binding.location.slot, data, binding.size)
-	case .Fragment:
-		sdl.PushGPUFragmentUniformData(command_buffer, binding.location.slot, data, binding.size)
-	case .Compute:
-		sdl.PushGPUComputeUniformData(command_buffer, binding.location.slot, data, binding.size)
-	}
+	push_uniform_data(command_buffer, binding, rawptr(data), binding.size)
 }
 
 bind_sampler :: proc(

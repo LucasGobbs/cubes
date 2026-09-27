@@ -5,25 +5,41 @@ BIN       := main
 BIN_DEBUG := main_debug
 
 GOOSE_BUILD         := src/goose/tools/build
+GOOSE_BUILD_BIN     := goose-build.bin
 GOOSE_MANIFEST      := shaders/goose.json
 GOOSE_TEST_MANIFEST := src/goose/tests/goose.json
+GBBFX_DEFAULTS_MANIFEST := src/gbbfx/defaults/goose.json
 GOOSE_PLATFORM      ?= metal
 
 RELEASE_FLAGS := -o:aggressive -microarch:native -no-bounds-check -disable-assert
 DEBUG_FLAGS   := -debug -o:none
 
-.PHONY: all build run run-optimized debug debug-optimized shaders goose-test-fixtures \
-        test-goose-core test-goose-build test-goose-uniforms test-goose-vertex-buffers \
-        test-goose-compute test-goose-graphics test-goose-runtime test-glove \
-        test-glove-optimized test test-optimized compute clean
+# Editor UI (microui overlay) is compiled in only when EDITOR=true.
+EDITOR        ?= false
+EDITOR_DEFINE := -define:EDITOR=$(EDITOR)
+
+.PHONY: all build run run-optimized debug debug-optimized shaders default-shaders \
+        goose-test-fixtures test-goose-core test-goose-build test-goose-uniforms \
+        test-goose-vertex-buffers test-goose-compute test-goose-graphics \
+        test-goose-runtime test-glove test-glove-optimized test-gbbfx \
+        test-gbbfx-optimized test test-optimized compute editor clean
 all: build
 
-shaders:
-	$(ODIN) run $(GOOSE_BUILD) -- --manifest $(GOOSE_MANIFEST) \
+# The shader tool skips up-to-date shaders itself; build it once and only
+# rebuild when its sources (or goose core) change.
+$(GOOSE_BUILD_BIN): $(wildcard src/goose/tools/build/*.odin) $(wildcard src/goose/*.odin)
+	$(ODIN) build $(GOOSE_BUILD) -out:$(GOOSE_BUILD_BIN)
+
+shaders: default-shaders $(GOOSE_BUILD_BIN)
+	./$(GOOSE_BUILD_BIN) --manifest $(GOOSE_MANIFEST) \
 		--platform $(GOOSE_PLATFORM) --slang $(SLANG)
 
-goose-test-fixtures:
-	$(ODIN) run $(GOOSE_BUILD) -- --manifest $(GOOSE_TEST_MANIFEST) \
+default-shaders: $(GOOSE_BUILD_BIN)
+	./$(GOOSE_BUILD_BIN) --manifest $(GBBFX_DEFAULTS_MANIFEST) \
+		--platform $(GOOSE_PLATFORM) --slang $(SLANG)
+
+goose-test-fixtures: $(GOOSE_BUILD_BIN)
+	./$(GOOSE_BUILD_BIN) --manifest $(GOOSE_TEST_MANIFEST) \
 		--platform $(GOOSE_PLATFORM) --slang $(SLANG)
 
 test-goose-core:
@@ -55,32 +71,43 @@ test-glove:
 test-glove-optimized:
 	$(ODIN) test src/glove/tests $(RELEASE_FLAGS)
 
+test-gbbfx: default-shaders
+	$(ODIN) test src/gbbfx
+
+test-gbbfx-optimized: default-shaders
+	$(ODIN) test src/gbbfx $(RELEASE_FLAGS)
+
 build: shaders
-	$(ODIN) build $(SRC) -out:$(BIN) $(RELEASE_FLAGS)
+	$(ODIN) build $(SRC) -out:$(BIN) $(RELEASE_FLAGS) $(EDITOR_DEFINE)
 
 run: shaders
-	$(ODIN) run $(SRC) -- $(ARGS)
+	$(ODIN) run $(SRC) $(EDITOR_DEFINE) -- $(ARGS)
 
 run-optimized: shaders
-	$(ODIN) run $(SRC) $(RELEASE_FLAGS) -- $(ARGS)
+	$(ODIN) run $(SRC) $(RELEASE_FLAGS) $(EDITOR_DEFINE) -- $(ARGS)
 
 debug: shaders
-	$(ODIN) build $(SRC) -out:$(BIN_DEBUG) $(DEBUG_FLAGS)
+	$(ODIN) build $(SRC) -out:$(BIN_DEBUG) $(DEBUG_FLAGS) $(EDITOR_DEFINE)
 
 debug-optimized: shaders
-	$(ODIN) build $(SRC) -out:$(BIN_DEBUG) $(RELEASE_FLAGS) -debug
+	$(ODIN) build $(SRC) -out:$(BIN_DEBUG) $(RELEASE_FLAGS) -debug $(EDITOR_DEFINE)
+
+editor: EDITOR = true
+editor: debug
+	./$(BIN_DEBUG)
 
 compute: shaders
 	$(ODIN) run compute
 
-test: shaders test-goose-core test-goose-build test-goose-runtime test-glove
+test: shaders test-goose-core test-goose-build test-goose-runtime test-glove test-gbbfx
 	$(ODIN) test $(SRC) -all-packages
 
-test-optimized: shaders test-goose-core test-goose-build test-goose-runtime test-glove-optimized
+test-optimized: shaders test-goose-core test-goose-build test-goose-runtime test-glove-optimized test-gbbfx-optimized
 	$(ODIN) test $(SRC) -all-packages $(RELEASE_FLAGS)
 
 clean:
-	rm -f $(BIN) $(BIN_DEBUG)
-	rm -rf shaders/generated src/goose/tests/generated
+	rm -f $(BIN) $(BIN_DEBUG) $(GOOSE_BUILD_BIN)
+	rm -rf shaders/generated src/goose/tests/generated src/gbbfx/defaults/generated
 	rm -f src/shader_parameters/*_shader_parameters.odin \
+		src/gbbfx/defaults/*_shader_parameters.odin \
 		src/goose/tests/*_shader_parameters.odin

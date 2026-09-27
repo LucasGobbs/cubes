@@ -20,6 +20,11 @@
       "name": "compute",
       "source": "shaders/compute.slang",
       "compute": "computeMain"
+    },
+    {
+      "name": "blur",
+      "source": "shaders/blur.slang",
+      "compute": "computeMain"
     }
   ]
 }

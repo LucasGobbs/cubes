@@ -1,0 +1,43 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 15 "src/gbbfx/defaults/shaders/unlit_color.slang"
+struct pixelOutput_0
+{
+    float4 output_0 [[color(0)]];
+};
+
+
+#line 15
+struct _MatrixStorage_float4x4_ColMajornatural_0
+{
+    array<float4, int(4)> data_0;
+};
+
+
+#line 15
+struct Uniforms_natural_0
+{
+    _MatrixStorage_float4x4_ColMajornatural_0 mvp_0;
+    float4 tint_0;
+};
+
+
+#line 15
+struct SLANG_ParameterGroup_UniformBlock_natural_0
+{
+    Uniforms_natural_0 data_1;
+};
+
+
+#line 27
+[[fragment]] pixelOutput_0 pixelMain(float4 position_0 [[position]], SLANG_ParameterGroup_UniformBlock_natural_0 constant* UniformBlock_0 [[buffer(0)]])
+{
+
+#line 27
+    pixelOutput_0 _S1 = { (&UniformBlock_0->data_1)->tint_0 };
+    return _S1;
+}
+

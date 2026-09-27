@@ -5,6 +5,8 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:os"
 import "core:path/filepath"
+import "core:strings"
+import "core:time"
 
 Manifest_Shader :: struct {
 	name:     string,
@@ -87,6 +89,27 @@ run_slang :: proc(slang_path, source, entrypoint, target, output, reflection: st
 	if !state.success do fatal("Slang failed for %s:%s", source, entrypoint)
 }
 
+manifest_stage_paths :: proc(
+	manifest: Manifest,
+	shader: Manifest_Shader,
+	stage: string,
+	platform: goose.Platform,
+) -> (
+	artifact: string,
+	reflection: string,
+) {
+	stage_suffix := stage
+	if stage == "vertex" do stage_suffix = "vert"
+	if stage == "fragment" do stage_suffix = "frag"
+	extension := "msl" if platform == .Metal else "spv"
+	base :=
+		filepath.join(
+			{manifest.output_dir, fmt.tprintf("%s.%s", shader.name, stage_suffix)},
+			context.temp_allocator,
+		) or_else ""
+	return fmt.tprintf("%s.%s", base, extension), fmt.tprintf("%s.refl.json", base)
+}
+
 compile_manifest_stage :: proc(
 	manifest: Manifest,
 	shader: Manifest_Shader,
@@ -94,20 +117,72 @@ compile_manifest_stage :: proc(
 	platform: goose.Platform,
 	slang_path: string,
 ) -> string {
-	stage_suffix := stage
-	if stage == "vertex" do stage_suffix = "vert"
-	if stage == "fragment" do stage_suffix = "frag"
 	target := "metal" if platform == .Metal else "spirv"
-	extension := "msl" if platform == .Metal else "spv"
-	base :=
-		filepath.join(
-			{manifest.output_dir, fmt.tprintf("%s.%s", shader.name, stage_suffix)},
-			context.temp_allocator,
-		) or_else ""
-	output := fmt.tprintf("%s.%s", base, extension)
-	reflection := fmt.tprintf("%s.refl.json", base)
+	output, reflection := manifest_stage_paths(manifest, shader, stage, platform)
 	run_slang(slang_path, shader.source, entrypoint, target, output, reflection)
+	manifest_normalize_mtime(output, reflection)
 	return reflection
+}
+
+// slangc skips writing the artifact when the generated code is byte-identical,
+// but always rewrites the reflection JSON. Freshness is mtime-based, so an
+// artifact older than its reflection would look stale forever; rewrite it
+// with its own bytes to bring its mtime up to the compile it belongs to.
+manifest_normalize_mtime :: proc(artifact, reflection: string) {
+	artifact_time, artifact_error := os.last_write_time_by_name(artifact)
+	reflection_time, reflection_error := os.last_write_time_by_name(reflection)
+	if artifact_error != nil || reflection_error != nil do return
+	if time.diff(artifact_time, reflection_time) <= 0 do return
+	data, read_error := os.read_entire_file(artifact, context.temp_allocator)
+	if read_error != nil do return
+	_ = os.write_entire_file(artifact, data)
+}
+
+// A shader is fresh when its .slang source and the manifest itself are older
+// than every generated output, and the generated parameter file targets the
+// requested platform. The platform marker matters because the parameter file
+// bakes `platform = .X` and #loads the platform-specific artifact, so
+// switching --platform must regenerate even when nothing else changed.
+manifest_shader_fresh :: proc(
+	manifest_path: string,
+	manifest: Manifest,
+	shader: Manifest_Shader,
+	parameter_output: string,
+	platform: goose.Platform,
+) -> bool {
+	parameter_data, read_error := os.read_entire_file(
+		parameter_output,
+		context.temp_allocator,
+	)
+	if read_error != nil do return false
+	platform_marker := "platform = .Metal" if platform == .Metal else "platform = .Vulkan"
+	if !strings.contains(string(parameter_data), platform_marker) do return false
+
+	latest_input, manifest_error := os.last_write_time_by_name(manifest_path)
+	if manifest_error != nil do return false
+	source_time, source_error := os.last_write_time_by_name(shader.source)
+	if source_error != nil do return false
+	if time.diff(latest_input, source_time) > 0 do latest_input = source_time
+
+	outputs: [dynamic]string
+	defer delete(outputs)
+	append(&outputs, parameter_output)
+	stages := [?][2]string {
+		{"vertex", shader.vertex},
+		{"fragment", shader.fragment},
+		{"compute", shader.compute},
+	}
+	for entry in stages {
+		if entry[1] == "" do continue
+		artifact, reflection := manifest_stage_paths(manifest, shader, entry[0], platform)
+		append(&outputs, artifact, reflection)
+	}
+	for output in outputs {
+		output_time, output_error := os.last_write_time_by_name(output)
+		if output_error != nil do return false
+		if time.diff(output_time, latest_input) > 0 do return false
+	}
+	return true
 }
 
 build_manifest :: proc(options: Manifest_Options) {
@@ -124,6 +199,24 @@ build_manifest :: proc(options: Manifest_Options) {
 
 	for shader in manifest.shaders {
 		if shader.name == "" || shader.source == "" do fatal("Goose shader name and source are required")
+		parameter_output :=
+			filepath.join(
+				{
+					manifest.parameter_output_dir,
+					fmt.tprintf("%s_shader_parameters.odin", shader.name),
+				},
+				context.temp_allocator,
+			) or_else ""
+		if manifest_shader_fresh(
+			options.path,
+			manifest,
+			shader,
+			parameter_output,
+			options.platform,
+		) {
+			fmt.printfln("goose: %s up to date", shader.name)
+			continue
+		}
 		reflections: [dynamic]string
 		if shader.vertex != "" {
 			append_elem(
@@ -166,14 +259,6 @@ build_manifest :: proc(options: Manifest_Options) {
 		}
 		if len(reflections) == 0 do fatal("Goose shader %s has no entry points", shader.name)
 
-		parameter_output :=
-			filepath.join(
-				{
-					manifest.parameter_output_dir,
-					fmt.tprintf("%s_shader_parameters.odin", shader.name),
-				},
-				context.temp_allocator,
-			) or_else ""
 		generation_options := Options {
 			name         = shader.name,
 			package_name = manifest.package_name,

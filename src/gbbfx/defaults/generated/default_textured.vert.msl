@@ -1,0 +1,78 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 13 "src/gbbfx/defaults/shaders/textured.slang"
+struct vertexMain_Result_0
+{
+    float4 position_0 [[position]];
+    float4 color_0 [[user(COLOR)]];
+    float2 uv_0 [[user(UV)]];
+};
+
+
+#line 13
+struct vertexInput_0
+{
+    float3 position_1 [[attribute(0)]];
+    float4 color_1 [[attribute(1)]];
+    float2 uv_1 [[attribute(2)]];
+};
+
+
+#line 13
+struct _MatrixStorage_float4x4_ColMajornatural_0
+{
+    array<float4, int(4)> data_0;
+};
+
+
+#line 13
+struct Uniforms_natural_0
+{
+    _MatrixStorage_float4x4_ColMajornatural_0 mvp_0;
+};
+
+
+#line 13
+struct SLANG_ParameterGroup_UniformBlock_natural_0
+{
+    Uniforms_natural_0 data_1;
+};
+
+
+struct VertexOutput_0
+{
+    float4 position_2;
+    float4 color_2;
+    float2 uv_2;
+};
+
+
+#line 19
+[[vertex]] vertexMain_Result_0 vertexMain(vertexInput_0 _S1 [[stage_in]], SLANG_ParameterGroup_UniformBlock_natural_0 constant* UniformBlock_0 [[buffer(0)]])
+{
+
+#line 27
+    thread VertexOutput_0 output_0;
+    (&output_0)->position_2 = (((float4(_S1.position_1, 1.0f)) * (matrix<float,int(4),int(4)> ((&UniformBlock_0->data_1)->mvp_0.data_0[int(0)][int(0)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(1)][int(0)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(2)][int(0)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(3)][int(0)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(0)][int(1)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(1)][int(1)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(2)][int(1)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(3)][int(1)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(0)][int(2)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(1)][int(2)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(2)][int(2)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(3)][int(2)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(0)][int(3)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(1)][int(3)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(2)][int(3)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(3)][int(3)]))));
+    (&output_0)->color_2 = _S1.color_1;
+    (&output_0)->uv_2 = _S1.uv_1;
+
+#line 30
+    thread vertexMain_Result_0 _S2;
+
+#line 30
+    (&_S2)->position_0 = output_0.position_2;
+
+#line 30
+    (&_S2)->color_0 = output_0.color_2;
+
+#line 30
+    (&_S2)->uv_0 = output_0.uv_2;
+
+#line 30
+    return _S2;
+}
+

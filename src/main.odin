@@ -1,104 +1,68 @@
+// Entry point: forwards to one scene picked by CLI argument, e.g.
+// `./main simple` or `make run ARGS=simple`. Defaults to "benchmark".
 package main
 
-import "core:log"
-import "core:math/linalg"
+import gbbfx "gbbfx"
 import glove "glove"
+import "core:fmt"
+import "core:log"
+import "core:os"
+import sdl "vendor:sdl3"
 
-Game_State :: struct {
-	assets:            Renderer_Assets,
-	scene:             Scene,
-	center_node:       int,
-	move_action:       glove.Axis_2D_Action,
-	quit_action:       glove.Button_Action,
-	mouse_sensitivity: f32,
-	rotation_speed:    f32,
-	rotation:          f32,
-	model_scale:       matrix[4, 4]f32,
-}
+quit_action: glove.Button_Action
 
 main :: proc() {
 	context.logger = log.create_console_logger()
-	game: Game_State
-	gfx: Gfx
-	created := gfx_create(&gfx, rawptr(&game), game_create)
+
+	name := "benchmark"
+	if len(os.args) > 1 do name = os.args[1]
+	scene, found := scene_lookup(name)
+	if !found {
+		log.errorf("unknown scene %q — expected one of: %v", name, SCENE_NAMES)
+		os.exit(1)
+	}
+
+	gfx: gbbfx.Gfx
+	created := gbbfx.create(&gfx, rawptr(&scene), scene_create)
 	assert(created)
-	defer gfx_destroy(&gfx, rawptr(&game), game_destroy)
-	gfx_update(&gfx, rawptr(&game), game_tick)
+	defer gbbfx.gfx_destroy(&gfx, rawptr(&scene), scene_destroy)
+	gbbfx.gfx_update(&gfx, rawptr(&scene), scene_tick)
 }
 
-game_create :: proc(gfx: ^Gfx, raw_game: rawptr) -> bool {
-	game := cast(^Game_State)raw_game
-	inputs := gfx_input(gfx)
-	game.move_action = glove.add_axis_2d(inputs, "player.move")
-	game.quit_action = glove.add_button(inputs, "app.quit")
-	glove.bind_button_axis_2d(
-		inputs,
-		game.move_action,
-		{up = .W, down = .S, left = .A, right = .D, normalize = true},
-	)
-	glove.bind_key(inputs, game.quit_action, .ESCAPE)
-
-	game.assets = renderer_load(
-		&gfx.renderer,
-		{
-			model_path = "static/ship-large.obj",
-			texture_path = "static/colormap.png",
-			unlit_tint = {0.15, 0.85, 0.3, 1},
-		},
-	)
-	game.model_scale = linalg.matrix4_scale_f32({0.4, 0.4, 0.4})
-	scene_add_model(
-		&game.scene,
-		&game.assets.textured_model,
-		linalg.matrix4_translate_f32({-5, -.5, -12}) * game.model_scale,
-	)
-	game.center_node = scene_add_model(
-		&game.scene,
-		&game.assets.textured_model,
-		linalg.matrix4_translate_f32({0, -.5, -12}) * game.model_scale,
-	)
-	scene_add_model(
-		&game.scene,
-		&game.assets.unlit_model,
-		linalg.matrix4_translate_f32({5, -.5, -12}) * game.model_scale,
-	)
-	game.mouse_sensitivity = linalg.to_radians(f32(0.1))
-	game.rotation_speed = linalg.to_radians(f32(90))
-	return true
+scene_create :: proc(gfx: ^gbbfx.Gfx, raw_scene: rawptr) -> bool {
+	scene := cast(^Scene)raw_scene
+	inputs := gbbfx.gfx_input(gfx)
+	quit_action = glove.add_button(inputs, "app.quit")
+	glove.bind_key(inputs, quit_action, .ESCAPE)
+	return scene.create(scene, gfx)
 }
 
-game_tick :: proc(gfx: ^Gfx, delta_time: f32, raw_game: rawptr) {
-	game := cast(^Game_State)raw_game
-	inputs := gfx_input(gfx)
-	if glove.pressed(inputs, game.quit_action) {
-		gfx_request_quit(gfx)
+scene_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, raw_scene: rawptr) {
+	scene := cast(^Scene)raw_scene
+	inputs := gbbfx.gfx_input(gfx)
+	if glove.pressed(inputs, quit_action) {
+		gbbfx.gfx_request_quit(gfx)
 		return
 	}
+	scene.tick(scene, gfx, delta_time)
 
-	camera := gfx_camera(gfx)
-	look_delta := glove.mouse_delta(inputs)
-	camera_rotate(
-		camera,
-		look_delta.x * game.mouse_sensitivity,
-		-look_delta.y * game.mouse_sensitivity,
-	)
-	move := glove.axis_2d(inputs, game.move_action)
-	move_direction := camera.direction * move.y + camera.right * move.x
-	if move_direction != {} {
-		camera.position += move_direction * f32(5) * delta_time
+	scene.fps_timer += delta_time
+	if scene.fps_timer >= 0.5 {
+		scene.fps_timer = 0
+		title := fmt.caprintf(
+			"Cubes — %s — %.0f FPS",
+			scene.name,
+			1 / delta_time,
+			allocator = context.temp_allocator,
+		)
+		_ = sdl.SetWindowTitle(gfx.window, title)
 	}
-
-	game.rotation += game.rotation_speed * delta_time
-	game.scene.nodes[game.center_node].transform =
-		linalg.matrix4_translate_f32({0, -.5, -12}) *
-		linalg.matrix4_rotate_f32(game.rotation, {0, 1, 0}) *
-		game.model_scale
-	gfx_render(gfx, &game.scene)
 }
 
-game_destroy :: proc(gfx: ^Gfx, raw_game: rawptr) {
-	game := cast(^Game_State)raw_game
-	scene_destroy(&game.scene)
-	renderer_unload(&gfx.renderer, &game.assets)
-	game^ = {}
+scene_destroy :: proc(gfx: ^gbbfx.Gfx, raw_scene: rawptr) {
+	scene := cast(^Scene)raw_scene
+	if scene.state != nil {
+		scene.destroy(scene, gfx)
+		scene.state = nil
+	}
 }
