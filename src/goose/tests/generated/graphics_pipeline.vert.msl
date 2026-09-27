@@ -1,0 +1,51 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 4 "src/goose/tests/slang/graphics_pipeline.slang"
+struct vertexMain_Result_0
+{
+    float4 position_0 [[position]];
+    float4 color_0 [[user(COLOR)]];
+};
+
+
+#line 4
+struct vertexInput_0
+{
+    float3 position_1 [[attribute(0)]];
+    float4 color_1 [[attribute(1)]];
+};
+
+
+#line 9
+struct VertexOutput_0
+{
+    float4 position_2;
+    float4 color_2;
+};
+
+
+#line 9
+[[vertex]] vertexMain_Result_0 vertexMain(vertexInput_0 _S1 [[stage_in]])
+{
+
+#line 16
+    thread VertexOutput_0 output_0;
+    (&output_0)->position_2 = float4(_S1.position_1, 1.0f);
+    (&output_0)->color_2 = _S1.color_1;
+
+#line 18
+    thread vertexMain_Result_0 _S2;
+
+#line 18
+    (&_S2)->position_0 = output_0.position_2;
+
+#line 18
+    (&_S2)->color_0 = output_0.color_2;
+
+#line 18
+    return _S2;
+}
+

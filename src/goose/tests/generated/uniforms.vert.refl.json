@@ -1,0 +1,969 @@
+{
+    "version": "1.1",
+    "parameters": [
+        {
+            "name": "UniformBlock",
+            "binding": {"kind": "constantBuffer", "index": 0},
+            "type": {
+                "kind": "constantBuffer",
+                "elementType": {
+                    "kind": "struct",
+                    "fields": [
+                        {
+                            "name": "data",
+                            "type": {
+                                "kind": "struct",
+                                "name": "SceneUniforms",
+                                "fields": [
+                                    {
+                                        "name": "view_projection",
+                                        "type": {
+                                            "kind": "matrix",
+                                            "rowCount": 4,
+                                            "columnCount": 4,
+                                            "elementType": {
+                                                "kind": "scalar",
+                                                "scalarType": "float32"
+                                            },
+                                            "sizes": [
+                                                {"kind": "uniform", "value": 64, "alignment": 16}
+                                            ]
+                                        },
+                                        "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                                    },
+                                    {
+                                        "name": "camera_position",
+                                        "type": {
+                                            "kind": "vector",
+                                            "elementCount": 3,
+                                            "elementType": {
+                                                "kind": "scalar",
+                                                "scalarType": "float32"
+                                            },
+                                            "sizes": [
+                                                {"kind": "uniform", "value": 16, "alignment": 16}
+                                            ]
+                                        },
+                                        "binding": {"kind": "uniform", "offset": 64, "size": 16, "elementStride": 4}
+                                    },
+                                    {
+                                        "name": "exposure",
+                                        "type": {
+                                            "kind": "scalar",
+                                            "scalarType": "float32",
+                                            "sizes": [
+                                                {"kind": "uniform", "value": 4, "alignment": 4}
+                                            ]
+                                        },
+                                        "binding": {"kind": "uniform", "offset": 80, "size": 4, "elementStride": 0}
+                                    },
+                                    {
+                                        "name": "lighting",
+                                        "type": {
+                                            "kind": "struct",
+                                            "name": "Lighting",
+                                            "fields": [
+                                                {
+                                                    "name": "direction",
+                                                    "type": {
+                                                        "kind": "vector",
+                                                        "elementCount": 3,
+                                                        "elementType": {
+                                                            "kind": "scalar",
+                                                            "scalarType": "float32"
+                                                        },
+                                                        "sizes": [
+                                                            {"kind": "uniform", "value": 16, "alignment": 16}
+                                                        ]
+                                                    },
+                                                    "binding": {"kind": "uniform", "offset": 0, "size": 16, "elementStride": 4}
+                                                },
+                                                {
+                                                    "name": "intensity",
+                                                    "type": {
+                                                        "kind": "scalar",
+                                                        "scalarType": "float32",
+                                                        "sizes": [
+                                                            {"kind": "uniform", "value": 4, "alignment": 4}
+                                                        ]
+                                                    },
+                                                    "binding": {"kind": "uniform", "offset": 16, "size": 4, "elementStride": 0}
+                                                }
+                                            ],
+                                            "sizes": [
+                                                {"kind": "uniform", "value": 32, "alignment": 16}
+                                            ]
+                                        },
+                                        "binding": {"kind": "uniform", "offset": 96, "size": 32, "elementStride": 0}
+                                    },
+                                    {
+                                        "name": "half_values",
+                                        "type": {
+                                            "kind": "vector",
+                                            "elementCount": 2,
+                                            "elementType": {
+                                                "kind": "scalar",
+                                                "scalarType": "float16"
+                                            },
+                                            "sizes": [
+                                                {"kind": "uniform", "value": 4, "alignment": 4}
+                                            ]
+                                        },
+                                        "binding": {"kind": "uniform", "offset": 128, "size": 4, "elementStride": 2}
+                                    },
+                                    {
+                                        "name": "indices",
+                                        "type": {
+                                            "kind": "vector",
+                                            "elementCount": 2,
+                                            "elementType": {
+                                                "kind": "scalar",
+                                                "scalarType": "int32"
+                                            },
+                                            "sizes": [
+                                                {"kind": "uniform", "value": 8, "alignment": 8}
+                                            ]
+                                        },
+                                        "binding": {"kind": "uniform", "offset": 136, "size": 8, "elementStride": 4}
+                                    },
+                                    {
+                                        "name": "flags",
+                                        "type": {
+                                            "kind": "vector",
+                                            "elementCount": 4,
+                                            "elementType": {
+                                                "kind": "scalar",
+                                                "scalarType": "uint32"
+                                            },
+                                            "sizes": [
+                                                {"kind": "uniform", "value": 16, "alignment": 16}
+                                            ]
+                                        },
+                                        "binding": {"kind": "uniform", "offset": 144, "size": 16, "elementStride": 4}
+                                    },
+                                    {
+                                        "name": "enabled",
+                                        "type": {
+                                            "kind": "scalar",
+                                            "scalarType": "bool",
+                                            "sizes": [
+                                                {"kind": "uniform", "value": 1, "alignment": 1}
+                                            ]
+                                        },
+                                        "binding": {"kind": "uniform", "offset": 160, "size": 1, "elementStride": 0}
+                                    },
+                                    {
+                                        "name": "palette",
+                                        "type": {
+                                            "kind": "array",
+                                            "elementCount": 3,
+                                            "elementType": {
+                                                "kind": "vector",
+                                                "elementCount": 4,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float32"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 16, "alignment": 16}
+                                                ]
+                                            },
+                                            "uniformStride": 16,
+                                            "sizes": [
+                                                {"kind": "uniform", "value": 48, "alignment": 16}
+                                            ]
+                                        },
+                                        "binding": {"kind": "uniform", "offset": 176, "size": 48, "elementStride": 16}
+                                    },
+                                    {
+                                        "name": "weights",
+                                        "type": {
+                                            "kind": "array",
+                                            "elementCount": 4,
+                                            "elementType": {
+                                                "kind": "scalar",
+                                                "scalarType": "float32",
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 4, "alignment": 4}
+                                                ]
+                                            },
+                                            "uniformStride": 4,
+                                            "sizes": [
+                                                {"kind": "uniform", "value": 16, "alignment": 4}
+                                            ]
+                                        },
+                                        "binding": {"kind": "uniform", "offset": 224, "size": 16, "elementStride": 4}
+                                    }
+                                ],
+                                "sizes": [
+                                    {"kind": "uniform", "value": 240, "alignment": 16}
+                                ]
+                            },
+                            "binding": {"kind": "uniform", "offset": 0, "size": 240, "elementStride": 0}
+                        }
+                    ],
+                    "sizes": [
+                        {"kind": "uniform", "value": 240, "alignment": 16}
+                    ]
+                },
+                "containerVarLayout": {
+                    "binding": {"kind": "constantBuffer", "index": 0}
+                },
+                "elementVarLayout": {
+                    "type": {
+                        "kind": "struct",
+                        "fields": [
+                            {
+                                "name": "data",
+                                "type": {
+                                    "kind": "struct",
+                                    "name": "SceneUniforms",
+                                    "fields": [
+                                        {
+                                            "name": "view_projection",
+                                            "type": {
+                                                "kind": "matrix",
+                                                "rowCount": 4,
+                                                "columnCount": 4,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float32"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 64, "alignment": 16}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                                        },
+                                        {
+                                            "name": "camera_position",
+                                            "type": {
+                                                "kind": "vector",
+                                                "elementCount": 3,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float32"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 16, "alignment": 16}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 64, "size": 16, "elementStride": 4}
+                                        },
+                                        {
+                                            "name": "exposure",
+                                            "type": {
+                                                "kind": "scalar",
+                                                "scalarType": "float32",
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 4, "alignment": 4}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 80, "size": 4, "elementStride": 0}
+                                        },
+                                        {
+                                            "name": "lighting",
+                                            "type": {
+                                                "kind": "struct",
+                                                "name": "Lighting",
+                                                "fields": [
+                                                    {
+                                                        "name": "direction",
+                                                        "type": {
+                                                            "kind": "vector",
+                                                            "elementCount": 3,
+                                                            "elementType": {
+                                                                "kind": "scalar",
+                                                                "scalarType": "float32"
+                                                            },
+                                                            "sizes": [
+                                                                {"kind": "uniform", "value": 16, "alignment": 16}
+                                                            ]
+                                                        },
+                                                        "binding": {"kind": "uniform", "offset": 0, "size": 16, "elementStride": 4}
+                                                    },
+                                                    {
+                                                        "name": "intensity",
+                                                        "type": {
+                                                            "kind": "scalar",
+                                                            "scalarType": "float32",
+                                                            "sizes": [
+                                                                {"kind": "uniform", "value": 4, "alignment": 4}
+                                                            ]
+                                                        },
+                                                        "binding": {"kind": "uniform", "offset": 16, "size": 4, "elementStride": 0}
+                                                    }
+                                                ],
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 32, "alignment": 16}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 96, "size": 32, "elementStride": 0}
+                                        },
+                                        {
+                                            "name": "half_values",
+                                            "type": {
+                                                "kind": "vector",
+                                                "elementCount": 2,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float16"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 4, "alignment": 4}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 128, "size": 4, "elementStride": 2}
+                                        },
+                                        {
+                                            "name": "indices",
+                                            "type": {
+                                                "kind": "vector",
+                                                "elementCount": 2,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "int32"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 8, "alignment": 8}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 136, "size": 8, "elementStride": 4}
+                                        },
+                                        {
+                                            "name": "flags",
+                                            "type": {
+                                                "kind": "vector",
+                                                "elementCount": 4,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "uint32"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 16, "alignment": 16}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 144, "size": 16, "elementStride": 4}
+                                        },
+                                        {
+                                            "name": "enabled",
+                                            "type": {
+                                                "kind": "scalar",
+                                                "scalarType": "bool",
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 1, "alignment": 1}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 160, "size": 1, "elementStride": 0}
+                                        },
+                                        {
+                                            "name": "palette",
+                                            "type": {
+                                                "kind": "array",
+                                                "elementCount": 3,
+                                                "elementType": {
+                                                    "kind": "vector",
+                                                    "elementCount": 4,
+                                                    "elementType": {
+                                                        "kind": "scalar",
+                                                        "scalarType": "float32"
+                                                    },
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 16, "alignment": 16}
+                                                    ]
+                                                },
+                                                "uniformStride": 16,
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 48, "alignment": 16}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 176, "size": 48, "elementStride": 16}
+                                        },
+                                        {
+                                            "name": "weights",
+                                            "type": {
+                                                "kind": "array",
+                                                "elementCount": 4,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float32",
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 4, "alignment": 4}
+                                                    ]
+                                                },
+                                                "uniformStride": 4,
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 16, "alignment": 4}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 224, "size": 16, "elementStride": 4}
+                                        }
+                                    ],
+                                    "sizes": [
+                                        {"kind": "uniform", "value": 240, "alignment": 16}
+                                    ]
+                                },
+                                "binding": {"kind": "uniform", "offset": 0, "size": 240, "elementStride": 0}
+                            }
+                        ],
+                        "sizes": [
+                            {"kind": "uniform", "value": 240, "alignment": 16}
+                        ]
+                    },
+                    "binding": {"kind": "uniform", "offset": 0, "size": 240, "elementStride": 0}
+                },
+                "sizes": [
+                    {"kind": "constantBuffer", "value": 1}
+                ]
+            }
+        }
+    ],
+    "globalScope": {
+        "kind": "none",
+        "parameters": [
+            {
+                "name": "UniformBlock",
+                "binding": {"kind": "constantBuffer", "index": 0},
+                "type": {
+                    "kind": "constantBuffer",
+                    "elementType": {
+                        "kind": "struct",
+                        "fields": [
+                            {
+                                "name": "data",
+                                "type": {
+                                    "kind": "struct",
+                                    "name": "SceneUniforms",
+                                    "fields": [
+                                        {
+                                            "name": "view_projection",
+                                            "type": {
+                                                "kind": "matrix",
+                                                "rowCount": 4,
+                                                "columnCount": 4,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float32"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 64, "alignment": 16}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                                        },
+                                        {
+                                            "name": "camera_position",
+                                            "type": {
+                                                "kind": "vector",
+                                                "elementCount": 3,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float32"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 16, "alignment": 16}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 64, "size": 16, "elementStride": 4}
+                                        },
+                                        {
+                                            "name": "exposure",
+                                            "type": {
+                                                "kind": "scalar",
+                                                "scalarType": "float32",
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 4, "alignment": 4}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 80, "size": 4, "elementStride": 0}
+                                        },
+                                        {
+                                            "name": "lighting",
+                                            "type": {
+                                                "kind": "struct",
+                                                "name": "Lighting",
+                                                "fields": [
+                                                    {
+                                                        "name": "direction",
+                                                        "type": {
+                                                            "kind": "vector",
+                                                            "elementCount": 3,
+                                                            "elementType": {
+                                                                "kind": "scalar",
+                                                                "scalarType": "float32"
+                                                            },
+                                                            "sizes": [
+                                                                {"kind": "uniform", "value": 16, "alignment": 16}
+                                                            ]
+                                                        },
+                                                        "binding": {"kind": "uniform", "offset": 0, "size": 16, "elementStride": 4}
+                                                    },
+                                                    {
+                                                        "name": "intensity",
+                                                        "type": {
+                                                            "kind": "scalar",
+                                                            "scalarType": "float32",
+                                                            "sizes": [
+                                                                {"kind": "uniform", "value": 4, "alignment": 4}
+                                                            ]
+                                                        },
+                                                        "binding": {"kind": "uniform", "offset": 16, "size": 4, "elementStride": 0}
+                                                    }
+                                                ],
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 32, "alignment": 16}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 96, "size": 32, "elementStride": 0}
+                                        },
+                                        {
+                                            "name": "half_values",
+                                            "type": {
+                                                "kind": "vector",
+                                                "elementCount": 2,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float16"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 4, "alignment": 4}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 128, "size": 4, "elementStride": 2}
+                                        },
+                                        {
+                                            "name": "indices",
+                                            "type": {
+                                                "kind": "vector",
+                                                "elementCount": 2,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "int32"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 8, "alignment": 8}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 136, "size": 8, "elementStride": 4}
+                                        },
+                                        {
+                                            "name": "flags",
+                                            "type": {
+                                                "kind": "vector",
+                                                "elementCount": 4,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "uint32"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 16, "alignment": 16}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 144, "size": 16, "elementStride": 4}
+                                        },
+                                        {
+                                            "name": "enabled",
+                                            "type": {
+                                                "kind": "scalar",
+                                                "scalarType": "bool",
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 1, "alignment": 1}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 160, "size": 1, "elementStride": 0}
+                                        },
+                                        {
+                                            "name": "palette",
+                                            "type": {
+                                                "kind": "array",
+                                                "elementCount": 3,
+                                                "elementType": {
+                                                    "kind": "vector",
+                                                    "elementCount": 4,
+                                                    "elementType": {
+                                                        "kind": "scalar",
+                                                        "scalarType": "float32"
+                                                    },
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 16, "alignment": 16}
+                                                    ]
+                                                },
+                                                "uniformStride": 16,
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 48, "alignment": 16}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 176, "size": 48, "elementStride": 16}
+                                        },
+                                        {
+                                            "name": "weights",
+                                            "type": {
+                                                "kind": "array",
+                                                "elementCount": 4,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float32",
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 4, "alignment": 4}
+                                                    ]
+                                                },
+                                                "uniformStride": 4,
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 16, "alignment": 4}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 224, "size": 16, "elementStride": 4}
+                                        }
+                                    ],
+                                    "sizes": [
+                                        {"kind": "uniform", "value": 240, "alignment": 16}
+                                    ]
+                                },
+                                "binding": {"kind": "uniform", "offset": 0, "size": 240, "elementStride": 0}
+                            }
+                        ],
+                        "sizes": [
+                            {"kind": "uniform", "value": 240, "alignment": 16}
+                        ]
+                    },
+                    "containerVarLayout": {
+                        "binding": {"kind": "constantBuffer", "index": 0}
+                    },
+                    "elementVarLayout": {
+                        "type": {
+                            "kind": "struct",
+                            "fields": [
+                                {
+                                    "name": "data",
+                                    "type": {
+                                        "kind": "struct",
+                                        "name": "SceneUniforms",
+                                        "fields": [
+                                            {
+                                                "name": "view_projection",
+                                                "type": {
+                                                    "kind": "matrix",
+                                                    "rowCount": 4,
+                                                    "columnCount": 4,
+                                                    "elementType": {
+                                                        "kind": "scalar",
+                                                        "scalarType": "float32"
+                                                    },
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 64, "alignment": 16}
+                                                    ]
+                                                },
+                                                "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                                            },
+                                            {
+                                                "name": "camera_position",
+                                                "type": {
+                                                    "kind": "vector",
+                                                    "elementCount": 3,
+                                                    "elementType": {
+                                                        "kind": "scalar",
+                                                        "scalarType": "float32"
+                                                    },
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 16, "alignment": 16}
+                                                    ]
+                                                },
+                                                "binding": {"kind": "uniform", "offset": 64, "size": 16, "elementStride": 4}
+                                            },
+                                            {
+                                                "name": "exposure",
+                                                "type": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float32",
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 4, "alignment": 4}
+                                                    ]
+                                                },
+                                                "binding": {"kind": "uniform", "offset": 80, "size": 4, "elementStride": 0}
+                                            },
+                                            {
+                                                "name": "lighting",
+                                                "type": {
+                                                    "kind": "struct",
+                                                    "name": "Lighting",
+                                                    "fields": [
+                                                        {
+                                                            "name": "direction",
+                                                            "type": {
+                                                                "kind": "vector",
+                                                                "elementCount": 3,
+                                                                "elementType": {
+                                                                    "kind": "scalar",
+                                                                    "scalarType": "float32"
+                                                                },
+                                                                "sizes": [
+                                                                    {"kind": "uniform", "value": 16, "alignment": 16}
+                                                                ]
+                                                            },
+                                                            "binding": {"kind": "uniform", "offset": 0, "size": 16, "elementStride": 4}
+                                                        },
+                                                        {
+                                                            "name": "intensity",
+                                                            "type": {
+                                                                "kind": "scalar",
+                                                                "scalarType": "float32",
+                                                                "sizes": [
+                                                                    {"kind": "uniform", "value": 4, "alignment": 4}
+                                                                ]
+                                                            },
+                                                            "binding": {"kind": "uniform", "offset": 16, "size": 4, "elementStride": 0}
+                                                        }
+                                                    ],
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 32, "alignment": 16}
+                                                    ]
+                                                },
+                                                "binding": {"kind": "uniform", "offset": 96, "size": 32, "elementStride": 0}
+                                            },
+                                            {
+                                                "name": "half_values",
+                                                "type": {
+                                                    "kind": "vector",
+                                                    "elementCount": 2,
+                                                    "elementType": {
+                                                        "kind": "scalar",
+                                                        "scalarType": "float16"
+                                                    },
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 4, "alignment": 4}
+                                                    ]
+                                                },
+                                                "binding": {"kind": "uniform", "offset": 128, "size": 4, "elementStride": 2}
+                                            },
+                                            {
+                                                "name": "indices",
+                                                "type": {
+                                                    "kind": "vector",
+                                                    "elementCount": 2,
+                                                    "elementType": {
+                                                        "kind": "scalar",
+                                                        "scalarType": "int32"
+                                                    },
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 8, "alignment": 8}
+                                                    ]
+                                                },
+                                                "binding": {"kind": "uniform", "offset": 136, "size": 8, "elementStride": 4}
+                                            },
+                                            {
+                                                "name": "flags",
+                                                "type": {
+                                                    "kind": "vector",
+                                                    "elementCount": 4,
+                                                    "elementType": {
+                                                        "kind": "scalar",
+                                                        "scalarType": "uint32"
+                                                    },
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 16, "alignment": 16}
+                                                    ]
+                                                },
+                                                "binding": {"kind": "uniform", "offset": 144, "size": 16, "elementStride": 4}
+                                            },
+                                            {
+                                                "name": "enabled",
+                                                "type": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "bool",
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 1, "alignment": 1}
+                                                    ]
+                                                },
+                                                "binding": {"kind": "uniform", "offset": 160, "size": 1, "elementStride": 0}
+                                            },
+                                            {
+                                                "name": "palette",
+                                                "type": {
+                                                    "kind": "array",
+                                                    "elementCount": 3,
+                                                    "elementType": {
+                                                        "kind": "vector",
+                                                        "elementCount": 4,
+                                                        "elementType": {
+                                                            "kind": "scalar",
+                                                            "scalarType": "float32"
+                                                        },
+                                                        "sizes": [
+                                                            {"kind": "uniform", "value": 16, "alignment": 16}
+                                                        ]
+                                                    },
+                                                    "uniformStride": 16,
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 48, "alignment": 16}
+                                                    ]
+                                                },
+                                                "binding": {"kind": "uniform", "offset": 176, "size": 48, "elementStride": 16}
+                                            },
+                                            {
+                                                "name": "weights",
+                                                "type": {
+                                                    "kind": "array",
+                                                    "elementCount": 4,
+                                                    "elementType": {
+                                                        "kind": "scalar",
+                                                        "scalarType": "float32",
+                                                        "sizes": [
+                                                            {"kind": "uniform", "value": 4, "alignment": 4}
+                                                        ]
+                                                    },
+                                                    "uniformStride": 4,
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 16, "alignment": 4}
+                                                    ]
+                                                },
+                                                "binding": {"kind": "uniform", "offset": 224, "size": 16, "elementStride": 4}
+                                            }
+                                        ],
+                                        "sizes": [
+                                            {"kind": "uniform", "value": 240, "alignment": 16}
+                                        ]
+                                    },
+                                    "binding": {"kind": "uniform", "offset": 0, "size": 240, "elementStride": 0}
+                                }
+                            ],
+                            "sizes": [
+                                {"kind": "uniform", "value": 240, "alignment": 16}
+                            ]
+                        },
+                        "binding": {"kind": "uniform", "offset": 0, "size": 240, "elementStride": 0}
+                    },
+                    "sizes": [
+                        {"kind": "constantBuffer", "value": 1}
+                    ]
+                }
+            }
+        ]
+    },
+    "entryPoints": [
+        {
+            "name": "vertexMain",
+            "stage": "vertex",
+            "scope": {
+                "kind": "none",
+                "parameters": [
+                    {
+                        "name": "input",
+                        "stage": "vertex",
+                        "binding": {"kind": "varyingInput", "index": 0},
+                        "type": {
+                            "kind": "struct",
+                            "name": "VertexInput",
+                            "fields": [
+                                {
+                                    "name": "position",
+                                    "type": {
+                                        "kind": "vector",
+                                        "elementCount": 3,
+                                        "elementType": {
+                                            "kind": "scalar",
+                                            "scalarType": "float32"
+                                        },
+                                        "sizes": [
+                                            {"kind": "varyingInput", "value": 1}
+                                        ]
+                                    },
+                                    "stage": "vertex",
+                                    "binding": {"kind": "varyingInput", "index": 0},
+                                    "semanticName": "POSITION"
+                                }
+                            ],
+                            "sizes": [
+                                {"kind": "varyingInput", "value": 1}
+                            ]
+                        }
+                    }
+                ]
+            },
+            "parameters": [
+                {
+                    "name": "input",
+                    "stage": "vertex",
+                    "binding": {"kind": "varyingInput", "index": 0},
+                    "type": {
+                        "kind": "struct",
+                        "name": "VertexInput",
+                        "fields": [
+                            {
+                                "name": "position",
+                                "type": {
+                                    "kind": "vector",
+                                    "elementCount": 3,
+                                    "elementType": {
+                                        "kind": "scalar",
+                                        "scalarType": "float32"
+                                    },
+                                    "sizes": [
+                                        {"kind": "varyingInput", "value": 1}
+                                    ]
+                                },
+                                "stage": "vertex",
+                                "binding": {"kind": "varyingInput", "index": 0},
+                                "semanticName": "POSITION"
+                            }
+                        ],
+                        "sizes": [
+                            {"kind": "varyingInput", "value": 1}
+                        ]
+                    }
+                }
+            ],
+            "result": {
+                "stage": "vertex",
+                "binding": {"kind": "varyingOutput", "index": 0},
+                "type": {
+                    "kind": "struct",
+                    "name": "VertexOutput",
+                    "fields": [
+                        {
+                            "name": "position",
+                            "type": {
+                                "kind": "vector",
+                                "elementCount": 4,
+                                "elementType": {
+                                    "kind": "scalar",
+                                    "scalarType": "float32"
+                                },
+                                "sizes": [
+
+                                ]
+                            },
+                            "semanticName": "SV_POSITION"
+                        },
+                        {
+                            "name": "color",
+                            "type": {
+                                "kind": "vector",
+                                "elementCount": 4,
+                                "elementType": {
+                                    "kind": "scalar",
+                                    "scalarType": "float32"
+                                },
+                                "sizes": [
+                                    {"kind": "varyingOutput", "value": 1}
+                                ]
+                            },
+                            "stage": "vertex",
+                            "binding": {"kind": "varyingOutput", "index": 0},
+                            "semanticName": "COLOR"
+                        }
+                    ],
+                    "sizes": [
+                        {"kind": "varyingOutput", "value": 1}
+                    ]
+                }
+            },
+            "bindings": [
+                {
+                    "name": "UniformBlock",
+                    "binding": {"kind": "constantBuffer", "index": 0, "used": 1}
+                }
+            ]
+        }
+    ],
+    "bindlessSpaceIndex": 1
+}

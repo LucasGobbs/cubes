@@ -1,0 +1,31 @@
+{
+  "outputDir": "src/goose/tests/generated",
+  "parameterOutputDir": "src/goose/tests",
+  "package": "goose_tests",
+  "gooseImport": "..",
+  "shaders": [
+    {
+      "name": "uniforms",
+      "source": "src/goose/tests/slang/uniforms.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "vertex_buffers",
+      "source": "src/goose/tests/slang/vertex_buffers.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "graphics_pipeline",
+      "source": "src/goose/tests/slang/graphics_pipeline.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "compute_pipeline",
+      "source": "src/goose/tests/slang/compute_pipeline.slang",
+      "compute": "computeMain"
+    }
+  ]
+}
