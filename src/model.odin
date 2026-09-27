@@ -15,7 +15,7 @@ model_create :: proc(
 	gfx: ^Gfx,
 	imported: ^loader.ImportedModel,
 	sampler: ^sdl.GPUSampler,
-	pipeline: ^sdl.GPUGraphicsPipeline,
+	pipeline: ^Pipeline,
 ) -> Model {
 	mesh := Mesh {
 		vertex_buffer = buffer_create_from_bytes(gfx, imported.mesh.vertices, .VERTEX),
@@ -56,4 +56,10 @@ model_upload_to_gpu :: proc(model: ^Model, uploader: ^Uploader) {
 	model.mesh.vertex_buffer._temporary_raw_data = nil
 	model.mesh.index_buffer._temporary_raw_data = nil
 	model.material.texture._temporary_raw_data = nil
+}
+
+model_destroy :: proc(gfx: ^Gfx, model: ^Model) {
+	mesh_destroy(gfx, &model.mesh)
+	material_destroy(gfx, &model.material)
+	model^ = {}
 }

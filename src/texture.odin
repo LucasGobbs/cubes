@@ -30,5 +30,7 @@ texture_create :: proc(
 }
 
 texture_destroy :: proc(gfx: ^Gfx, texture: ^Texture) {
+	if texture.handle == nil do return
 	sdl.ReleaseGPUTexture(gfx.gpu, texture.handle)
+	texture^ = {}
 }

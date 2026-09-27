@@ -30,5 +30,7 @@ buffer_create :: proc(gfx: ^Gfx, size: u32, usage: sdl.GPUBufferUsageFlag) -> Bu
 
 
 buffer_destroy :: proc(gfx: ^Gfx, buffer: ^Buffer) {
+	if buffer.handle == nil do return
 	sdl.ReleaseGPUBuffer(gfx.gpu, buffer.handle)
+	buffer^ = {}
 }

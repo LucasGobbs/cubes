@@ -1,15 +1,57 @@
 package main
-import "core:log"
+import shader "shader"
+import shader_parameters "shader_parameters"
 import sdl "vendor:sdl3"
-gfx_basic_pipeline :: proc(gfx: ^Gfx) -> ^sdl.GPUGraphicsPipeline {
-	vert_shader := load_shader("../shaders/generated/triangle.vert.msl", gfx.gpu, .VERTEX, 1, 0)
-	frag_shader := load_shader("../shaders/generated/triangle.frag.msl", gfx.gpu, .FRAGMENT, 0, 1)
 
-	vertex_attrs := []sdl.GPUVertexAttribute {
-		{location = 0, format = .FLOAT3, offset = u32(offset_of(VertexData, position))},
-		{location = 1, format = .FLOAT4, offset = u32(offset_of(VertexData, color))},
-		{location = 2, format = .FLOAT2, offset = u32(offset_of(VertexData, uv))},
+Draw_Parameters :: struct {
+	view_projection: matrix[4, 4]f32,
+	model_transform: matrix[4, 4]f32,
+}
+
+Pipeline_Bind_Draw_Proc :: #type proc(
+	user_data: rawptr,
+	command_buffer: ^sdl.GPUCommandBuffer,
+	parameters: Draw_Parameters,
+)
+
+Pipeline :: struct {
+	handle:    ^sdl.GPUGraphicsPipeline,
+	user_data: rawptr,
+	bind_draw: Pipeline_Bind_Draw_Proc,
+}
+
+pipeline_bind_draw :: proc(
+	pipeline: ^Pipeline,
+	command_buffer: ^sdl.GPUCommandBuffer,
+	parameters: Draw_Parameters,
+) {
+	assert(pipeline != nil && pipeline.handle != nil && pipeline.bind_draw != nil)
+	pipeline.bind_draw(pipeline.user_data, command_buffer, parameters)
+}
+
+basic_pipeline_bind_draw :: proc(
+	user_data: rawptr,
+	command_buffer: ^sdl.GPUCommandBuffer,
+	parameters: Draw_Parameters,
+) {
+	_ = user_data
+	uniforms := shader_parameters.Triangle_Vertex_Uniform_Block {
+		u_data = {mvp = parameters.view_projection * parameters.model_transform},
 	}
+	shader_parameters.triangle_vertex_push_uniform_block(command_buffer, &uniforms)
+}
+
+gfx_basic_pipeline :: proc(gfx: ^Gfx) -> Pipeline {
+	vert_shader := shader.create_graphics(gfx.gpu, shader_parameters.triangle_vertex())
+	frag_shader := shader.create_graphics(gfx.gpu, shader_parameters.triangle_fragment())
+	assert(vert_shader != nil)
+	assert(frag_shader != nil)
+	defer {
+		sdl.ReleaseGPUShader(gfx.gpu, vert_shader)
+		sdl.ReleaseGPUShader(gfx.gpu, frag_shader)
+	}
+
+	vertex_attrs := shader_parameters.triangle_vertex_attributes(VertexData)
 
 	pipeline := sdl.CreateGPUGraphicsPipeline(
 		gfx.gpu,
@@ -24,7 +66,7 @@ gfx_basic_pipeline :: proc(gfx: ^Gfx) -> ^sdl.GPUGraphicsPipeline {
 						pitch = size_of(VertexData),
 					}),
 				num_vertex_attributes = u32(len(vertex_attrs)),
-				vertex_attributes = raw_data(vertex_attrs),
+				vertex_attributes = &vertex_attrs[0],
 			},
 			depth_stencil_state = {
 				enable_depth_test = true,
@@ -41,8 +83,6 @@ gfx_basic_pipeline :: proc(gfx: ^Gfx) -> ^sdl.GPUGraphicsPipeline {
 			},
 		},
 	)
-	sdl.ReleaseGPUShader(gfx.gpu, vert_shader)
-	sdl.ReleaseGPUShader(gfx.gpu, frag_shader)
 
-	return pipeline
+	return {handle = pipeline, bind_draw = basic_pipeline_bind_draw}
 }

@@ -9,16 +9,16 @@
 //   (bind pipeline, bind buffers, dispatch) -> download output -> CPU verify.
 package main
 
+import shader "../src/shader"
+import shader_parameters "../src/shader_parameters"
 import "core:fmt"
 import "core:mem"
 import "core:os"
-import "core:strings"
-
 import sdl "vendor:sdl3"
 
-ELEMENTS    :: 1024
-THREADS     :: 64 // numthreads(64,1,1) in shaders/compute.slang
-GROUPS      :: ELEMENTS / THREADS
+ELEMENTS :: 1024
+THREADS :: 64 // numthreads(64,1,1) in shaders/compute.slang
+GROUPS :: ELEMENTS / THREADS
 BUFFER_SIZE :: ELEMENTS * size_of(f32)
 
 device: ^sdl.GPUDevice
@@ -28,31 +28,8 @@ fail :: proc(msg: cstring) -> ! {
 	os.exit(1)
 }
 
-// Picks the right shader blob for the active GPU driver.
 load_compute_pipeline :: proc() -> ^sdl.GPUComputePipeline {
-	code := #load("../shaders/generated/compute.msl")
-	format := sdl.GPUShaderFormat{.MSL}
-
-	if strings.starts_with(string(sdl.GetGPUDeviceDriver(device)), "vulkan") {
-		code = #load("../shaders/generated/compute.spv")
-		format = {.SPIRV}
-	}
-
-	pipeline := sdl.CreateGPUComputePipeline(device, sdl.GPUComputePipelineCreateInfo{
-		code_size                      = len(code),
-		code                           = raw_data(code),
-		entrypoint                     = "computeMain",
-		format                         = format,
-		num_samplers                   = 0,
-		num_readonly_storage_textures  = 0,
-		num_readonly_storage_buffers   = 1,
-		num_readwrite_storage_textures = 0,
-		num_readwrite_storage_buffers  = 1,
-		num_uniform_buffers            = 0,
-		threadcount_x                  = THREADS,
-		threadcount_y                  = 1,
-		threadcount_z                  = 1,
-	})
+	pipeline := shader.create_compute(device, shader_parameters.compute())
 	if pipeline == nil {
 		fail(sdl.GetError())
 	}
@@ -71,7 +48,10 @@ create_storage_buffer :: proc(size: u32, usage: sdl.GPUBufferUsageFlags) -> ^sdl
 upload_buffer :: proc(buf: ^sdl.GPUBuffer, data: []f32) {
 	size := u32(len(data) * size_of(f32))
 
-	transfer := sdl.CreateGPUTransferBuffer(device, sdl.GPUTransferBufferCreateInfo{usage = .UPLOAD, size = size})
+	transfer := sdl.CreateGPUTransferBuffer(
+		device,
+		sdl.GPUTransferBufferCreateInfo{usage = .UPLOAD, size = size},
+	)
 	if transfer == nil {
 		fail(sdl.GetError())
 	}
@@ -100,7 +80,10 @@ run_compute :: proc(pipeline: ^sdl.GPUComputePipeline, input, output: ^sdl.GPUBu
 	cmd := sdl.AcquireGPUCommandBuffer(device)
 
 	// Read-write storage buffers are bound at pass creation time.
-	rw := sdl.GPUStorageBufferReadWriteBinding{buffer = output, cycle = false}
+	rw := sdl.GPUStorageBufferReadWriteBinding {
+		buffer = output,
+		cycle  = false,
+	}
 	pass := sdl.BeginGPUComputePass(cmd, nil, 0, &rw, 1)
 
 	sdl.BindGPUComputePipeline(pass, pipeline)
@@ -121,7 +104,10 @@ run_compute :: proc(pipeline: ^sdl.GPUComputePipeline, input, output: ^sdl.GPUBu
 download_buffer :: proc(buf: ^sdl.GPUBuffer, out: []f32) {
 	size := u32(len(out) * size_of(f32))
 
-	transfer := sdl.CreateGPUTransferBuffer(device, sdl.GPUTransferBufferCreateInfo{usage = .DOWNLOAD, size = size})
+	transfer := sdl.CreateGPUTransferBuffer(
+		device,
+		sdl.GPUTransferBufferCreateInfo{usage = .DOWNLOAD, size = size},
+	)
 	if transfer == nil {
 		fail(sdl.GetError())
 	}
@@ -202,7 +188,10 @@ main :: proc() {
 	fmt.printfln("input[0..3]  = %v", input[:4])
 	fmt.printfln("output[0..3] = %v", output[:4])
 	if mismatches == 0 {
-		fmt.printfln("PASS: all %d elements computed by the GPU match out[i] = in[i]*2 + 1", ELEMENTS)
+		fmt.printfln(
+			"PASS: all %d elements computed by the GPU match out[i] = in[i]*2 + 1",
+			ELEMENTS,
+		)
 	} else {
 		fmt.printfln("FAIL: %d/%d mismatches", mismatches, ELEMENTS)
 		os.exit(1)

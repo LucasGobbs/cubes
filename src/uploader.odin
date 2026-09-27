@@ -101,6 +101,7 @@ uploader_flush_blocking :: proc(up: ^Uploader) {
 		s.fence = nil
 		append(&up.free, s)
 	}
+	clear(&up.pending)
 	up.pass, up.command_buffer = nil, nil
 }
 
@@ -124,4 +125,21 @@ uploader_acquire_staging :: proc(uploader: ^Uploader, size: u32) -> Staging {
 		buffer = sdl.CreateGPUTransferBuffer(uploader.gfx.gpu, {usage = .UPLOAD, size = size}),
 		size = size,
 	}
+}
+
+uploader_destroy :: proc(up: ^Uploader) {
+	assert(up.pass == nil)
+	assert(up.command_buffer == nil)
+	assert(len(up.pending) == 0)
+
+	for staging in up.free {
+		assert(staging.fence == nil)
+		if staging.buffer != nil {
+			sdl.ReleaseGPUTransferBuffer(up.gfx.gpu, staging.buffer)
+		}
+	}
+
+	delete(up.free)
+	delete(up.pending)
+	up^ = {}
 }

@@ -18,11 +18,20 @@ Gfx :: struct {
 
 gfx_init :: proc() -> Gfx {
 	ok := sdl.Init({.VIDEO}); assert(ok)
-	window := sdl.CreateWindow("Odin SDL3 gfx.gpu", 1280, 780, {}); assert(window != nil)
+	window := sdl.CreateWindow(
+		"Odin SDL3 gfx.gpu",
+		1280,
+		780,
+		{.ALWAYS_ON_TOP, .MOUSE_GRABBED},
+	); assert(window != nil)
 	gpu := sdl.CreateGPUDevice({.MSL, .SPIRV}, DEBUG, nil); assert(gpu != nil)
 	ok = sdl.ClaimWindowForGPUDevice(gpu, window); assert(ok)
 	window_size: [2]i32
 	ok = sdl.GetWindowSize(window, &window_size.x, &window_size.y); assert(ok)
+
+	ok = sdl.SetWindowRelativeMouseMode(window, true); assert(ok)
+	ok = sdl.SetWindowMouseGrab(window, true); assert(ok)
+
 	depth_texture := sdl.CreateGPUTexture(
 		gpu,
 		{
@@ -38,7 +47,6 @@ gfx_init :: proc() -> Gfx {
 
 }
 
-
 gfx_begin_frame :: proc(gfx: ^Gfx) -> bool {
 	gfx.command_buffer = sdl.AcquireGPUCommandBuffer(gfx.gpu)
 	ok := sdl.WaitAndAcquireGPUSwapchainTexture(
@@ -53,4 +61,25 @@ gfx_begin_frame :: proc(gfx: ^Gfx) -> bool {
 gfx_end_frame :: proc(gfx: ^Gfx) {
 	ok := sdl.SubmitGPUCommandBuffer(gfx.command_buffer); assert(ok)
 	gfx.command_buffer, gfx.swapchain, gfx.frame_open = nil, nil, false
+}
+
+gfx_destroy :: proc(gfx: ^Gfx) {
+	assert(gfx.command_buffer == nil)
+	assert(!gfx.frame_open)
+
+	if gfx.depth_texture != nil {
+		sdl.ReleaseGPUTexture(gfx.gpu, gfx.depth_texture)
+	}
+	if gfx.gpu != nil && gfx.window != nil {
+		sdl.ReleaseWindowFromGPUDevice(gfx.gpu, gfx.window)
+	}
+	if gfx.gpu != nil {
+		sdl.DestroyGPUDevice(gfx.gpu)
+	}
+	if gfx.window != nil {
+		sdl.DestroyWindow(gfx.window)
+	}
+
+	sdl.Quit()
+	gfx^ = {}
 }
