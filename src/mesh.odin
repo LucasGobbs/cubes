@@ -29,3 +29,9 @@ mesh_draw :: proc(mesh: ^Mesh, render_pass: ^sdl.GPURenderPass) {
 	sdl.BindGPUIndexBuffer(render_pass, {buffer = mesh.index_buffer.handle}, mesh.index_size)
 	sdl.DrawGPUIndexedPrimitives(render_pass, u32(mesh.num_indices), 1, 0, 0, 0)
 }
+
+mesh_destroy :: proc(gfx: ^Gfx, mesh: ^Mesh) {
+	buffer_destroy(gfx, &mesh.vertex_buffer)
+	buffer_destroy(gfx, &mesh.index_buffer)
+	mesh^ = {}
+}
