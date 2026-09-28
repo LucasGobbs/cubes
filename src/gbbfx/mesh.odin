@@ -98,6 +98,29 @@ mesh_draw :: proc(gfx: ^Gfx, mesh: ^Mesh, render_pass: ^sdl.GPURenderPass) {
 	}
 }
 
+mesh_draw_instanced :: proc(
+	gfx: ^Gfx,
+	mesh: ^Mesh,
+	render_pass: ^sdl.GPURenderPass,
+	instances: u32,
+	first_instance: u32,
+) {
+	vertex_buffer := gfx_buffer_get(gfx, mesh.vertex_buffer)
+	sdl.BindGPUVertexBuffers(
+		render_pass,
+		0,
+		&(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}),
+		1,
+	)
+	if Resource_Handle(mesh.index_buffer).generation != 0 {
+		index_buffer := gfx_buffer_get(gfx, mesh.index_buffer)
+		sdl.BindGPUIndexBuffer(render_pass, {buffer = index_buffer.handle}, mesh.index_size)
+		sdl.DrawGPUIndexedPrimitives(render_pass, mesh.num_indices, instances, 0, 0, first_instance)
+	} else {
+		sdl.DrawGPUPrimitives(render_pass, mesh.num_vertices, instances, 0, first_instance)
+	}
+}
+
 mesh_destroy :: proc(gfx: ^Gfx, mesh: ^Mesh) {
 	gfx_buffer_destroy(gfx, mesh.vertex_buffer)
 	gfx_buffer_destroy(gfx, mesh.index_buffer)

@@ -1,6 +1,7 @@
 package gbbfx
 
 import "core:math/linalg"
+import "core:mem"
 import "core:slice"
 import loader "loader"
 import sdl "vendor:sdl3"
@@ -21,6 +22,18 @@ Renderer :: struct {
 	// The scene pass renders here instead of the swapchain, so post
 	// processing can run before renderer_present blits to the screen.
 	scene_color:     Texture_Handle,
+
+	// Instancing: per-frame transform storage for instanced runs, uploaded
+	// between prepare and the pass. offsets are indexed by draw item.
+	// previous is a copy of the last uploaded transforms; prepare skips the
+	// upload (and its GPU stall) when nothing changed.
+	instance_buffer: Buffer_Handle,
+	instance_transforms: [dynamic]matrix[4, 4]f32,
+	instance_offsets:    [dynamic]u32,
+	instance_previous:   [dynamic]matrix[4, 4]f32,
+
+	// Number of GPU draws issued in the last flush (HUD/profiling).
+	draw_calls:      int,
 
 	// Cached only during an active pass.
 	bound_pipeline:  Pipeline_Handle,
@@ -68,6 +81,11 @@ renderer_create :: proc(gfx: ^Gfx) -> Renderer {
 		),
 	}
 	renderer.uploader.gfx = gfx
+	renderer.instance_buffer = gfx_buffer_create(
+		gfx,
+		u32(64 * size_of(matrix[4, 4]f32)),
+		.GRAPHICS_STORAGE_READ,
+	)
 	renderer.scene_color = gfx_texture_create_with_usage(
 		gfx,
 		u32(gfx.window_size.x),
@@ -80,6 +98,10 @@ renderer_create :: proc(gfx: ^Gfx) -> Renderer {
 
 renderer_destroy :: proc(renderer: ^Renderer) {
 	assert(renderer.pass == nil)
+	gfx_buffer_destroy(renderer.gfx, renderer.instance_buffer)
+	delete(renderer.instance_transforms)
+	delete(renderer.instance_offsets)
+	delete(renderer.instance_previous)
 	gfx_texture_destroy(renderer.gfx, renderer.scene_color)
 	uploader_destroy(&renderer.uploader)
 	delete(renderer.draw_items)
@@ -126,9 +148,47 @@ renderer_render_scene :: proc(renderer: ^Renderer, scene: ^Scene) {
 			}
 		}
 	}
+	renderer_prepare(renderer)
 	renderer_begin_pass(renderer, camera_view_projection(&renderer.camera))
 	renderer_flush(renderer)
 	renderer_end_pass(renderer)
+}
+
+// Sorts the frame's draw items, gathers per-instance transforms for
+// instanced pipelines, and uploads them — all before the pass opens, since
+// the upload submits its own command buffer.
+renderer_prepare :: proc(renderer: ^Renderer) {
+	renderer_sort_draw_items(renderer.draw_items[:])
+	clear(&renderer.instance_transforms)
+	clear(&renderer.instance_offsets)
+	renderer.draw_calls = 0
+	for item in renderer.draw_items {
+		pipeline := gfx_pipeline_get(renderer.gfx, item.material.pipeline)
+		if pipeline.instanced {
+			append(&renderer.instance_offsets, u32(len(renderer.instance_transforms)))
+			append(&renderer.instance_transforms, item.transform)
+		} else {
+			append(&renderer.instance_offsets, 0)
+		}
+	}
+	if len(renderer.instance_transforms) == 0 do return
+	current := slice.to_bytes(renderer.instance_transforms[:])
+	if len(renderer.instance_transforms) == len(renderer.instance_previous) &&
+	   mem.compare(current, slice.to_bytes(renderer.instance_previous[:])) == 0 {
+		return // static scene: the buffer on the GPU is already correct
+	}
+	clear(&renderer.instance_previous)
+	append(&renderer.instance_previous, ..renderer.instance_transforms[:])
+	renderer.instance_buffer = gfx_buffer_stage(
+		renderer.gfx,
+		renderer.instance_buffer,
+		renderer.instance_transforms[:],
+		.GRAPHICS_STORAGE_READ,
+	)
+	uploader_begin(&renderer.uploader)
+	uploader_upload_buffer(&renderer.uploader, renderer.instance_buffer)
+	uploader_flush_blocking(&renderer.uploader)
+	gfx_buffer_get(renderer.gfx, renderer.instance_buffer)._temporary_raw_data = nil
 }
 
 renderer_begin_pass :: proc(renderer: ^Renderer, view_projection: matrix[4, 4]f32) {
@@ -265,6 +325,50 @@ renderer_draw_item :: proc(renderer: ^Renderer, item: ^DrawItem) {
 		},
 	)
 	mesh_draw(renderer.gfx, mesh, renderer.pass)
+	renderer.draw_calls += 1
+}
+
+// One instanced draw for a run of items sharing mesh and material. The
+// shader reads transforms from the instance storage buffer at
+// SV_InstanceID = first_instance + i.
+renderer_draw_instanced_run :: proc(
+	renderer: ^Renderer,
+	item: ^DrawItem,
+	count: int,
+	first_instance: u32,
+) {
+	assert(renderer.pass != nil)
+	mesh := item.mesh
+	material := item.material
+	pipeline := gfx_pipeline_get(renderer.gfx, material.pipeline)
+
+	if renderer.bound_pipeline != material.pipeline {
+		sdl.BindGPUGraphicsPipeline(renderer.pass, pipeline.handle)
+		renderer.bound_pipeline = material.pipeline
+		renderer.bound_material = nil
+	}
+	if renderer.bound_material != material {
+		gfx_pipeline_bind_material(
+			renderer.gfx,
+			renderer.pass,
+			renderer.gfx.command_buffer,
+			material,
+		)
+		renderer.bound_material = material
+	}
+	gfx_pipeline_bind_draw(
+		renderer.gfx,
+		material.pipeline,
+		renderer.gfx.command_buffer,
+		{
+			view_projection = renderer.view_projection,
+			model_transform = {},
+			material = material,
+			first_instance = first_instance,
+		},
+	)
+	mesh_draw_instanced(renderer.gfx, mesh, renderer.pass, u32(count), 0)
+	renderer.draw_calls += 1
 }
 
 // Open submission path for scene-free experiments: call any number of times
@@ -306,10 +410,6 @@ Sort_Entry :: struct {
 	index: u32,
 }
 
-sort_entry_less :: proc(left, right: Sort_Entry) -> bool {
-	return left.key < right.key
-}
-
 renderer_sort_draw_items :: proc(items: []DrawItem) {
 	count := len(items)
 	if count < 2 do return
@@ -334,16 +434,68 @@ renderer_sort_draw_items :: proc(items: []DrawItem) {
 			index = u32(index),
 		}
 	}
-	slice.sort_by(entries, sort_entry_less)
+	renderer_radix_sort(entries)
 
 	sorted := make([]DrawItem, count, context.temp_allocator)
 	for entry, index in entries do sorted[index] = items[entry.index]
 	copy(items, sorted)
 }
 
+// LSD radix over the 64-bit key: 8 stable counting passes, O(n) — a
+// comparison sort becomes the CPU wall around 100k draw items.
+renderer_radix_sort :: proc(entries: []Sort_Entry) {
+	count := len(entries)
+	if count < 2 do return
+	// Temp arena: freed by the frame's free_all, never delete()d.
+	scratch := make([]Sort_Entry, count, context.temp_allocator)
+	source := entries
+	destination := scratch
+	for pass in 0 ..< 8 {
+		shift := u64(pass * 8)
+		buckets: [256]int
+		for entry in source do buckets[(entry.key >> shift) & 0xFF] += 1
+		total := 0
+		for &bucket in buckets {
+			bucket, total = total, total + bucket
+		}
+		for entry in source {
+			digit := (entry.key >> shift) & 0xFF
+			destination[buckets[digit]] = entry
+			buckets[digit] += 1
+		}
+		source, destination = destination, source
+	}
+	if raw_data(source) != raw_data(entries) do copy(entries, source)
+}
+
 renderer_flush :: proc(renderer: ^Renderer) {
 	assert(renderer.pass != nil)
-	renderer_sort_draw_items(renderer.draw_items[:])
-	for &item in renderer.draw_items do renderer_draw_item(renderer, &item)
+	if len(renderer.instance_transforms) > 0 {
+		instance_buffer := gfx_buffer_get(renderer.gfx, renderer.instance_buffer)
+		sdl.BindGPUVertexStorageBuffers(renderer.pass, 0, &(instance_buffer.handle), 1)
+	}
+	index := 0
+	for index < len(renderer.draw_items) {
+		item := &renderer.draw_items[index]
+		pipeline := gfx_pipeline_get(renderer.gfx, item.material.pipeline)
+		if !pipeline.instanced {
+			renderer_draw_item(renderer, item)
+			index += 1
+			continue
+		}
+		run_end := index + 1
+		for run_end < len(renderer.draw_items) {
+			other := &renderer.draw_items[run_end]
+			if other.mesh != item.mesh || other.material != item.material do break
+			run_end += 1
+		}
+		renderer_draw_instanced_run(
+			renderer,
+			item,
+			run_end - index,
+			renderer.instance_offsets[index],
+		)
+		index = run_end
+	}
 	clear(&renderer.draw_items)
 }

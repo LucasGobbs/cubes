@@ -15,6 +15,12 @@
       "source": "src/gbbfx/defaults/shaders/unlit_color.slang",
       "vertex": "vertexMain",
       "fragment": "pixelMain"
+    },
+    {
+      "name": "default_textured_instanced",
+      "source": "src/gbbfx/defaults/shaders/textured_instanced.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
     }
   ]
 }

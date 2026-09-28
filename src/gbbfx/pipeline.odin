@@ -8,6 +8,9 @@ Draw_Parameters :: struct {
 	view_projection: matrix[4, 4]f32,
 	model_transform: matrix[4, 4]f32,
 	material:        ^Material,
+	// Start of this run's transforms in the instance storage buffer
+	// (instanced pipelines only; 0 otherwise).
+	first_instance:  u32,
 }
 
 Draw_Context :: struct {
@@ -35,6 +38,10 @@ Graphics_Pipeline_Desc :: struct {
 	// counter-clockwise front); closed meshes should cull .BACK.
 	cull_mode:         sdl.GPUCullMode,
 	front_face:        sdl.GPUFrontFace,
+	// The shader reads per-instance data from a storage buffer by
+	// SV_InstanceID, so the renderer may collapse runs of identical
+	// (mesh, material) draw items into one instanced draw.
+	instanced:         bool,
 	bind_draw:         Pipeline_Bind_Draw_Proc,
 	user_data:         rawptr,
 }
@@ -43,6 +50,7 @@ Pipeline :: struct {
 	handle:    ^sdl.GPUGraphicsPipeline,
 	user_data: rawptr,
 	bind_draw: Pipeline_Bind_Draw_Proc,
+	instanced: bool,
 }
 
 draw_push_uniform :: proc(draw_context: ^Draw_Context, binding: goose.Uniform_Block, data: ^$T) {
@@ -119,6 +127,7 @@ gfx_pipeline_create :: proc(gfx: ^Gfx, desc: Graphics_Pipeline_Desc) -> Pipeline
 		handle    = native,
 		user_data = desc.user_data,
 		bind_draw = desc.bind_draw,
+		instanced = desc.instanced,
 	}
 	handle := Pipeline_Handle(handle_pool_acquire(&gfx.pipeline_handles))
 	index := Resource_Handle(handle).index

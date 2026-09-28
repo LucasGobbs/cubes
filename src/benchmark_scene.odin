@@ -3,39 +3,42 @@
 // = / - add and remove instances.
 package main
 
-import gbbfx "gbbfx"
-import defaults "gbbfx/defaults"
-import glove "glove"
 import "core:fmt"
 import "core:math/linalg"
 import "core:math/rand"
+import gbbfx "gbbfx"
+import defaults "gbbfx/defaults"
+import glove "glove"
 import sdl "vendor:sdl3"
 
 BENCH_STEP :: 25 // per model, per keypress (= ±100 total)
 
 Benchmark_State :: struct {
-	pipeline:          gbbfx.Pipeline_Handle,
-	sampler:           gbbfx.Sampler_Handle,
-	models:            [4]gbbfx.Model,
-	scene:             gbbfx.Scene,
-	per_model:         int,
-
-	font:              gbbfx.Font,
-	overlay_pipeline:  gbbfx.Pipeline_Handle,
-	overlay_material:  gbbfx.Material,
-	text_mesh:         gbbfx.Mesh,
-	text_vertices:     [dynamic]gbbfx.VertexData,
-
-	move_action:       glove.Axis_2D_Action,
-	boost_action:      glove.Button_Action,
-	up_action:         glove.Button_Action,
-	down_action:       glove.Button_Action,
-	add_action:        glove.Button_Action,
-	subtract_action:   glove.Button_Action,
+	pipeline:         gbbfx.Pipeline_Handle,
+	sampler:          gbbfx.Sampler_Handle,
+	models:           [4]gbbfx.Model,
+	scene:            gbbfx.Scene,
+	per_model:        int,
+	font:             gbbfx.Font,
+	overlay_pipeline: gbbfx.Pipeline_Handle,
+	overlay_material: gbbfx.Material,
+	text_mesh:        gbbfx.Mesh,
+	text_vertices:    [dynamic]gbbfx.VertexData,
+	move_action:      glove.Axis_2D_Action,
+	boost_action:     glove.Button_Action,
+	up_action:        glove.Button_Action,
+	down_action:      glove.Button_Action,
+	add_action:       glove.Button_Action,
+	subtract_action:  glove.Button_Action,
 }
 
 benchmark_scene :: proc() -> Scene {
-	return {name = "Benchmark", create = benchmark_create, tick = benchmark_tick, destroy = benchmark_destroy}
+	return {
+		name = "Benchmark",
+		create = benchmark_create,
+		tick = benchmark_tick,
+		destroy = benchmark_destroy,
+	}
 }
 
 benchmark_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
@@ -63,14 +66,16 @@ benchmark_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	glove.bind_key(inputs, state.add_action, .EQUALS)
 	glove.bind_key(inputs, state.subtract_action, .MINUS)
 
-	state.pipeline = defaults.create_textured_pipeline(gfx)
+	state.pipeline = defaults.create_textured_instanced_pipeline(gfx)
 	state.sampler = gbbfx.gfx_sampler_create(gfx)
 	for path, index in MODEL_PATHS {
-		state.models[index] = load_textured_model(
+		state.models[index] = gbbfx.gfx_load(
 			gfx,
-			path,
-			"static/colormap.png",
-			state.pipeline,
+			{model_path = path, texture_path = "static/colormap.png", pipeline = state.pipeline},
+		)
+		defaults.bind_textured_instanced_material(
+			&state.models[index].material,
+			gbbfx.model_texture(&state.models[index]),
 			state.sampler,
 		)
 	}
@@ -87,7 +92,7 @@ benchmark_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	gbbfx.mesh_upload(&gfx.renderer, &state.text_mesh)
 
 	rand.reset(u64(sdl.GetTicks()))
-	benchmark_populate(state, 150)
+	benchmark_populate(state, 450)
 	return true
 }
 
@@ -182,17 +187,39 @@ benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	clear(&state.text_vertices)
 	fps_buffer: [32]byte
 	benchmark_push_text(
-		state, gfx,
+		state,
+		gfx,
 		fmt.bprintf(fps_buffer[:], "%.0f FPS", 1 / delta_time),
-		10, 10, {1, 1, 1, 1},
+		10,
+		10,
+		{1, 1, 1, 1},
 	)
 	count_buffer: [32]byte
 	benchmark_push_text(
-		state, gfx,
+		state,
+		gfx,
 		fmt.bprintf(count_buffer[:], "objects: %d", state.per_model * len(state.models)),
-		10, 30, {1, 1, 1, 1},
+		10,
+		30,
+		{1, 1, 1, 1},
 	)
-	benchmark_push_text(state, gfx, "=/- objects  wasd move  shift fast", 10, 50, {0.8, 0.8, 0.8, 1})
+	draws_buffer: [32]byte
+	benchmark_push_text(
+		state,
+		gfx,
+		fmt.bprintf(draws_buffer[:], "draws: %d", gfx.renderer.draw_calls),
+		10,
+		50,
+		{1, 1, 1, 1},
+	)
+	benchmark_push_text(
+		state,
+		gfx,
+		"=/- objects  wasd move  shift fast",
+		10,
+		70,
+		{0.8, 0.8, 0.8, 1},
+	)
 	gbbfx.mesh_update_unindexed(&gfx.renderer, &state.text_mesh, state.text_vertices[:])
 
 	// Frame flow: scene -> offscreen, text into the offscreen, blit out.
@@ -216,7 +243,12 @@ benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 			},
 		)
 		vertex_buffer := gbbfx.gfx_buffer_get(gfx, state.text_mesh.vertex_buffer)
-		sdl.BindGPUVertexBuffers(pass, 0, &(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}), 1)
+		sdl.BindGPUVertexBuffers(
+			pass,
+			0,
+			&(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}),
+			1,
+		)
 		sdl.DrawGPUPrimitives(pass, u32(len(state.text_vertices)), 1, 0, 0)
 		gbbfx.renderer_end_pass(renderer)
 		gbbfx.renderer_present(renderer, renderer.scene_color)

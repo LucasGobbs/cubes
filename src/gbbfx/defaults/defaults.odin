@@ -58,6 +58,63 @@ create_textured_overlay_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Hand
 	)
 }
 
+// Instanced textured pipeline: the renderer collapses runs of identical
+// (mesh, material) items into one draw; per-instance transforms arrive via
+// the renderer's storage buffer, so bind_draw only pushes view_projection.
+create_textured_instanced_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
+	attributes := default_textured_instanced_vertex_attributes(gbbfx.VertexData)
+	return gbbfx.gfx_pipeline_create(
+		gfx,
+		{
+			vertex = default_textured_instanced_vertex(),
+			fragment = default_textured_instanced_fragment(),
+			vertex_attributes = attributes[:],
+			vertex_stride = u32(size_of(gbbfx.VertexData)),
+			depth_test = true,
+			depth_write = true,
+			cull_mode = .BACK,
+			front_face = .CLOCKWISE,
+			instanced = true,
+			bind_draw = bind_textured_instanced_draw,
+		},
+	)
+}
+
+bind_textured_instanced_draw :: proc(
+	user_data: rawptr,
+	draw_context: ^gbbfx.Draw_Context,
+	parameters: gbbfx.Draw_Parameters,
+) {
+	_ = user_data
+	uniforms := Default_Textured_Instanced_Vertex_Uniform_Block {
+		data = {
+			view_projection = parameters.view_projection,
+			first_instance = parameters.first_instance,
+		},
+	}
+	gbbfx.draw_push_uniform(
+		draw_context,
+		DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK,
+		&uniforms,
+	)
+}
+
+// Same texture bindings as bind_textured_material but referencing the
+// instanced shader's constants.
+bind_textured_instanced_material :: proc(
+	material: ^gbbfx.Material,
+	texture: gbbfx.Texture_Handle,
+	sampler: gbbfx.Sampler_Handle,
+) {
+	gbbfx.material_bind_texture(
+		material,
+		DEFAULT_TEXTURED_INSTANCED_FRAGMENT_TEX,
+		DEFAULT_TEXTURED_INSTANCED_FRAGMENT_TEX_SAMPLER,
+		texture,
+		sampler,
+	)
+}
+
 bind_textured_material :: proc(
 	material: ^gbbfx.Material,
 	texture: gbbfx.Texture_Handle,
