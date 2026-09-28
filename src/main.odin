@@ -2,11 +2,11 @@
 // `./main simple` or `make run ARGS=simple`. Defaults to "benchmark".
 package main
 
-import gbbfx "gbbfx"
-import glove "glove"
 import "core:fmt"
 import "core:log"
 import "core:os"
+import gbbfx "gbbfx"
+import glove "glove"
 import sdl "vendor:sdl3"
 
 quit_action: glove.Button_Action
@@ -25,6 +25,8 @@ main :: proc() {
 	gfx: gbbfx.Gfx
 	created := gbbfx.create(&gfx, rawptr(&scene), scene_create)
 	assert(created)
+	// sdl.FlashWindow(gfx.window, .UNTIL_FOCUSED)
+	// sdl.ShowSimpleMessageBox({.ERROR}, "Couldn't initialize SDL!", "Error", nil)
 	defer gbbfx.gfx_destroy(&gfx, rawptr(&scene), scene_destroy)
 	gbbfx.gfx_update(&gfx, rawptr(&scene), scene_tick)
 }
