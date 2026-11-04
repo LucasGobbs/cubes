@@ -1,6 +1,6 @@
 package sdl_gpu
 
-import goose "../.."
+import goose "../../goose"
 import "core:log"
 import sdl "vendor:sdl3"
 

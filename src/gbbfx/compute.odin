@@ -1,7 +1,7 @@
 package gbbfx
 
 import goose "../goose"
-import goose_sdl "../goose/adapters/sdl_gpu"
+import goose_sdl "sdl_gpu"
 import sdl "vendor:sdl3"
 
 Compute_Pipeline :: struct {

@@ -6,7 +6,7 @@ package editor
 
 import gbbfx "../gbbfx"
 import defaults "../gbbfx/defaults"
-import goose_sdl "../goose/adapters/sdl_gpu"
+import goose_sdl "../gbbfx/sdl_gpu"
 import "core:math/linalg"
 import sdl "vendor:sdl3"
 import mu "vendor:microui"
