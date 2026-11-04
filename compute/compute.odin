@@ -9,7 +9,7 @@
 //   (bind pipeline, bind buffers, dispatch) -> download output -> CPU verify.
 package main
 
-import goose_sdl "../src/goose/adapters/sdl_gpu"
+import goose_sdl "../src/gbbfx/sdl_gpu"
 import shader_parameters "../src/shader_parameters"
 import "core:fmt"
 import "core:mem"

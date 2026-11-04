@@ -44,7 +44,6 @@ goose-test-fixtures: $(GOOSE_BUILD_BIN)
 
 test-goose-core:
 	$(ODIN) test src/goose
-	$(ODIN) test src/goose/adapters/sdl_gpu
 
 test-goose-build: goose-test-fixtures
 	$(ODIN) test $(GOOSE_BUILD)
@@ -73,9 +72,11 @@ test-glove-optimized:
 
 test-gbbfx: default-shaders
 	$(ODIN) test src/gbbfx
+	$(ODIN) test src/gbbfx/sdl_gpu
 
 test-gbbfx-optimized: default-shaders
 	$(ODIN) test src/gbbfx $(RELEASE_FLAGS)
+	$(ODIN) test src/gbbfx/sdl_gpu $(RELEASE_FLAGS)
 
 build: shaders
 	$(ODIN) build $(SRC) -out:$(BIN) $(RELEASE_FLAGS) $(EDITOR_DEFINE)

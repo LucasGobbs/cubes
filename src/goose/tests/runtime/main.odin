@@ -1,7 +1,7 @@
 package goose_runtime_tests
 
 import fixtures ".."
-import goose_sdl "../../adapters/sdl_gpu"
+import goose_sdl "../../../gbbfx/sdl_gpu"
 import "core:fmt"
 import "core:os"
 import sdl "vendor:sdl3"
