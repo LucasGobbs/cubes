@@ -1,0 +1,87 @@
+{
+  "stage": "fragment",
+  "entryPoint": "pixelMain",
+  "threadGroupSize": [
+    0,
+    0,
+    0
+  ],
+  "vertexInputs": [
+
+  ],
+  "uniformBlocks": [
+    {
+      "name": "fragment_UniformBlock",
+      "typeName": "UnlitColorFragmentUniformBlock",
+      "slot": 0,
+      "space": 0,
+      "size": 80,
+      "type": {
+        "kind": "struct",
+        "size": 80,
+        "typeName": "UnlitColorFragmentUniformBlock",
+        "fields": [
+          {
+            "name": "data",
+            "offset": 0,
+            "type": {
+              "kind": "struct",
+              "size": 80,
+              "typeName": "UnlitColorFragmentUnlitUniforms",
+              "fields": [
+                {
+                  "name": "mvp",
+                  "offset": 0,
+                  "type": {
+                    "kind": "matrix",
+                    "scalar": "float32",
+                    "rows": 4,
+                    "columns": 4,
+                    "stride": 16,
+                    "size": 64
+                  }
+                },
+                {
+                  "name": "tint",
+                  "offset": 64,
+                  "type": {
+                    "kind": "vector",
+                    "scalar": "float32",
+                    "count": 4,
+                    "size": 16
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "blockName": "UniformBlock",
+      "sdlSlot": 0,
+      "descriptorSet": 0,
+      "descriptorBinding": 0
+    }
+  ],
+  "resources": [
+
+  ],
+  "schema": "goose.stage/1",
+  "shader": "unlit_color",
+  "target": "spirv",
+  "format": "spv",
+  "artifact": "unlit_color.frag.spv",
+  "entrySymbol": "main",
+  "layout": "native",
+  "numSamplers": 0,
+  "numUniformBuffers": 1,
+  "numReadonlyStorageTextures": 0,
+  "numReadonlyStorageBuffers": 0,
+  "numReadwriteStorageTextures": 0,
+  "numReadwriteStorageBuffers": 0,
+  "samplers": [
+
+  ],
+  "storage": [
+
+  ]
+}

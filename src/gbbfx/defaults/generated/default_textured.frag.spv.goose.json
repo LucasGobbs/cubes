@@ -1,0 +1,55 @@
+{
+  "stage": "fragment",
+  "entryPoint": "pixelMain",
+  "threadGroupSize": [
+    0,
+    0,
+    0
+  ],
+  "vertexInputs": [
+
+  ],
+  "uniformBlocks": [
+
+  ],
+  "resources": [
+    {
+      "name": "tex",
+      "kind": "resource",
+      "slot": 1,
+      "space": 0
+    },
+    {
+      "name": "tex_sampler",
+      "kind": "samplerState",
+      "slot": 2,
+      "space": 0
+    }
+  ],
+  "schema": "goose.stage/1",
+  "shader": "default_textured",
+  "target": "spirv",
+  "format": "spv",
+  "artifact": "default_textured.frag.spv",
+  "entrySymbol": "main",
+  "layout": "native",
+  "numSamplers": 1,
+  "numUniformBuffers": 0,
+  "numReadonlyStorageTextures": 0,
+  "numReadonlyStorageBuffers": 0,
+  "numReadwriteStorageTextures": 0,
+  "numReadwriteStorageBuffers": 0,
+  "samplers": [
+    {
+      "slot": 0,
+      "texture": "tex",
+      "sampler": "",
+      "combined": false,
+      "set": 0,
+      "binding": 1
+    }
+  ],
+  "storage": [
+
+  ]
+}

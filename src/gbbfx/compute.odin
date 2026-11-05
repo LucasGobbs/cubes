@@ -1,6 +1,6 @@
 package gbbfx
 
-import goose "../goose"
+import goose "../../third_party/goose/src"
 import goose_sdl "sdl_gpu"
 import sdl "vendor:sdl3"
 
@@ -10,7 +10,7 @@ Compute_Pipeline :: struct {
 
 gfx_compute_pipeline_create :: proc(
 	gfx: ^Gfx,
-	parameters: goose.Compute_Parameters,
+	parameters: goose.ComputeParameters,
 ) -> Compute_Pipeline_Handle {
 	resource := Compute_Pipeline {
 		handle = goose_sdl.create_compute_pipeline(gfx.gpu, parameters),

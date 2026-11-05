@@ -1,6 +1,7 @@
 package gbbfx
 
-import goose "../goose"
+import goose "../../third_party/goose/src"
+import goose_adapters "../../third_party/goose/src/adapters"
 import goose_sdl "sdl_gpu"
 import sdl "vendor:sdl3"
 
@@ -24,9 +25,9 @@ Pipeline_Bind_Draw_Proc :: #type proc(
 )
 
 Graphics_Pipeline_Desc :: struct {
-	vertex:            goose.Graphics_Parameters,
-	fragment:          goose.Graphics_Parameters,
-	vertex_attributes: []goose.Vertex_Attribute,
+	vertex:            goose.GraphicsParameters,
+	fragment:          goose.GraphicsParameters,
+	vertex_attributes: []goose.VertexAttribute,
 	vertex_stride:     u32,
 	depth_test:        bool,
 	depth_write:       bool,
@@ -53,7 +54,7 @@ Pipeline :: struct {
 	instanced: bool,
 }
 
-draw_push_uniform :: proc(draw_context: ^Draw_Context, binding: goose.Uniform_Block, data: ^$T) {
+draw_push_uniform :: proc(draw_context: ^Draw_Context, binding: goose.UniformBlock, data: ^$T) {
 	assert(draw_context != nil && draw_context._backend_command_buffer != nil)
 	command_buffer := cast(^sdl.GPUCommandBuffer)draw_context._backend_command_buffer
 	goose_sdl.push_uniform(command_buffer, binding, data)
@@ -63,10 +64,11 @@ gfx_pipeline_create :: proc(gfx: ^Gfx, desc: Graphics_Pipeline_Desc) -> Pipeline
 	assert(desc.vertex.stage == .Vertex)
 	assert(desc.fragment.stage == .Fragment)
 	assert(len(desc.vertex_attributes) > 0 && desc.vertex_stride > 0)
-	attributes := goose_sdl.convert_vertex_attributes(
+	attributes, attributes_ok := goose_adapters.convert_vertex_attributes(
 		desc.vertex_attributes,
 		context.temp_allocator,
 	)
+	assert(attributes_ok)
 	vertex_shader := goose_sdl.create_graphics_shader(gfx.gpu, desc.vertex)
 	fragment_shader := goose_sdl.create_graphics_shader(gfx.gpu, desc.fragment)
 	assert(vertex_shader != nil && fragment_shader != nil)

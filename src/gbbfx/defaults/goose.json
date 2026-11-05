@@ -2,7 +2,7 @@
   "outputDir": "src/gbbfx/defaults/generated",
   "parameterOutputDir": "src/gbbfx/defaults",
   "package": "defaults",
-  "gooseImport": "../../goose",
+  "gooseImport": "../../../third_party/goose/src",
   "shaders": [
     {
       "name": "default_textured",
