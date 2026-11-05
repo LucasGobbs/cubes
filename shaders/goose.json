@@ -2,7 +2,7 @@
   "outputDir": "shaders/generated",
   "parameterOutputDir": "src/shader_parameters",
   "package": "shader_parameters",
-  "gooseImport": "../goose",
+  "gooseImport": "../../third_party/goose/src",
   "shaders": [
     {
       "name": "triangle",
@@ -17,7 +17,7 @@
       "fragment": "pixelMain"
     },
     {
-      "name": "compute",
+      "name": "compute_demo",
       "source": "shaders/compute.slang",
       "compute": "computeMain"
     },

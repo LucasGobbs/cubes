@@ -1,0 +1,63 @@
+{
+  "stage": "compute",
+  "entryPoint": "computeMain",
+  "threadGroupSize": [
+    64,
+    1,
+    1
+  ],
+  "vertexInputs": [
+
+  ],
+  "uniformBlocks": [
+
+  ],
+  "resources": [
+    {
+      "name": "inputData",
+      "kind": "resource",
+      "slot": 0,
+      "space": 0
+    },
+    {
+      "name": "outputData",
+      "kind": "resource",
+      "slot": 1,
+      "space": 0
+    }
+  ],
+  "schema": "goose.stage/1",
+  "shader": "compute_demo",
+  "target": "spirv",
+  "format": "spv",
+  "artifact": "compute_demo.compute.spv",
+  "entrySymbol": "main",
+  "layout": "native",
+  "numSamplers": 0,
+  "numUniformBuffers": 0,
+  "numReadonlyStorageTextures": 0,
+  "numReadonlyStorageBuffers": 1,
+  "numReadwriteStorageTextures": 0,
+  "numReadwriteStorageBuffers": 1,
+  "samplers": [
+
+  ],
+  "storage": [
+    {
+      "name": "inputData",
+      "kind": "buffer",
+      "access": "readonly",
+      "slot": 0,
+      "set": 0,
+      "binding": 0
+    },
+    {
+      "name": "outputData",
+      "kind": "buffer",
+      "access": "readwrite",
+      "slot": 0,
+      "set": 0,
+      "binding": 1
+    }
+  ]
+}

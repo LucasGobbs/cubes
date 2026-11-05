@@ -29,7 +29,7 @@ fail :: proc(msg: cstring) -> ! {
 }
 
 load_compute_pipeline :: proc() -> ^sdl.GPUComputePipeline {
-	pipeline := goose_sdl.create_compute_pipeline(device, shader_parameters.compute())
+	pipeline := goose_sdl.create_compute_pipeline(device, shader_parameters.compute_demo_compute())
 	if pipeline == nil {
 		fail(sdl.GetError())
 	}

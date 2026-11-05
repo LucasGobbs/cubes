@@ -1,17 +1,17 @@
 package gbbfx
 
-import goose "../goose"
+import goose "../../third_party/goose/src"
 import "core:mem"
 
 Material_Texture_Binding :: struct {
-	texture_parameter: goose.Texture_Binding,
-	sampler_parameter: goose.Sampler_Binding,
+	texture_parameter: goose.TextureBinding,
+	sampler_parameter: goose.SamplerBinding,
 	texture:           Texture_Handle,
 	sampler:           Sampler_Handle,
 }
 
 Material_Uniform_Binding :: struct {
-	parameter: goose.Uniform_Block,
+	parameter: goose.UniformBlock,
 	data:      []byte,
 }
 
@@ -28,8 +28,8 @@ material_create :: proc(pipeline: Pipeline_Handle) -> Material {
 
 material_bind_texture :: proc(
 	material: ^Material,
-	texture_parameter: goose.Texture_Binding,
-	sampler_parameter: goose.Sampler_Binding,
+	texture_parameter: goose.TextureBinding,
+	sampler_parameter: goose.SamplerBinding,
 	texture: Texture_Handle,
 	sampler: Sampler_Handle,
 ) {
@@ -48,7 +48,7 @@ material_bind_texture :: proc(
 	)
 }
 
-material_set_uniform :: proc(material: ^Material, parameter: goose.Uniform_Block, data: ^$T) {
+material_set_uniform :: proc(material: ^Material, parameter: goose.UniformBlock, data: ^$T) {
 	assert(size_of(T) == parameter.size)
 	for &binding in material.uniforms {
 		if binding.parameter == parameter {
@@ -63,7 +63,7 @@ material_set_uniform :: proc(material: ^Material, parameter: goose.Uniform_Block
 
 material_uniform_data :: proc(
 	material: ^Material,
-	parameter: goose.Uniform_Block,
+	parameter: goose.UniformBlock,
 ) -> (
 	[]byte,
 	bool,

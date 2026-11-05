@@ -1,6 +1,6 @@
 package gbbfx
 
-import goose "../goose"
+import goose "../../third_party/goose/src"
 import "core:math/linalg"
 import "core:testing"
 
@@ -23,15 +23,15 @@ material_stores_backend_neutral_bindings :: proc(t: ^testing.T) {
 	pipeline := Pipeline_Handle(Resource_Handle{index = 2, generation = 1})
 	texture := Texture_Handle(Resource_Handle{index = 3, generation = 1})
 	sampler := Sampler_Handle(Resource_Handle{index = 4, generation = 1})
-	texture_parameter := goose.Texture_Binding {
+	texture_parameter := goose.TextureBinding {
 		stage = .Fragment,
 		location = {slot = 0, count = 1},
 	}
-	sampler_parameter := goose.Sampler_Binding {
+	sampler_parameter := goose.SamplerBinding {
 		stage = .Fragment,
 		location = {slot = 0, count = 1},
 	}
-	uniform_parameter := goose.Uniform_Block {
+	uniform_parameter := goose.UniformBlock {
 		stage = .Fragment,
 		location = {slot = 0, count = 1},
 		size = 16,

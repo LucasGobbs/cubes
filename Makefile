@@ -1,15 +1,16 @@
 ODIN      ?= odin
-SLANG     ?= $(HOME)/.local/opt/slang/bin/slangc
+# goose is a git submodule (git submodule update --init). It vendors Slang
+# (macOS arm64); override with SLANG=/path/to/slangc on other platforms.
+GOOSE_DIR ?= third_party/goose
+SLANG     ?= $(GOOSE_DIR)/vendor/slang/bin/slangc
 SRC       := ./src
 BIN       := main
 BIN_DEBUG := main_debug
 
-GOOSE_BUILD         := src/goose/tools/build
+GOOSE_BUILD         := $(GOOSE_DIR)/src/tools/build
 GOOSE_BUILD_BIN     := goose-build.bin
 GOOSE_MANIFEST      := shaders/goose.json
-GOOSE_TEST_MANIFEST := src/goose/tests/goose.json
 GBBFX_DEFAULTS_MANIFEST := src/gbbfx/defaults/goose.json
-GOOSE_PLATFORM      ?= metal
 
 RELEASE_FLAGS := -o:aggressive -microarch:native -no-bounds-check -disable-assert
 DEBUG_FLAGS   := -debug -o:none
@@ -19,51 +20,26 @@ EDITOR        ?= false
 EDITOR_DEFINE := -define:EDITOR=$(EDITOR)
 
 .PHONY: all build run run-optimized debug debug-optimized shaders default-shaders \
-        goose-test-fixtures test-goose-core test-goose-build test-goose-uniforms \
-        test-goose-vertex-buffers test-goose-compute test-goose-graphics \
-        test-goose-runtime test-glove test-glove-optimized test-gbbfx \
+        submodules test-glove test-glove-optimized test-gbbfx \
         test-gbbfx-optimized test test-optimized compute editor clean
 all: build
 
+# Fail early with the fix instead of an Odin "package not found" error.
+submodules:
+	@test -f $(GOOSE_DIR)/src/goose.odin || { echo "goose submodule missing: run 'git submodule update --init'"; exit 1; }
+
 # The shader tool skips up-to-date shaders itself; build it once and only
-# rebuild when its sources (or goose core) change.
-$(GOOSE_BUILD_BIN): $(wildcard src/goose/tools/build/*.odin) $(wildcard src/goose/*.odin)
+# rebuild when its sources change.
+$(GOOSE_BUILD_BIN): $(wildcard $(GOOSE_DIR)/src/tools/build/*.odin) $(wildcard $(GOOSE_DIR)/src/*.odin) | submodules
 	$(ODIN) build $(GOOSE_BUILD) -out:$(GOOSE_BUILD_BIN)
 
 shaders: default-shaders $(GOOSE_BUILD_BIN)
-	./$(GOOSE_BUILD_BIN) --manifest $(GOOSE_MANIFEST) \
-		--platform $(GOOSE_PLATFORM) --slang $(SLANG)
+	./$(GOOSE_BUILD_BIN) --manifest $(GOOSE_MANIFEST) --slang $(SLANG)
 
 default-shaders: $(GOOSE_BUILD_BIN)
-	./$(GOOSE_BUILD_BIN) --manifest $(GBBFX_DEFAULTS_MANIFEST) \
-		--platform $(GOOSE_PLATFORM) --slang $(SLANG)
+	./$(GOOSE_BUILD_BIN) --manifest $(GBBFX_DEFAULTS_MANIFEST) --slang $(SLANG)
 
-goose-test-fixtures: $(GOOSE_BUILD_BIN)
-	./$(GOOSE_BUILD_BIN) --manifest $(GOOSE_TEST_MANIFEST) \
-		--platform $(GOOSE_PLATFORM) --slang $(SLANG)
-
-test-goose-core:
-	$(ODIN) test src/goose
-
-test-goose-build: goose-test-fixtures
-	$(ODIN) test $(GOOSE_BUILD)
-
-test-goose-uniforms: goose-test-fixtures
-	$(ODIN) test src/goose/tests \
-		-define:ODIN_TEST_NAMES=goose_tests.shader_uniform_layout_is_reflected_independently
-
-test-goose-vertex-buffers: goose-test-fixtures
-	$(ODIN) test src/goose/tests \
-		-define:ODIN_TEST_NAMES=goose_tests.shader_vertex_attributes_are_reflected_independently
-
-test-goose-compute: goose-test-fixtures
-	$(ODIN) run src/goose/tests/runtime -- compute
-
-test-goose-graphics: goose-test-fixtures
-	$(ODIN) run src/goose/tests/runtime -- graphics
-
-test-goose-runtime: test-goose-uniforms test-goose-vertex-buffers test-goose-compute test-goose-graphics
-
+# goose's own tests run in the goose repo (make -C $(GOOSE_DIR) test).
 test-glove:
 	$(ODIN) test src/glove/tests
 
@@ -100,15 +76,14 @@ editor: debug
 compute: shaders
 	$(ODIN) run compute
 
-test: shaders test-goose-core test-goose-build test-goose-runtime test-glove test-gbbfx
+test: shaders test-glove test-gbbfx
 	$(ODIN) test $(SRC) -all-packages
 
-test-optimized: shaders test-goose-core test-goose-build test-goose-runtime test-glove-optimized test-gbbfx-optimized
+test-optimized: shaders test-glove-optimized test-gbbfx-optimized
 	$(ODIN) test $(SRC) -all-packages $(RELEASE_FLAGS)
 
 clean:
 	rm -f $(BIN) $(BIN_DEBUG) $(GOOSE_BUILD_BIN)
-	rm -rf shaders/generated src/goose/tests/generated src/gbbfx/defaults/generated
+	rm -rf shaders/generated src/gbbfx/defaults/generated
 	rm -f src/shader_parameters/*_shader_parameters.odin \
-		src/gbbfx/defaults/*_shader_parameters.odin \
-		src/goose/tests/*_shader_parameters.odin
+		src/gbbfx/defaults/*_shader_parameters.odin

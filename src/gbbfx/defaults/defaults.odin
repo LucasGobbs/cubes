@@ -86,7 +86,7 @@ bind_textured_instanced_draw :: proc(
 	parameters: gbbfx.Draw_Parameters,
 ) {
 	_ = user_data
-	uniforms := Default_Textured_Instanced_Vertex_Uniform_Block {
+	uniforms := DefaultTexturedInstancedVertexUniformBlock {
 		data = {
 			view_projection = parameters.view_projection,
 			first_instance = parameters.first_instance,
@@ -130,7 +130,7 @@ bind_textured_material :: proc(
 }
 
 set_unlit_color :: proc(material: ^gbbfx.Material, tint: [4]f32) {
-	uniforms := Default_Unlit_Color_Fragment_Uniform_Block {
+	uniforms := DefaultUnlitColorFragmentUniformBlock {
 		data = {tint = tint},
 	}
 	gbbfx.material_set_uniform(material, DEFAULT_UNLIT_COLOR_FRAGMENT_UNIFORM_BLOCK, &uniforms)
@@ -142,7 +142,7 @@ bind_textured_draw :: proc(
 	parameters: gbbfx.Draw_Parameters,
 ) {
 	_ = user_data
-	uniforms := Default_Textured_Vertex_Uniform_Block {
+	uniforms := DefaultTexturedVertexUniformBlock {
 		data = {mvp = parameters.view_projection * parameters.model_transform},
 	}
 	gbbfx.draw_push_uniform(draw_context, DEFAULT_TEXTURED_VERTEX_UNIFORM_BLOCK, &uniforms)
@@ -159,8 +159,8 @@ bind_unlit_draw :: proc(
 		DEFAULT_UNLIT_COLOR_FRAGMENT_UNIFORM_BLOCK,
 	)
 	assert(ok)
-	fragment := cast(^Default_Unlit_Color_Fragment_Uniform_Block)raw_data(data)
-	uniforms := Default_Unlit_Color_Vertex_Uniform_Block {
+	fragment := cast(^DefaultUnlitColorFragmentUniformBlock)raw_data(data)
+	uniforms := DefaultUnlitColorVertexUniformBlock {
 		data = {
 			mvp = parameters.view_projection * parameters.model_transform,
 			tint = fragment.data.tint,

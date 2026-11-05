@@ -1,0 +1,91 @@
+{
+  "stage": "vertex",
+  "entryPoint": "vertexMain",
+  "threadGroupSize": [
+    0,
+    0,
+    0
+  ],
+  "vertexInputs": [
+    {
+      "name": "position",
+      "location": 0,
+      "format": "Float3"
+    },
+    {
+      "name": "color",
+      "location": 1,
+      "format": "Float4"
+    },
+    {
+      "name": "uv",
+      "location": 2,
+      "format": "Float2"
+    }
+  ],
+  "uniformBlocks": [
+    {
+      "name": "vertex_UniformBlock",
+      "typeName": "TriangleVertexUniformBlock",
+      "slot": 0,
+      "space": 0,
+      "size": 64,
+      "type": {
+        "kind": "struct",
+        "size": 64,
+        "typeName": "TriangleVertexUniformBlock",
+        "fields": [
+          {
+            "name": "u_data",
+            "offset": 0,
+            "type": {
+              "kind": "struct",
+              "size": 64,
+              "typeName": "TriangleVertexUniforms",
+              "fields": [
+                {
+                  "name": "mvp",
+                  "offset": 0,
+                  "type": {
+                    "kind": "matrix",
+                    "scalar": "float32",
+                    "rows": 4,
+                    "columns": 4,
+                    "stride": 16,
+                    "size": 64
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "blockName": "UniformBlock",
+      "sdlSlot": 0,
+      "descriptorSet": 0,
+      "descriptorBinding": 0
+    }
+  ],
+  "resources": [
+
+  ],
+  "schema": "goose.stage/1",
+  "shader": "triangle",
+  "target": "spirv",
+  "format": "spv",
+  "artifact": "triangle.vert.spv",
+  "entrySymbol": "main",
+  "layout": "native",
+  "numSamplers": 0,
+  "numUniformBuffers": 1,
+  "numReadonlyStorageTextures": 0,
+  "numReadonlyStorageBuffers": 0,
+  "numReadwriteStorageTextures": 0,
+  "numReadwriteStorageBuffers": 0,
+  "samplers": [
+
+  ],
+  "storage": [
+
+  ]
+}
