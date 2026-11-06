@@ -127,9 +127,11 @@ bind_textured_material :: proc(
 	)
 }
 
+// tint is an sRGB display color (as an artist or the editor sliders write it);
+// the shader works in linear space, so it is converted here.
 set_unlit_color :: proc(material: ^gbbfx.Material, tint: [4]f32) {
 	uniforms := DefaultUnlitColorFragmentUniformBlock {
-		data = {tint = tint},
+		data = {tint = gbbfx.color_srgb_to_linear(tint)},
 	}
 	gbbfx.material_set_uniform(material, DEFAULT_UNLIT_COLOR_FRAGMENT_UNIFORM_BLOCK, &uniforms)
 }

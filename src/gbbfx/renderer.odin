@@ -276,7 +276,7 @@ renderer_begin_pass :: proc(renderer: ^Renderer, view_projection: matrix[4, 4]f3
 	color_target := sdl.GPUColorTargetInfo {
 		texture     = gfx_texture_get(renderer.gfx, renderer.scene_color).handle,
 		load_op     = .CLEAR,
-		clear_color = {0.2, 0.2, 0.5, 1},
+		clear_color = sdl.FColor(color_srgb_to_linear({0.2, 0.2, 0.5, 1})),
 		store_op    = .STORE,
 	}
 	if renderer.msaa_enabled {
@@ -345,7 +345,7 @@ renderer_begin_present_pass :: proc(renderer: ^Renderer) {
 	color_target := sdl.GPUColorTargetInfo {
 		texture     = renderer.gfx.swapchain,
 		load_op     = .CLEAR,
-		clear_color = {0.08, 0.08, 0.1, 1},
+		clear_color = sdl.FColor(color_srgb_to_linear({0.08, 0.08, 0.1, 1})),
 		store_op    = .STORE,
 	}
 	renderer.pass = sdl.BeginGPURenderPass(renderer.gfx.command_buffer, &color_target, 1, nil)

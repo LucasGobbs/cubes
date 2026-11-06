@@ -78,7 +78,7 @@ benchmark_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	glove.bind_key(inputs, state.subtract_action, .MINUS)
 
 	state.pipeline = defaults.create_textured_instanced_pipeline(gfx)
-	state.sampler = gbbfx.gfx_sampler_create(gfx)
+	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
 	boat_paths := BOAT_PATHS
 	for path, index in boat_paths {
 		state.models[index] = gbbfx.gfx_load(gfx, {model_path = path, pipeline = state.pipeline})
@@ -238,7 +238,7 @@ benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 		"=/- objects  wasd move  shift fast",
 		10,
 		70,
-		{0.8, 0.8, 0.8, 1},
+		gbbfx.color_srgb_to_linear({0.8, 0.8, 0.8, 1}),
 	)
 	gbbfx.mesh_update_unindexed(&gfx.renderer, &state.text_mesh, state.text_vertices[:])
 

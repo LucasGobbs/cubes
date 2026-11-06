@@ -213,7 +213,8 @@ push_quad :: proc(
 }
 
 color01 :: proc(color: mu.Color) -> [4]f32 {
-	return {f32(color.r), f32(color.g), f32(color.b), f32(color.a)} / 255
+	// microui colors are sRGB bytes; the swapchain is linear (see gbbfx/color.odin).
+	return gbbfx.color_srgb_to_linear({f32(color.r), f32(color.g), f32(color.b), f32(color.a)} / 255)
 }
 
 push_glyph :: proc(ed: ^Editor, ch: rune, x, y: ^f32, color: [4]f32) {

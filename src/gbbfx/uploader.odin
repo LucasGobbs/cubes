@@ -12,6 +12,10 @@ Uploader :: struct {
 	pending:        [dynamic]Staging,
 	command_buffer: ^sdl.GPUCommandBuffer,
 	pass:           ^sdl.GPUCopyPass,
+
+	// Mipmapped textures uploaded in the open batch; their chains are built
+	// between the copy pass and the submit (generation cannot run in a pass).
+	mip_targets:    [dynamic]^sdl.GPUTexture,
 }
 
 // Handles the lifecycle of a transfer buffer usign a Fence
@@ -74,10 +78,19 @@ uploader_upload_texture :: proc(uploader: ^Uploader, handle: Texture_Handle) {
 		false,
 	)
 
+	if destination.mip_levels > 1 do append(&uploader.mip_targets, destination.handle)
+
 	append(&uploader.pending, staging)
 }
+
+uploader_generate_mips :: proc(up: ^Uploader) {
+	for texture in up.mip_targets do sdl.GenerateMipmapsForGPUTexture(up.command_buffer, texture)
+	clear(&up.mip_targets)
+}
+
 uploader_flush :: proc(up: ^Uploader) {
 	sdl.EndGPUCopyPass(up.pass)
+	uploader_generate_mips(up)
 	fence := sdl.SubmitGPUCommandBufferAndAcquireFence(up.command_buffer)
 	for s in up.pending {
 		s := s
@@ -90,6 +103,7 @@ uploader_flush :: proc(up: ^Uploader) {
 
 uploader_flush_blocking :: proc(up: ^Uploader) {
 	sdl.EndGPUCopyPass(up.pass)
+	uploader_generate_mips(up)
 	fence := sdl.SubmitGPUCommandBufferAndAcquireFence(up.command_buffer)
 	fences := [1]^sdl.GPUFence{fence}
 	ok := sdl.WaitForGPUFences(up.gfx.gpu, true, &fences[0], 1); assert(ok)
@@ -138,5 +152,6 @@ uploader_destroy :: proc(up: ^Uploader) {
 
 	delete(up.free)
 	delete(up.pending)
+	delete(up.mip_targets)
 	up^ = {}
 }

@@ -39,7 +39,7 @@ simple_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 
 	state.textured_pipeline = defaults.create_textured_pipeline(gfx)
 	state.unlit_pipeline = defaults.create_unlit_pipeline(gfx)
-	state.sampler = gbbfx.gfx_sampler_create(gfx)
+	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
 
 	state.textured_model = load_textured_model(
 		gfx,

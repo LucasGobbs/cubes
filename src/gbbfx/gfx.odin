@@ -2,6 +2,7 @@ package gbbfx
 import glove "../glove"
 import glove_sdl "../glove/adapters/sdl"
 import "core:c"
+import "core:log"
 import "core:strings"
 import sdl "vendor:sdl3"
 Gfx :: struct {
@@ -55,6 +56,15 @@ create :: proc(
 	); assert(window != nil)
 	gpu := sdl.CreateGPUDevice({.MSL, .SPIRV}, true, nil); assert(gpu != nil)
 	ok = sdl.ClaimWindowForGPUDevice(gpu, window); assert(ok)
+	// SDR_LINEAR gives an *_SRGB swapchain: shaders output linear color and the
+	// hardware encodes on write. Must be set before renderer_create, which
+	// derives scene_color's format from the swapchain.
+	if sdl.WindowSupportsGPUSwapchainComposition(gpu, window, .SDR_LINEAR) {
+		ok = sdl.SetGPUSwapchainParameters(gpu, window, .SDR_LINEAR, .VSYNC); assert(ok)
+	} else {
+		log.warn("swapchain SDR_LINEAR unsupported: colors will not be gamma-correct")
+	}
+	log.infof("swapchain format: %v", sdl.GetGPUSwapchainTextureFormat(gpu, window))
 	window_size: [2]i32
 	ok = sdl.GetWindowSize(window, &window_size.x, &window_size.y); assert(ok)
 	ok = sdl.SetWindowRelativeMouseMode(window, true); assert(ok)
@@ -91,9 +101,15 @@ gfx_aspect_ratio :: proc(gfx: ^Gfx) -> f32 {
 // Present mode: .VSYNC (SDL default, caps FPS at display refresh),
 // .IMMEDIATE (uncapped, may tear), .MAILBOX (uncapped without tearing where
 // supported). Falls back to vsync when the driver rejects the mode.
+// Keeps whatever composition create() managed to set (SDR_LINEAR when supported).
+gfx_swapchain_composition :: proc(gfx: ^Gfx) -> sdl.GPUSwapchainComposition {
+	if sdl.WindowSupportsGPUSwapchainComposition(gfx.gpu, gfx.window, .SDR_LINEAR) do return .SDR_LINEAR
+	return .SDR
+}
+
 gfx_set_present_mode :: proc(gfx: ^Gfx, mode: sdl.GPUPresentMode) {
 	if sdl.WindowSupportsGPUPresentMode(gfx.gpu, gfx.window, mode) {
-		_ = sdl.SetGPUSwapchainParameters(gfx.gpu, gfx.window, .SDR, mode)
+		_ = sdl.SetGPUSwapchainParameters(gfx.gpu, gfx.window, gfx_swapchain_composition(gfx), mode)
 	}
 }
 
