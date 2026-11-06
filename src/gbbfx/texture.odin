@@ -1,5 +1,6 @@
 package gbbfx
 
+import loader "loader"
 import sdl "vendor:sdl3"
 
 Texture :: struct {
@@ -81,4 +82,19 @@ gfx_texture_destroy :: proc(gfx: ^Gfx, handle: Texture_Handle) {
 	if resource.handle != nil do sdl.ReleaseGPUTexture(gfx.gpu, resource.handle)
 	resource^ = {}
 	assert(handle_pool_release(&gfx.texture_handles, raw))
+}
+
+// Loads an image file (PNG/JPEG) into a sampled RGBA8 texture and uploads it
+// (blocking). Standalone textures for ground planes, skyboxes, raw meshes.
+gfx_texture_load :: proc(gfx: ^Gfx, path: string) -> Texture_Handle {
+	image := loader.image_load(path)
+	defer loader.image_destroy(&image)
+	handle := gfx_texture_create(gfx, image.width, image.height, .R8G8B8A8_UNORM, .SAMPLER)
+	texture := gfx_texture_get(gfx, handle)
+	texture._temporary_raw_data = image.pixels
+	uploader_begin(&gfx.renderer.uploader)
+	uploader_upload_texture(&gfx.renderer.uploader, handle)
+	uploader_flush_blocking(&gfx.renderer.uploader)
+	texture._temporary_raw_data = nil
+	return handle
 }

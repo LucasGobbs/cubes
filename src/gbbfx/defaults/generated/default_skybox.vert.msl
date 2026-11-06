@@ -1,0 +1,74 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 22 "src/gbbfx/defaults/shaders/skybox.slang"
+struct vertexMain_Result_0
+{
+    float4 position_0 [[position]];
+    float3 direction_0 [[user(DIRECTION)]];
+};
+
+
+#line 22
+struct vertexInput_0
+{
+    float3 position_1 [[attribute(0)]];
+};
+
+
+#line 22
+struct _MatrixStorage_float4x4_ColMajornatural_0
+{
+    array<float4, int(4)> data_0;
+};
+
+
+#line 22
+struct Uniforms_natural_0
+{
+    _MatrixStorage_float4x4_ColMajornatural_0 inverse_view_projection_0;
+};
+
+
+#line 22
+struct SLANG_ParameterGroup_UniformBlock_natural_0
+{
+    Uniforms_natural_0 data_1;
+};
+
+
+#line 26
+struct VertexOutput_0
+{
+    float4 position_2;
+    float3 direction_1;
+};
+
+
+
+[[vertex]] vertexMain_Result_0 vertexMain(vertexInput_0 _S1 [[stage_in]], SLANG_ParameterGroup_UniformBlock_natural_0 constant* UniformBlock_0 [[buffer(0)]])
+{
+
+#line 33
+    thread VertexOutput_0 output_0;
+    float4 _S2 = float4(_S1.position_1.xy, 0.0f, 1.0f);
+
+#line 34
+    (&output_0)->position_2 = _S2;
+    (&output_0)->direction_1 = (((_S2) * (matrix<float,int(4),int(4)> ((&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(0)][int(0)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(1)][int(0)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(2)][int(0)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(3)][int(0)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(0)][int(1)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(1)][int(1)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(2)][int(1)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(3)][int(1)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(0)][int(2)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(1)][int(2)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(2)][int(2)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(3)][int(2)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(0)][int(3)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(1)][int(3)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(2)][int(3)], (&UniformBlock_0->data_1)->inverse_view_projection_0.data_0[int(3)][int(3)])))).xyz;
+
+#line 35
+    thread vertexMain_Result_0 _S3;
+
+#line 35
+    (&_S3)->position_0 = output_0.position_2;
+
+#line 35
+    (&_S3)->direction_0 = output_0.direction_1;
+
+#line 35
+    return _S3;
+}
+

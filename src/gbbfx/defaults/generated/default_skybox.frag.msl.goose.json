@@ -1,0 +1,55 @@
+{
+  "stage": "fragment",
+  "entryPoint": "pixelMain",
+  "threadGroupSize": [
+    0,
+    0,
+    0
+  ],
+  "vertexInputs": [
+
+  ],
+  "uniformBlocks": [
+
+  ],
+  "resources": [
+    {
+      "name": "tex",
+      "kind": "resource",
+      "slot": 0,
+      "space": 0
+    },
+    {
+      "name": "tex_sampler",
+      "kind": "samplerState",
+      "slot": 0,
+      "space": 0
+    }
+  ],
+  "schema": "goose.stage/1",
+  "shader": "default_skybox",
+  "target": "metal",
+  "format": "msl",
+  "artifact": "default_skybox.frag.msl",
+  "entrySymbol": "pixelMain",
+  "layout": "native",
+  "numSamplers": 1,
+  "numUniformBuffers": 0,
+  "numReadonlyStorageTextures": 0,
+  "numReadonlyStorageBuffers": 0,
+  "numReadwriteStorageTextures": 0,
+  "numReadwriteStorageBuffers": 0,
+  "samplers": [
+    {
+      "slot": 0,
+      "texture": "tex",
+      "sampler": "tex_sampler",
+      "combined": false,
+      "set": 0,
+      "binding": 0
+    }
+  ],
+  "storage": [
+
+  ]
+}

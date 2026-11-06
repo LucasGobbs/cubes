@@ -6,8 +6,8 @@ package main
 
 import gbbfx "gbbfx"
 import defaults "gbbfx/defaults"
-import loader "gbbfx/loader"
-import "core:math/linalg"
+
+SKYBOX_PATH :: "static/skybox/skybox-day.png"
 
 Scene :: struct {
 	name:      string,
@@ -36,7 +36,7 @@ scene_lookup :: proc(name: string) -> (Scene, bool) {
 	return {}, false
 }
 
-// Restores the camera and the offscreen target to full-window defaults;
+// Restores the camera and the offscreen targets to full-window defaults;
 // demos call this in create because the editor demo shrinks both to its
 // viewport widget.
 camera_reset :: proc(
@@ -48,43 +48,20 @@ camera_reset :: proc(
 	camera^ = gbbfx.camera_create(
 		position = position,
 		target = target,
-		projection = linalg.matrix4_perspective(
-			linalg.to_radians(f32(70)),
-			gbbfx.gfx_aspect_ratio(gfx),
-			0.1,
-			1000,
-		),
+		projection = gbbfx.camera_perspective(gbbfx.gfx_aspect_ratio(gfx)),
 	)
-	gbbfx.gfx_texture_resize(
-		gfx,
-		&gfx.renderer.scene_color,
-		u32(gfx.window_size.x),
-		u32(gfx.window_size.y),
-	)
+	gbbfx.renderer_resize_targets(&gfx.renderer, u32(gfx.window_size.x), u32(gfx.window_size.y))
 }
 
-// Standalone texture load (no OBJ) for ground planes and raw meshes.
-load_texture :: proc(gfx: ^gbbfx.Gfx, path: string) -> gbbfx.Texture_Handle {
-	image := loader.image_load(path)
-	handle := gbbfx.gfx_texture_create(gfx, image.width, image.height, .R8G8B8A8_UNORM, .SAMPLER)
-	gbbfx.gfx_texture_get(gfx, handle)._temporary_raw_data = image.pixels
-	gbbfx.uploader_begin(&gfx.renderer.uploader)
-	gbbfx.uploader_upload_texture(&gfx.renderer.uploader, handle)
-	gbbfx.uploader_flush_blocking(&gfx.renderer.uploader)
-	gbbfx.gfx_texture_get(gfx, handle)._temporary_raw_data = nil
-	return handle
-}
-
+// Loads a .glb/.gltf and binds its base color texture to the default
+// textured material.
 load_textured_model :: proc(
 	gfx: ^gbbfx.Gfx,
-	model_path, texture_path: string,
+	model_path: string,
 	pipeline: gbbfx.Pipeline_Handle,
 	sampler: gbbfx.Sampler_Handle,
 ) -> gbbfx.Model {
-	model := gbbfx.gfx_load(
-		gfx,
-		{model_path = model_path, texture_path = texture_path, pipeline = pipeline},
-	)
+	model := gbbfx.gfx_load(gfx, {model_path = model_path, pipeline = pipeline})
 	defaults.bind_textured_material(&model.material, gbbfx.model_texture(&model), sampler)
 	return model
 }

@@ -20,6 +20,7 @@ Editor_State :: struct {
 	sampler:           gbbfx.Sampler_Handle,
 	textured_model:    gbbfx.Model,
 	unlit_model:       gbbfx.Model,
+	skybox:            defaults.Skybox,
 	shared_material:   gbbfx.Material,
 	quad_vertices:     [4]gbbfx.VertexData,
 	quad_indices:      [6]u16,
@@ -74,16 +75,18 @@ ed_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 
 	state.textured_model = load_textured_model(
 		gfx,
-		"static/ship-large.obj",
-		"static/colormap.png",
+		"static/models/ship-large.glb",
 		state.textured_pipeline,
 		state.sampler,
 	)
 	state.unlit_model = gbbfx.gfx_load(
 		gfx,
-		{model_path = "static/ship-large.obj", pipeline = state.unlit_pipeline},
+		{model_path = "static/models/ship-large.glb", pipeline = state.unlit_pipeline},
 	)
 	defaults.set_unlit_color(&state.unlit_model.material, {0.15, 0.85, 0.3, 1})
+
+	state.skybox = defaults.skybox_create(gfx, SKYBOX_PATH)
+	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
 
 	gbbfx.scene_add_model(&state.scene, &state.textured_model, {-5, -.5, -12}, {0.4, 0.4, 0.4})
 	state.center_entity = gbbfx.scene_add_model(
@@ -205,12 +208,12 @@ ed_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 		if state.editor.visible {
 			vp := state.ui.viewport
 			if vp.w > 0 && vp.h > 0 {
-				gbbfx.gfx_texture_resize(gfx, &gfx.renderer.scene_color, u32(vp.w), u32(vp.h))
+				gbbfx.renderer_resize_targets(&gfx.renderer, u32(vp.w), u32(vp.h))
 				gbbfx.gfx_texture_resize(gfx, &state.blur_target, u32(vp.w), u32(vp.h))
 				gbbfx.camera_set_aspect(camera, f32(vp.w) / f32(vp.h))
 			}
 		} else {
-			gbbfx.gfx_texture_resize(gfx, &gfx.renderer.scene_color, u32(gfx.window_size.x), u32(gfx.window_size.y))
+			gbbfx.renderer_resize_targets(&gfx.renderer, u32(gfx.window_size.x), u32(gfx.window_size.y))
 			gbbfx.gfx_texture_resize(gfx, &state.blur_target, u32(gfx.window_size.x), u32(gfx.window_size.y))
 			gbbfx.camera_set_aspect(camera, gbbfx.gfx_aspect_ratio(gfx))
 		}
@@ -257,6 +260,7 @@ ed_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
 	gbbfx.gfx_set_event_hook(gfx, nil, nil)
 	_ = sdl.SetWindowRelativeMouseMode(gfx.window, true)
 	gbbfx.scene_destroy(&state.scene)
+	defaults.skybox_destroy(gfx, &state.skybox)
 	when gbbfx.EDITOR {
 		editor.editor_destroy(gfx, state.editor)
 		free(state.editor)

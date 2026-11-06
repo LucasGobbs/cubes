@@ -21,6 +21,12 @@
       "source": "src/gbbfx/defaults/shaders/textured_instanced.slang",
       "vertex": "vertexMain",
       "fragment": "pixelMain"
+    },
+    {
+      "name": "default_skybox",
+      "source": "src/gbbfx/defaults/shaders/skybox.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
     }
   ]
 }

@@ -22,6 +22,10 @@ Renderer :: struct {
 	// The scene pass renders here instead of the swapchain, so post
 	// processing can run before renderer_present blits to the screen.
 	scene_color:     Texture_Handle,
+	// Depth buffer matching scene_color's size. Reverse-Z: cleared to 0 (far),
+	// pipelines compare GREATER (see camera_perspective). Resize both together
+	// with renderer_resize_targets.
+	scene_depth:     Texture_Handle,
 
 	// Instancing: per-frame transform storage for instanced runs, uploaded
 	// between prepare and the pass. offsets are indexed by draw item.
@@ -41,10 +45,13 @@ Renderer :: struct {
 }
 
 // Layers render in declaration order inside the pass: everything in WORLD
-// draws before TRANSPARENT, TRANSPARENT before UI. Pair higher layers with
-// depth-test-off pipelines when draw order must win over the depth buffer.
+// draws before SKYBOX, SKYBOX before TRANSPARENT, TRANSPARENT before UI. The
+// skybox draws after opaque geometry so the depth test skips covered pixels.
+// Pair higher layers with depth-test-off pipelines when draw order must win
+// over the depth buffer.
 Render_Layer :: enum u8 {
 	WORLD        = 10,
+	SKYBOX       = 15,
 	TRANSPARENT  = 20,
 	POST_PROCESS = 30,
 	UI           = 40,
@@ -61,9 +68,9 @@ DrawItem :: struct {
 }
 
 Renderer_Load_Desc :: struct {
-	model_path:   string,
-	texture_path: string,
-	pipeline:     Pipeline_Handle,
+	// .glb/.gltf; the base color texture comes from the file.
+	model_path: string,
+	pipeline:   Pipeline_Handle,
 }
 
 renderer_create :: proc(gfx: ^Gfx) -> Renderer {
@@ -72,12 +79,7 @@ renderer_create :: proc(gfx: ^Gfx) -> Renderer {
 		camera = camera_create(
 			position = Vec3{0, 0, 3},
 			target = {},
-			projection = linalg.matrix4_perspective(
-				linalg.to_radians(f32(70)),
-				gfx_aspect_ratio(gfx),
-				0.1,
-				1000,
-			),
+			projection = camera_perspective(gfx_aspect_ratio(gfx)),
 		),
 	}
 	renderer.uploader.gfx = gfx
@@ -93,6 +95,13 @@ renderer_create :: proc(gfx: ^Gfx) -> Renderer {
 		sdl.GetGPUSwapchainTextureFormat(gfx.gpu, gfx.window),
 		{.COLOR_TARGET, .SAMPLER},
 	)
+	renderer.scene_depth = gfx_texture_create_with_usage(
+		gfx,
+		u32(gfx.window_size.x),
+		u32(gfx.window_size.y),
+		.D32_FLOAT,
+		{.DEPTH_STENCIL_TARGET},
+	)
 	return renderer
 }
 
@@ -103,15 +112,24 @@ renderer_destroy :: proc(renderer: ^Renderer) {
 	delete(renderer.instance_offsets)
 	delete(renderer.instance_previous)
 	gfx_texture_destroy(renderer.gfx, renderer.scene_color)
+	gfx_texture_destroy(renderer.gfx, renderer.scene_depth)
 	uploader_destroy(&renderer.uploader)
 	delete(renderer.draw_items)
 	renderer^ = {}
 }
 
+// Resizes the scene color and depth targets together (they must match).
+// Waits for GPU idle; call between frames.
+renderer_resize_targets :: proc(renderer: ^Renderer, width, height: u32) {
+	gfx_texture_resize(renderer.gfx, &renderer.scene_color, width, height)
+	gfx_texture_resize(renderer.gfx, &renderer.scene_depth, width, height)
+}
+
 renderer_load :: proc(renderer: ^Renderer, desc: Renderer_Load_Desc) -> Model {
 	assert(len(desc.model_path) > 0)
 	assert(Resource_Handle(desc.pipeline).generation != 0)
-	imported := loader.model_import_from_obj(desc.model_path, desc.texture_path)
+	imported, ok := loader.model_import_from_gltf(desc.model_path)
+	assert(ok, "renderer_load: model import failed")
 	defer loader.model_import_destroy(&imported)
 	model := model_create(renderer.gfx, &imported, desc.pipeline)
 	model_upload_to_gpu(&model, &renderer.uploader)
@@ -203,9 +221,9 @@ renderer_begin_pass :: proc(renderer: ^Renderer, view_projection: matrix[4, 4]f3
 		store_op    = .STORE,
 	}
 	depth_target := sdl.GPUDepthStencilTargetInfo {
-		texture     = renderer.gfx.depth_texture,
+		texture     = gfx_texture_get(renderer.gfx, renderer.scene_depth).handle,
 		load_op     = .CLEAR,
-		clear_depth = 1,
+		clear_depth = 0, // reverse-Z: 0 is the far plane
 		store_op    = .DONT_CARE,
 	}
 

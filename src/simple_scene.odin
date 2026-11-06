@@ -16,6 +16,7 @@ Simple_State :: struct {
 	quad_vertices:     [4]gbbfx.VertexData,
 	quad_indices:      [6]u16,
 	scene:             gbbfx.Scene,
+	skybox:            defaults.Skybox,
 	spinning:          int,
 	rotation:          f32,
 
@@ -54,16 +55,18 @@ simple_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 
 	state.textured_model = load_textured_model(
 		gfx,
-		"static/ship-large.obj",
-		"static/colormap.png",
+		"static/models/ship-large.glb",
 		state.textured_pipeline,
 		state.sampler,
 	)
 	state.unlit_model = gbbfx.gfx_load(
 		gfx,
-		{model_path = "static/ship-small-ghost.obj", pipeline = state.unlit_pipeline},
+		{model_path = "static/models/ship-small-ghost.glb", pipeline = state.unlit_pipeline},
 	)
 	defaults.set_unlit_color(&state.unlit_model.material, {0.2, 0.8, 0.9, 1})
+
+	state.skybox = defaults.skybox_create(gfx, SKYBOX_PATH)
+	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
 
 	state.spinning = gbbfx.scene_add_model(
 		&state.scene,
@@ -124,6 +127,7 @@ simple_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 simple_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
 	state := cast(^Simple_State)demo.state
 	gbbfx.scene_destroy(&state.scene)
+	defaults.skybox_destroy(gfx, &state.skybox)
 	gbbfx.mesh_destroy(gfx, &state.quad_mesh)
 	gbbfx.gfx_unload(gfx, &state.textured_model)
 	gbbfx.gfx_unload(gfx, &state.unlit_model)
