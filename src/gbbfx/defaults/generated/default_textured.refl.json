@@ -30,17 +30,33 @@
                                             ]
                                         },
                                         "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                                    },
+                                    {
+                                        "name": "normal_matrix",
+                                        "type": {
+                                            "kind": "matrix",
+                                            "rowCount": 4,
+                                            "columnCount": 4,
+                                            "elementType": {
+                                                "kind": "scalar",
+                                                "scalarType": "float32"
+                                            },
+                                            "sizes": [
+                                                {"kind": "uniform", "value": 64, "alignment": 16}
+                                            ]
+                                        },
+                                        "binding": {"kind": "uniform", "offset": 64, "size": 64, "elementStride": 0}
                                     }
                                 ],
                                 "sizes": [
-                                    {"kind": "uniform", "value": 64, "alignment": 16}
+                                    {"kind": "uniform", "value": 128, "alignment": 16}
                                 ]
                             },
-                            "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                            "binding": {"kind": "uniform", "offset": 0, "size": 128, "elementStride": 0}
                         }
                     ],
                     "sizes": [
-                        {"kind": "uniform", "value": 64, "alignment": 16}
+                        {"kind": "uniform", "value": 128, "alignment": 16}
                     ]
                 },
                 "containerVarLayout": {
@@ -71,20 +87,36 @@
                                                 ]
                                             },
                                             "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                                        },
+                                        {
+                                            "name": "normal_matrix",
+                                            "type": {
+                                                "kind": "matrix",
+                                                "rowCount": 4,
+                                                "columnCount": 4,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float32"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 64, "alignment": 16}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 64, "size": 64, "elementStride": 0}
                                         }
                                     ],
                                     "sizes": [
-                                        {"kind": "uniform", "value": 64, "alignment": 16}
+                                        {"kind": "uniform", "value": 128, "alignment": 16}
                                     ]
                                 },
-                                "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                                "binding": {"kind": "uniform", "offset": 0, "size": 128, "elementStride": 0}
                             }
                         ],
                         "sizes": [
-                            {"kind": "uniform", "value": 64, "alignment": 16}
+                            {"kind": "uniform", "value": 128, "alignment": 16}
                         ]
                     },
-                    "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                    "binding": {"kind": "uniform", "offset": 0, "size": 128, "elementStride": 0}
                 },
                 "sizes": [
                     {"kind": "constantBuffer", "value": 1}
@@ -153,17 +185,33 @@
                                                 ]
                                             },
                                             "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                                        },
+                                        {
+                                            "name": "normal_matrix",
+                                            "type": {
+                                                "kind": "matrix",
+                                                "rowCount": 4,
+                                                "columnCount": 4,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float32"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 64, "alignment": 16}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 64, "size": 64, "elementStride": 0}
                                         }
                                     ],
                                     "sizes": [
-                                        {"kind": "uniform", "value": 64, "alignment": 16}
+                                        {"kind": "uniform", "value": 128, "alignment": 16}
                                     ]
                                 },
-                                "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                                "binding": {"kind": "uniform", "offset": 0, "size": 128, "elementStride": 0}
                             }
                         ],
                         "sizes": [
-                            {"kind": "uniform", "value": 64, "alignment": 16}
+                            {"kind": "uniform", "value": 128, "alignment": 16}
                         ]
                     },
                     "containerVarLayout": {
@@ -194,20 +242,36 @@
                                                     ]
                                                 },
                                                 "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                                            },
+                                            {
+                                                "name": "normal_matrix",
+                                                "type": {
+                                                    "kind": "matrix",
+                                                    "rowCount": 4,
+                                                    "columnCount": 4,
+                                                    "elementType": {
+                                                        "kind": "scalar",
+                                                        "scalarType": "float32"
+                                                    },
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 64, "alignment": 16}
+                                                    ]
+                                                },
+                                                "binding": {"kind": "uniform", "offset": 64, "size": 64, "elementStride": 0}
                                             }
                                         ],
                                         "sizes": [
-                                            {"kind": "uniform", "value": 64, "alignment": 16}
+                                            {"kind": "uniform", "value": 128, "alignment": 16}
                                         ]
                                     },
-                                    "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                                    "binding": {"kind": "uniform", "offset": 0, "size": 128, "elementStride": 0}
                                 }
                             ],
                             "sizes": [
-                                {"kind": "uniform", "value": 64, "alignment": 16}
+                                {"kind": "uniform", "value": 128, "alignment": 16}
                             ]
                         },
-                        "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                        "binding": {"kind": "uniform", "offset": 0, "size": 128, "elementStride": 0}
                     },
                     "sizes": [
                         {"kind": "constantBuffer", "value": 1}
@@ -255,7 +319,7 @@
                     {
                         "name": "input",
                         "stage": "vertex",
-                        "binding": {"kind": "varyingInput", "index": 0, "count": 3},
+                        "binding": {"kind": "varyingInput", "index": 0, "count": 4},
                         "type": {
                             "kind": "struct",
                             "name": "VertexInput",
@@ -310,10 +374,27 @@
                                     "stage": "vertex",
                                     "binding": {"kind": "varyingInput", "index": 2},
                                     "semanticName": "UV"
+                                },
+                                {
+                                    "name": "normal",
+                                    "type": {
+                                        "kind": "vector",
+                                        "elementCount": 3,
+                                        "elementType": {
+                                            "kind": "scalar",
+                                            "scalarType": "float32"
+                                        },
+                                        "sizes": [
+                                            {"kind": "varyingInput", "value": 1}
+                                        ]
+                                    },
+                                    "stage": "vertex",
+                                    "binding": {"kind": "varyingInput", "index": 3},
+                                    "semanticName": "NORMAL"
                                 }
                             ],
                             "sizes": [
-                                {"kind": "varyingInput", "value": 3}
+                                {"kind": "varyingInput", "value": 4}
                             ]
                         }
                     }
@@ -323,7 +404,7 @@
                 {
                     "name": "input",
                     "stage": "vertex",
-                    "binding": {"kind": "varyingInput", "index": 0, "count": 3},
+                    "binding": {"kind": "varyingInput", "index": 0, "count": 4},
                     "type": {
                         "kind": "struct",
                         "name": "VertexInput",
@@ -378,17 +459,34 @@
                                 "stage": "vertex",
                                 "binding": {"kind": "varyingInput", "index": 2},
                                 "semanticName": "UV"
+                            },
+                            {
+                                "name": "normal",
+                                "type": {
+                                    "kind": "vector",
+                                    "elementCount": 3,
+                                    "elementType": {
+                                        "kind": "scalar",
+                                        "scalarType": "float32"
+                                    },
+                                    "sizes": [
+                                        {"kind": "varyingInput", "value": 1}
+                                    ]
+                                },
+                                "stage": "vertex",
+                                "binding": {"kind": "varyingInput", "index": 3},
+                                "semanticName": "NORMAL"
                             }
                         ],
                         "sizes": [
-                            {"kind": "varyingInput", "value": 3}
+                            {"kind": "varyingInput", "value": 4}
                         ]
                     }
                 }
             ],
             "result": {
                 "stage": "vertex",
-                "binding": {"kind": "varyingOutput", "index": 0, "count": 2},
+                "binding": {"kind": "varyingOutput", "index": 0, "count": 3},
                 "type": {
                     "kind": "struct",
                     "name": "VertexOutput",
@@ -441,10 +539,27 @@
                             "stage": "vertex",
                             "binding": {"kind": "varyingOutput", "index": 1},
                             "semanticName": "UV"
+                        },
+                        {
+                            "name": "normal",
+                            "type": {
+                                "kind": "vector",
+                                "elementCount": 3,
+                                "elementType": {
+                                    "kind": "scalar",
+                                    "scalarType": "float32"
+                                },
+                                "sizes": [
+                                    {"kind": "varyingOutput", "value": 1}
+                                ]
+                            },
+                            "stage": "vertex",
+                            "binding": {"kind": "varyingOutput", "index": 2},
+                            "semanticName": "NORMAL"
                         }
                     ],
                     "sizes": [
-                        {"kind": "varyingOutput", "value": 2}
+                        {"kind": "varyingOutput", "value": 3}
                     ]
                 }
             },
@@ -472,7 +587,7 @@
                     {
                         "name": "input",
                         "stage": "fragment",
-                        "binding": {"kind": "varyingInput", "index": 0, "count": 2},
+                        "binding": {"kind": "varyingInput", "index": 0, "count": 3},
                         "type": {
                             "kind": "struct",
                             "name": "VertexOutput",
@@ -525,10 +640,27 @@
                                     "stage": "fragment",
                                     "binding": {"kind": "varyingInput", "index": 1},
                                     "semanticName": "UV"
+                                },
+                                {
+                                    "name": "normal",
+                                    "type": {
+                                        "kind": "vector",
+                                        "elementCount": 3,
+                                        "elementType": {
+                                            "kind": "scalar",
+                                            "scalarType": "float32"
+                                        },
+                                        "sizes": [
+                                            {"kind": "varyingInput", "value": 1}
+                                        ]
+                                    },
+                                    "stage": "fragment",
+                                    "binding": {"kind": "varyingInput", "index": 2},
+                                    "semanticName": "NORMAL"
                                 }
                             ],
                             "sizes": [
-                                {"kind": "varyingInput", "value": 2}
+                                {"kind": "varyingInput", "value": 3}
                             ]
                         }
                     }
@@ -538,7 +670,7 @@
                 {
                     "name": "input",
                     "stage": "fragment",
-                    "binding": {"kind": "varyingInput", "index": 0, "count": 2},
+                    "binding": {"kind": "varyingInput", "index": 0, "count": 3},
                     "type": {
                         "kind": "struct",
                         "name": "VertexOutput",
@@ -591,10 +723,27 @@
                                 "stage": "fragment",
                                 "binding": {"kind": "varyingInput", "index": 1},
                                 "semanticName": "UV"
+                            },
+                            {
+                                "name": "normal",
+                                "type": {
+                                    "kind": "vector",
+                                    "elementCount": 3,
+                                    "elementType": {
+                                        "kind": "scalar",
+                                        "scalarType": "float32"
+                                    },
+                                    "sizes": [
+                                        {"kind": "varyingInput", "value": 1}
+                                    ]
+                                },
+                                "stage": "fragment",
+                                "binding": {"kind": "varyingInput", "index": 2},
+                                "semanticName": "NORMAL"
                             }
                         ],
                         "sizes": [
-                            {"kind": "varyingInput", "value": 2}
+                            {"kind": "varyingInput", "value": 3}
                         ]
                     }
                 }

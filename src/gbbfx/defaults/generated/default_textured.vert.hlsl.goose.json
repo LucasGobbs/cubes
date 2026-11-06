@@ -21,6 +21,11 @@
       "name": "uv",
       "location": 2,
       "format": "Float2"
+    },
+    {
+      "name": "normal",
+      "location": 3,
+      "format": "Float3"
     }
   ],
   "uniformBlocks": [
@@ -29,10 +34,10 @@
       "typeName": "DefaultTexturedVertexUniformBlock",
       "slot": 0,
       "space": 0,
-      "size": 64,
+      "size": 128,
       "type": {
         "kind": "struct",
-        "size": 64,
+        "size": 128,
         "typeName": "DefaultTexturedVertexUniformBlock",
         "fields": [
           {
@@ -40,12 +45,24 @@
             "offset": 0,
             "type": {
               "kind": "struct",
-              "size": 64,
+              "size": 128,
               "typeName": "DefaultTexturedVertexUniforms",
               "fields": [
                 {
                   "name": "mvp",
                   "offset": 0,
+                  "type": {
+                    "kind": "matrix",
+                    "scalar": "float32",
+                    "rows": 4,
+                    "columns": 4,
+                    "stride": 16,
+                    "size": 64
+                  }
+                },
+                {
+                  "name": "normal_matrix",
+                  "offset": 64,
                   "type": {
                     "kind": "matrix",
                     "scalar": "float32",

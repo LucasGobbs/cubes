@@ -13,6 +13,7 @@ VertexData :: struct {
 	position: Vec3,
 	color:    [4]f32,
 	uv:       Vec2,
+	normal:   [3]f32,
 }
 
 VertexLayout :: enum {
@@ -79,47 +80,75 @@ model_import_from_gltf :: proc(path: string) -> (model: ImportedModel, ok: bool)
 		world: matrix[4, 4]f32 // cgltf writes column-major, same as Odin matrices
 		gltf.node_transform_world(&node, ([^]f32)(&world))
 		mirrored := linalg.determinant(world) < 0
+		// Normals are perpendicular directions: they need the inverse transpose
+		// of the 3x3 part (translation is irrelevant), not the model matrix.
+		normal_matrix := linalg.matrix3_inverse_transpose(linalg.matrix3_from_matrix4(world))
 
 		for &primitive in node.mesh.primitives {
 			if primitive.type != .triangles do continue
-			position_accessor, uv_accessor: ^gltf.accessor
+			position_accessor, uv_accessor, normal_accessor: ^gltf.accessor
 			for attribute in primitive.attributes {
 				#partial switch attribute.type {
 				case .position:
 					position_accessor = attribute.data
 				case .texcoord:
 					if attribute.index == 0 do uv_accessor = attribute.data
+				case .normal:
+					normal_accessor = attribute.data
 				}
 			}
 			if position_accessor == nil do continue
 
 			tint := [4]f32{1, 1, 1, 1}
-			if material := primitive.material; material != nil && material.has_pbr_metallic_roughness {
+			if material := primitive.material;
+			   material != nil && material.has_pbr_metallic_roughness {
 				pbr := material.pbr_metallic_roughness
 				tint = pbr.base_color_factor
-				if texture := pbr.base_color_texture.texture; texture != nil && texture.image_ != nil {
+				if texture := pbr.base_color_texture.texture;
+				   texture != nil && texture.image_ != nil {
 					if image_source == nil do image_source = texture.image_
 				}
 			}
 
 			count := int(position_accessor.count)
 			positions := make([]f32, count * 3, context.temp_allocator)
-			_ = gltf.accessor_unpack_floats(position_accessor, raw_data(positions), uint(count * 3))
+			_ = gltf.accessor_unpack_floats(
+				position_accessor,
+				raw_data(positions),
+				uint(count * 3),
+			)
 			uvs: []f32
 			if uv_accessor != nil {
 				uvs = make([]f32, count * 2, context.temp_allocator)
 				_ = gltf.accessor_unpack_floats(uv_accessor, raw_data(uvs), uint(count * 2))
 			}
 
+			normals: []f32
+			if normal_accessor != nil {
+				normals = make([]f32, count * 3, context.temp_allocator)
+				_ = gltf.accessor_unpack_floats(
+					normal_accessor,
+					raw_data(normals),
+					uint(count * 3),
+				)
+			}
+
 			base := u32(len(vertices))
 			for i in 0 ..< count {
-				point := world * [4]f32{positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2], 1}
+				point :=
+					world * [4]f32{positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2], 1}
 				vertex := VertexData {
 					position = point.xyz,
 					color    = tint,
 				}
 				// glTF UVs are top-left origin, same as stb_image/SDL: no flip.
 				if uvs != nil do vertex.uv = {uvs[i * 2], uvs[i * 2 + 1]}
+				if normals != nil {
+					vertex.normal = linalg.normalize(
+						normal_matrix *
+						Vec3{normals[i * 3], normals[i * 3 + 1], normals[i * 3 + 2]},
+					)
+				}
 				append(&vertices, vertex)
 			}
 
@@ -144,7 +173,6 @@ model_import_from_gltf :: proc(path: string) -> (model: ImportedModel, ok: bool)
 			}
 		}
 	}
-
 	if len(indices) == 0 {
 		log.errorf("gltf: %s has no triangles", path)
 		return {}, false

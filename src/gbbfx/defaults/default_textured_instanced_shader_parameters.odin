@@ -14,26 +14,29 @@ DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BUFFERS :: 1
 
 DefaultTexturedInstancedVertexUniforms :: struct #max_field_align(16) {
 	view_projection: matrix[4, 4]f32,
+	camera_position: [3]f32,
+	_padding_0: [4]u8,
 	first_instance: u32,
-	_padding_0: [12]u8,
+	_padding_1: [12]u8,
 }
 
 #assert(offset_of(DefaultTexturedInstancedVertexUniforms, view_projection) == 0)
-#assert(offset_of(DefaultTexturedInstancedVertexUniforms, first_instance) == 64)
-#assert(size_of(DefaultTexturedInstancedVertexUniforms) == 80)
+#assert(offset_of(DefaultTexturedInstancedVertexUniforms, camera_position) == 64)
+#assert(offset_of(DefaultTexturedInstancedVertexUniforms, first_instance) == 80)
+#assert(size_of(DefaultTexturedInstancedVertexUniforms) == 96)
 
 DefaultTexturedInstancedVertexUniformBlock :: struct #max_field_align(16) {
 	data: DefaultTexturedInstancedVertexUniforms,
 }
 
 #assert(offset_of(DefaultTexturedInstancedVertexUniformBlock, data) == 0)
-#assert(size_of(DefaultTexturedInstancedVertexUniformBlock) == 80)
+#assert(size_of(DefaultTexturedInstancedVertexUniformBlock) == 96)
 
 DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_SIZE :: 80
+DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_SIZE :: 96
 DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_SPACE, binding = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_BINDING, slot = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_SLOT, count = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -46,18 +49,19 @@ DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORMS := []goose.UniformRef {
 	{block = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK, struct_type = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_STRUCT},
 }
 
-default_textured_instanced_vertex_attributes :: proc($Vertex: typeid) -> [3]goose.VertexAttribute {
+default_textured_instanced_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttribute {
 	return {
 		{location = 0, format = .Float3, offset = u32(offset_of(Vertex, position))},
 		{location = 1, format = .Float4, offset = u32(offset_of(Vertex, color))},
 		{location = 2, format = .Float2, offset = u32(offset_of(Vertex, uv))},
+		{location = 3, format = .Float3, offset = u32(offset_of(Vertex, normal))},
 	}
 }
 
 DEFAULT_TEXTURED_INSTANCED_VERTEX_INSTANCE_TRANSFORMS :: goose.Binding {name = "instance_transforms", stage = .Vertex, kind = .StorageBuffer, access = .ReadOnly, location = {space = 0, binding = 1, slot = 0, count = 1}}
 
 DEFAULT_TEXTURED_INSTANCED_VERTEX_BINDINGS := [2]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 80},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 96},
 	{name = "instance_transforms", stage = .Vertex, kind = .StorageBuffer, access = .ReadOnly, location = {space = 0, binding = 1, slot = 0, count = 1}},
 }
 
@@ -135,25 +139,27 @@ DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BUFFERS :: 1
 
 DefaultTexturedInstancedVertexUniforms :: struct #max_field_align(16) {
 	view_projection: matrix[4, 4]f32,
+	camera_position: [3]f32,
 	first_instance: u32,
 }
 
 #assert(offset_of(DefaultTexturedInstancedVertexUniforms, view_projection) == 0)
-#assert(offset_of(DefaultTexturedInstancedVertexUniforms, first_instance) == 64)
-#assert(size_of(DefaultTexturedInstancedVertexUniforms) == 68)
+#assert(offset_of(DefaultTexturedInstancedVertexUniforms, camera_position) == 64)
+#assert(offset_of(DefaultTexturedInstancedVertexUniforms, first_instance) == 76)
+#assert(size_of(DefaultTexturedInstancedVertexUniforms) == 80)
 
 DefaultTexturedInstancedVertexUniformBlock :: struct #max_field_align(16) {
 	data: DefaultTexturedInstancedVertexUniforms,
 }
 
 #assert(offset_of(DefaultTexturedInstancedVertexUniformBlock, data) == 0)
-#assert(size_of(DefaultTexturedInstancedVertexUniformBlock) == 68)
+#assert(size_of(DefaultTexturedInstancedVertexUniformBlock) == 80)
 
 DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_SIZE :: 68
+DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_SIZE :: 80
 DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_SPACE, binding = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_BINDING, slot = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_SLOT, count = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -166,18 +172,19 @@ DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORMS := []goose.UniformRef {
 	{block = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK, struct_type = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_STRUCT},
 }
 
-default_textured_instanced_vertex_attributes :: proc($Vertex: typeid) -> [3]goose.VertexAttribute {
+default_textured_instanced_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttribute {
 	return {
 		{location = 0, format = .Float3, offset = u32(offset_of(Vertex, position))},
 		{location = 1, format = .Float4, offset = u32(offset_of(Vertex, color))},
 		{location = 2, format = .Float2, offset = u32(offset_of(Vertex, uv))},
+		{location = 3, format = .Float3, offset = u32(offset_of(Vertex, normal))},
 	}
 }
 
 DEFAULT_TEXTURED_INSTANCED_VERTEX_INSTANCE_TRANSFORMS :: goose.Binding {name = "instance_transforms", stage = .Vertex, kind = .StorageBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}}
 
 DEFAULT_TEXTURED_INSTANCED_VERTEX_BINDINGS := [2]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 68},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 80},
 	{name = "instance_transforms", stage = .Vertex, kind = .StorageBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}},
 }
 
@@ -255,12 +262,13 @@ DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BUFFERS :: 1
 
 DefaultTexturedInstancedVertexUniforms :: struct #max_field_align(16) {
 	view_projection: matrix[4, 4]f32,
+	camera_position: [3]f32,
 	first_instance: u32,
-	_padding_0: [12]u8,
 }
 
 #assert(offset_of(DefaultTexturedInstancedVertexUniforms, view_projection) == 0)
-#assert(offset_of(DefaultTexturedInstancedVertexUniforms, first_instance) == 64)
+#assert(offset_of(DefaultTexturedInstancedVertexUniforms, camera_position) == 64)
+#assert(offset_of(DefaultTexturedInstancedVertexUniforms, first_instance) == 76)
 #assert(size_of(DefaultTexturedInstancedVertexUniforms) == 80)
 
 DefaultTexturedInstancedVertexUniformBlock :: struct #max_field_align(16) {
@@ -287,11 +295,12 @@ DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORMS := []goose.UniformRef {
 	{block = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK, struct_type = DEFAULT_TEXTURED_INSTANCED_VERTEX_UNIFORM_BLOCK_STRUCT},
 }
 
-default_textured_instanced_vertex_attributes :: proc($Vertex: typeid) -> [3]goose.VertexAttribute {
+default_textured_instanced_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttribute {
 	return {
 		{location = 0, format = .Float3, offset = u32(offset_of(Vertex, position))},
 		{location = 1, format = .Float4, offset = u32(offset_of(Vertex, color))},
 		{location = 2, format = .Float2, offset = u32(offset_of(Vertex, uv))},
+		{location = 3, format = .Float3, offset = u32(offset_of(Vertex, normal))},
 	}
 }
 

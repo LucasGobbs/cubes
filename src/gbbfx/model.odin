@@ -7,6 +7,7 @@ import sdl "vendor:sdl3"
 #assert(offset_of(VertexData, position) == offset_of(loader.VertexData, position))
 #assert(offset_of(VertexData, color) == offset_of(loader.VertexData, color))
 #assert(offset_of(VertexData, uv) == offset_of(loader.VertexData, uv))
+#assert(offset_of(VertexData, normal) == offset_of(loader.VertexData, normal))
 
 Model :: struct {
 	mesh:          Mesh,

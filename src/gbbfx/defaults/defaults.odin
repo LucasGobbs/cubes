@@ -1,5 +1,6 @@
 package defaults
 
+import "core:math/linalg"
 import gbbfx ".."
 
 create_textured_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
@@ -88,6 +89,7 @@ bind_textured_instanced_draw :: proc(
 		data = {
 			view_projection = parameters.view_projection,
 			first_instance = parameters.first_instance,
+			camera_position = parameters.camera_position,
 		},
 	}
 	gbbfx.draw_push_uniform(
@@ -143,7 +145,10 @@ bind_textured_draw :: proc(
 ) {
 	_ = user_data
 	uniforms := DefaultTexturedVertexUniformBlock {
-		data = {mvp = parameters.view_projection * parameters.model_transform},
+		data = {
+			mvp           = parameters.view_projection * parameters.model_transform,
+			normal_matrix = linalg.matrix4_inverse_transpose(parameters.model_transform),
+		},
 	}
 	gbbfx.draw_push_uniform(draw_context, DEFAULT_TEXTURED_VERTEX_UNIFORM_BLOCK, &uniforms)
 }

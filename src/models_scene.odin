@@ -65,10 +65,10 @@ models_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	defaults.bind_textured_material(&state.ground_material, state.ground_texture, state.sampler)
 	tiling :: f32(40)
 	ground_vertices := [4]gbbfx.VertexData {
-		{position = {-100, -1, -100}, color = {1, 1, 1, 1}, uv = {0, 0}},
-		{position = {100, -1, -100}, color = {1, 1, 1, 1}, uv = {tiling, 0}},
-		{position = {100, -1, 100}, color = {1, 1, 1, 1}, uv = {tiling, tiling}},
-		{position = {-100, -1, 100}, color = {1, 1, 1, 1}, uv = {0, tiling}},
+		{position = {-100, -1, -100}, color = {1, 1, 1, 1}, normal = {0, 1, 0}, uv = {0, 0}},
+		{position = {100, -1, -100}, color = {1, 1, 1, 1}, normal = {0, 1, 0}, uv = {tiling, 0}},
+		{position = {100, -1, 100}, color = {1, 1, 1, 1}, normal = {0, 1, 0}, uv = {tiling, tiling}},
+		{position = {-100, -1, 100}, color = {1, 1, 1, 1}, normal = {0, 1, 0}, uv = {0, tiling}},
 	}
 	ground_indices := [6]u16{0, 2, 1, 0, 3, 2}
 	state.ground_mesh = gbbfx.mesh_create(gfx, ground_vertices[:], ground_indices[:])

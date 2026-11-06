@@ -13,6 +13,7 @@
 struct Uniforms_0
 {
     float4x4 view_projection_0;
+    float3 camera_position_0;
     uint first_instance_0;
 };
 
@@ -22,13 +23,13 @@ struct SLANG_ParameterGroup_UniformBlock_0
 };
 
 
-#line 15
+#line 16
 cbuffer UniformBlock_0 : register(b0)
 {
     SLANG_ParameterGroup_UniformBlock_0 UniformBlock_0;
 }
 
-#line 15
+#line 16
 struct _S1
 {
     float4x4 _S2;
@@ -37,31 +38,57 @@ struct _S1
 StructuredBuffer<_S1 > instance_transforms_0 : register(t0);
 
 
-#line 31
+#line 45
+float3 world_normal_0(float4x4 m_0, float3 n_0)
+{
+
+#line 46
+    float3 a_0 = float3(m_0[int(0)][int(0)], m_0[int(1)][int(0)], m_0[int(2)][int(0)]);
+    float3 b_0 = float3(m_0[int(0)][int(1)], m_0[int(1)][int(1)], m_0[int(2)][int(1)]);
+    float3 c_0 = float3(m_0[int(0)][int(2)], m_0[int(1)][int(2)], m_0[int(2)][int(2)]);
+    float3 _S3 = cross(b_0, c_0);
+
+#line 49
+    return float(sign(dot(a_0, _S3))) * (n_0.x * _S3 + n_0.y * cross(c_0, a_0) + n_0.z * cross(a_0, b_0));
+}
+
+
+#line 33
 struct VertexOutput_0
 {
     float4 position_0 : SV_POSITION;
     float4 color_0 : COLOR;
     float2 uv_0 : UV;
+    float3 normal_0 : NORMAL;
+    float3 world_pos_0 : WORLD_POS;
+    float3 eye_0 : EYE;
 };
 
 
-#line 25
+#line 26
 struct VertexInput_0
 {
     float3 position_1 : POSITION;
     float4 color_1 : COLOR;
     float2 uv_1 : UV;
+    float3 normal_1 : NORMAL;
 };
 
 
-#line 38
+#line 53
 VertexOutput_0 vertexMain(VertexInput_0 input_0, uint instance_id_0 : SV_InstanceID)
 {
+
+#line 54
+    _S1 model_0 = instance_transforms_0.Load(instance_id_0 + UniformBlock_0.data_0.first_instance_0);
+    float4 world_0 = mul(model_0._S2, float4(input_0.position_1, 1.0f));
     VertexOutput_0 output_0;
-    output_0.position_0 = mul(UniformBlock_0.data_0.view_projection_0, mul(instance_transforms_0.Load(instance_id_0 + UniformBlock_0.data_0.first_instance_0)._S2, float4(input_0.position_1, 1.0f)));
+    output_0.position_0 = mul(UniformBlock_0.data_0.view_projection_0, world_0);
     output_0.color_0 = input_0.color_1;
     output_0.uv_0 = input_0.uv_1;
+    output_0.world_pos_0 = world_0.xyz;
+    output_0.normal_0 = world_normal_0(model_0._S2, input_0.normal_1);
+    output_0.eye_0 = UniformBlock_0.data_0.camera_position_0;
     return output_0;
 }
 

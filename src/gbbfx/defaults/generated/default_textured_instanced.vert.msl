@@ -3,54 +3,74 @@
 #include <metal_texture>
 using namespace metal;
 
-#line 25 "src/gbbfx/defaults/shaders/textured_instanced.slang"
+#line 45 "src/gbbfx/defaults/shaders/textured_instanced.slang"
+float3 world_normal_0(matrix<float,int(4),int(4)>  m_0, float3 n_0)
+{
+
+#line 46
+    float3 a_0 = float3(m_0[int(0)][int(0)], m_0[int(1)][int(0)], m_0[int(2)][int(0)]);
+    float3 b_0 = float3(m_0[int(0)][int(1)], m_0[int(1)][int(1)], m_0[int(2)][int(1)]);
+    float3 c_0 = float3(m_0[int(0)][int(2)], m_0[int(1)][int(2)], m_0[int(2)][int(2)]);
+    float3 _S1 = cross(b_0, c_0);
+
+#line 49
+    return float3(float((int(sign((dot(a_0, _S1)))))))  * (float3(n_0.x)  * _S1 + float3(n_0.y)  * cross(c_0, a_0) + float3(n_0.z)  * cross(a_0, b_0));
+}
+
+
+#line 26
 struct vertexMain_Result_0
 {
     float4 position_0 [[position]];
     float4 color_0 [[user(COLOR)]];
     float2 uv_0 [[user(UV)]];
+    float3 normal_0 [[user(NORMAL)]];
+    float3 world_pos_0 [[user(WORLD_POS)]];
+    float3 eye_0 [[user(EYE)]];
 };
 
 
-#line 25
+#line 26
 struct vertexInput_0
 {
     float3 position_1 [[attribute(0)]];
     float4 color_1 [[attribute(1)]];
     float2 uv_1 [[attribute(2)]];
+    float3 normal_1 [[attribute(3)]];
 };
 
 
-#line 25
+#line 26
 struct _MatrixStorage_float4x4_ColMajornatural_0
 {
     array<float4, int(4)> data_0;
 };
 
 
-#line 25
+#line 26
 struct Uniforms_natural_0
 {
     _MatrixStorage_float4x4_ColMajornatural_0 view_projection_0;
+    float3 camera_position_0;
     uint first_instance_0;
 };
 
 
-#line 25
+#line 26
 struct SLANG_ParameterGroup_UniformBlock_natural_0
 {
     Uniforms_natural_0 data_1;
 };
 
 
-#line 25
+#line 26
 struct _MatrixStorage_float4x4_ColMajornatural_1
 {
     array<packed_float4, int(4)> data_2;
 };
 
 
-#line 20
+#line 21
 struct KernelContext_0
 {
     SLANG_ParameterGroup_UniformBlock_natural_0 constant* UniformBlock_0;
@@ -58,50 +78,69 @@ struct KernelContext_0
 };
 
 
-#line 31
+#line 33
 struct VertexOutput_0
 {
     float4 position_2;
     float4 color_2;
     float2 uv_2;
+    float3 normal_2;
+    float3 world_pos_1;
+    float3 eye_1;
 };
 
 
-#line 31
-[[vertex]] vertexMain_Result_0 vertexMain(vertexInput_0 _S1 [[stage_in]], uint instance_id_0 [[instance_id]], uint base_instance_0 [[base_instance]], SLANG_ParameterGroup_UniformBlock_natural_0 constant* UniformBlock_1 [[buffer(0)]], _MatrixStorage_float4x4_ColMajornatural_1 device* instance_transforms_1 [[buffer(1)]])
+#line 33
+[[vertex]] vertexMain_Result_0 vertexMain(vertexInput_0 _S2 [[stage_in]], uint instance_id_0 [[instance_id]], uint base_instance_0 [[base_instance]], SLANG_ParameterGroup_UniformBlock_natural_0 constant* UniformBlock_1 [[buffer(0)]], _MatrixStorage_float4x4_ColMajornatural_1 device* instance_transforms_1 [[buffer(1)]])
 {
 
-#line 31
+#line 33
     thread KernelContext_0 kernelContext_0;
 
-#line 31
+#line 33
     (&kernelContext_0)->UniformBlock_0 = UniformBlock_1;
 
-#line 31
+#line 33
     (&kernelContext_0)->instance_transforms_0 = instance_transforms_1;
 
-#line 31
-    _MatrixStorage_float4x4_ColMajornatural_1 device* _S2 = instance_transforms_1+(instance_id_0 - base_instance_0 + (&UniformBlock_1->data_1)->first_instance_0);
+#line 33
+    _MatrixStorage_float4x4_ColMajornatural_1 device* _S3 = instance_transforms_1+(instance_id_0 - base_instance_0 + (&UniformBlock_1->data_1)->first_instance_0);
 
-#line 40
+#line 33
+    matrix<float,int(4),int(4)>  _S4 = matrix<float,int(4),int(4)> ((*_S3).data_2[int(0)][int(0)], (*_S3).data_2[int(1)][int(0)], (*_S3).data_2[int(2)][int(0)], (*_S3).data_2[int(3)][int(0)], (*_S3).data_2[int(0)][int(1)], (*_S3).data_2[int(1)][int(1)], (*_S3).data_2[int(2)][int(1)], (*_S3).data_2[int(3)][int(1)], (*_S3).data_2[int(0)][int(2)], (*_S3).data_2[int(1)][int(2)], (*_S3).data_2[int(2)][int(2)], (*_S3).data_2[int(3)][int(2)], (*_S3).data_2[int(0)][int(3)], (*_S3).data_2[int(1)][int(3)], (*_S3).data_2[int(2)][int(3)], (*_S3).data_2[int(3)][int(3)]);
+
+#line 55
+    float4 world_0 = (((float4(_S2.position_1, 1.0f)) * (_S4)));
     thread VertexOutput_0 output_0;
-    (&output_0)->position_2 = ((((((float4(_S1.position_1, 1.0f)) * (matrix<float,int(4),int(4)> ((*_S2).data_2[int(0)][int(0)], (*_S2).data_2[int(1)][int(0)], (*_S2).data_2[int(2)][int(0)], (*_S2).data_2[int(3)][int(0)], (*_S2).data_2[int(0)][int(1)], (*_S2).data_2[int(1)][int(1)], (*_S2).data_2[int(2)][int(1)], (*_S2).data_2[int(3)][int(1)], (*_S2).data_2[int(0)][int(2)], (*_S2).data_2[int(1)][int(2)], (*_S2).data_2[int(2)][int(2)], (*_S2).data_2[int(3)][int(2)], (*_S2).data_2[int(0)][int(3)], (*_S2).data_2[int(1)][int(3)], (*_S2).data_2[int(2)][int(3)], (*_S2).data_2[int(3)][int(3)]))))) * (matrix<float,int(4),int(4)> ((&UniformBlock_1->data_1)->view_projection_0.data_0[int(0)][int(0)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(1)][int(0)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(2)][int(0)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(3)][int(0)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(0)][int(1)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(1)][int(1)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(2)][int(1)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(3)][int(1)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(0)][int(2)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(1)][int(2)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(2)][int(2)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(3)][int(2)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(0)][int(3)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(1)][int(3)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(2)][int(3)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(3)][int(3)]))));
-    (&output_0)->color_2 = _S1.color_1;
-    (&output_0)->uv_2 = _S1.uv_1;
+    (&output_0)->position_2 = (((world_0) * (matrix<float,int(4),int(4)> ((&UniformBlock_1->data_1)->view_projection_0.data_0[int(0)][int(0)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(1)][int(0)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(2)][int(0)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(3)][int(0)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(0)][int(1)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(1)][int(1)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(2)][int(1)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(3)][int(1)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(0)][int(2)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(1)][int(2)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(2)][int(2)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(3)][int(2)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(0)][int(3)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(1)][int(3)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(2)][int(3)], (&UniformBlock_1->data_1)->view_projection_0.data_0[int(3)][int(3)]))));
+    (&output_0)->color_2 = _S2.color_1;
+    (&output_0)->uv_2 = _S2.uv_1;
+    (&output_0)->world_pos_1 = world_0.xyz;
+    (&output_0)->normal_2 = world_normal_0(_S4, _S2.normal_1);
+    (&output_0)->eye_1 = (&UniformBlock_1->data_1)->camera_position_0;
 
-#line 43
-    thread vertexMain_Result_0 _S3;
+#line 62
+    thread vertexMain_Result_0 _S5;
 
-#line 43
-    (&_S3)->position_0 = output_0.position_2;
+#line 62
+    (&_S5)->position_0 = output_0.position_2;
 
-#line 43
-    (&_S3)->color_0 = output_0.color_2;
+#line 62
+    (&_S5)->color_0 = output_0.color_2;
 
-#line 43
-    (&_S3)->uv_0 = output_0.uv_2;
+#line 62
+    (&_S5)->uv_0 = output_0.uv_2;
 
-#line 43
-    return _S3;
+#line 62
+    (&_S5)->normal_0 = output_0.normal_2;
+
+#line 62
+    (&_S5)->world_pos_0 = output_0.world_pos_1;
+
+#line 62
+    (&_S5)->eye_0 = output_0.eye_1;
+
+#line 62
+    return _S5;
 }
 

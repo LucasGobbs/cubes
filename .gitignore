@@ -6,6 +6,7 @@ output.ppm
 output.qoi
 odin_bin
 *.bin
-mai
+gbbfx.a
 main_debug.dSYM
 docs/
+dist/
