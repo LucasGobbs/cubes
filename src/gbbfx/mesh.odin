@@ -5,6 +5,7 @@ VertexData :: struct {
 	position: [3]f32,
 	color:    [4]f32,
 	uv:       [2]f32,
+	normal:   [3]f32,
 }
 
 // A mesh is just buffers + counts. The vertex format lives in the pipeline,
@@ -25,7 +26,8 @@ mesh_create :: proc(
 	gfx: ^Gfx,
 	vertices: []$V,
 	indices: []$I,
-) -> Mesh where size_of(I) == 2 || size_of(I) == 4 {
+) -> Mesh where size_of(I) == 2 ||
+	size_of(I) == 4 {
 	return {
 		vertex_buffer = gfx_buffer_create_from_bytes(gfx, vertices, .VERTEX),
 		index_buffer = gfx_buffer_create_from_bytes(gfx, indices, .INDEX),
@@ -51,7 +53,8 @@ mesh_update :: proc(
 	mesh: ^Mesh,
 	vertices: []$V,
 	indices: []$I,
-) where size_of(I) == 2 || size_of(I) == 4 {
+) where size_of(I) == 2 ||
+	size_of(I) == 4 {
 	assert(len(vertices) > 0 && len(indices) > 0)
 	mesh.vertex_buffer = gfx_buffer_stage(renderer.gfx, mesh.vertex_buffer, vertices, .VERTEX)
 	mesh.index_buffer = gfx_buffer_stage(renderer.gfx, mesh.index_buffer, indices, .INDEX)
@@ -115,7 +118,14 @@ mesh_draw_instanced :: proc(
 	if Resource_Handle(mesh.index_buffer).generation != 0 {
 		index_buffer := gfx_buffer_get(gfx, mesh.index_buffer)
 		sdl.BindGPUIndexBuffer(render_pass, {buffer = index_buffer.handle}, mesh.index_size)
-		sdl.DrawGPUIndexedPrimitives(render_pass, mesh.num_indices, instances, 0, 0, first_instance)
+		sdl.DrawGPUIndexedPrimitives(
+			render_pass,
+			mesh.num_indices,
+			instances,
+			0,
+			0,
+			first_instance,
+		)
 	} else {
 		sdl.DrawGPUPrimitives(render_pass, mesh.num_vertices, instances, 0, first_instance)
 	}

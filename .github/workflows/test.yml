@@ -1,0 +1,24 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    # Vendored slangc is macOS arm64 only (see Makefile).
+    runs-on: macos-14
+    steps:
+      # .gitmodules uses an SSH host alias; rewrite it so CI can clone goose.
+      - name: Use HTTPS for goose submodule
+        run: git config --global url."https://github.com/".insteadOf "git@github-personal:"
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Odin
+        run: brew install odin
+
+      - name: Test
+        run: make test

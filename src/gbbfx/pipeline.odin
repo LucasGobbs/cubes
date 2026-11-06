@@ -11,6 +11,7 @@ Draw_Parameters :: struct {
 	material:        ^Material,
 	// Start of this run's transforms in the instance storage buffer
 	// (instanced pipelines only; 0 otherwise).
+	camera_position: [3]f32,
 	first_instance:  u32,
 }
 

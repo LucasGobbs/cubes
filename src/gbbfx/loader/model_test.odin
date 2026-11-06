@@ -1,5 +1,6 @@
 package loader
 
+import "core:math/linalg"
 import "core:testing"
 
 // Run from the repository root (make test): asset paths are relative to it.
@@ -37,4 +38,39 @@ gltf_import_without_texture_falls_back_to_white :: proc(t: ^testing.T) {
 	defer model_import_destroy(&model)
 	testing.expect_value(t, model.image.width, u32(1))
 	testing.expect_value(t, model.image.pixels[0], u8(255))
+}
+
+@(test)
+gltf_import_outputs_unit_normals :: proc(t: ^testing.T) {
+	// ship-large has child nodes with translation and scale, so a wrong normal
+	// matrix would show up as non-unit or flipped normals.
+	model, ok := model_import_from_gltf("static/models/ship-large.glb")
+	testing.expect(t, ok)
+	defer model_import_destroy(&model)
+
+	for vertex in model.mesh.vertices {
+		testing.expect(t, abs(linalg.length(vertex.normal) - 1) < 1e-3)
+	}
+}
+
+@(test)
+gltf_normals_point_outward_matching_triangle_winding :: proc(t: ^testing.T) {
+	// glTF winding is counter-clockwise outward, so the geometric face normal
+	// must agree with the stored vertex normals for nearly every triangle.
+	model, ok := model_import_from_gltf("static/models/boat-tug-a.glb")
+	testing.expect(t, ok)
+	defer model_import_destroy(&model)
+
+	agree, total := 0, 0
+	for i := 0; i + 2 < len(model.mesh.indices); i += 3 {
+		a := model.mesh.vertices[model.mesh.indices[i]]
+		b := model.mesh.vertices[model.mesh.indices[i + 1]]
+		c := model.mesh.vertices[model.mesh.indices[i + 2]]
+		face := linalg.cross(b.position - a.position, c.position - a.position)
+		if linalg.length(face) < 1e-9 do continue // degenerate
+		total += 1
+		if linalg.dot(face, a.normal + b.normal + c.normal) > 0 do agree += 1
+	}
+	testing.expect(t, total > 0)
+	testing.expect(t, f32(agree) / f32(total) > 0.99)
 }

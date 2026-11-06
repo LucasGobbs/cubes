@@ -21,6 +21,11 @@
       "name": "uv",
       "location": 2,
       "format": "Float2"
+    },
+    {
+      "name": "normal",
+      "location": 3,
+      "format": "Float3"
     }
   ],
   "uniformBlocks": [
@@ -29,10 +34,10 @@
       "typeName": "DefaultTexturedInstancedVertexUniformBlock",
       "slot": 0,
       "space": 0,
-      "size": 80,
+      "size": 96,
       "type": {
         "kind": "struct",
-        "size": 80,
+        "size": 96,
         "typeName": "DefaultTexturedInstancedVertexUniformBlock",
         "fields": [
           {
@@ -40,7 +45,7 @@
             "offset": 0,
             "type": {
               "kind": "struct",
-              "size": 80,
+              "size": 96,
               "typeName": "DefaultTexturedInstancedVertexUniforms",
               "fields": [
                 {
@@ -56,8 +61,18 @@
                   }
                 },
                 {
-                  "name": "first_instance",
+                  "name": "camera_position",
                   "offset": 64,
+                  "type": {
+                    "kind": "vector",
+                    "scalar": "float32",
+                    "count": 3,
+                    "size": 16
+                  }
+                },
+                {
+                  "name": "first_instance",
+                  "offset": 80,
                   "type": {
                     "kind": "scalar",
                     "scalar": "uint32",

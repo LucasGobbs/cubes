@@ -406,6 +406,7 @@ renderer_draw_item :: proc(renderer: ^Renderer, item: ^DrawItem) {
 		renderer.gfx.command_buffer,
 		{
 			view_projection = renderer.view_projection,
+			camera_position = renderer.camera.position,
 			model_transform = item.transform,
 			material = material,
 		},
@@ -448,6 +449,7 @@ renderer_draw_instanced_run :: proc(
 		renderer.gfx.command_buffer,
 		{
 			view_projection = renderer.view_projection,
+			camera_position = renderer.camera.position,
 			model_transform = {},
 			material = material,
 			first_instance = first_instance,

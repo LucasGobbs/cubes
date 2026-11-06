@@ -21,6 +21,11 @@
       "name": "uv",
       "location": 2,
       "format": "Float2"
+    },
+    {
+      "name": "normal",
+      "location": 3,
+      "format": "Float3"
     }
   ],
   "uniformBlocks": [
@@ -56,8 +61,18 @@
                   }
                 },
                 {
-                  "name": "first_instance",
+                  "name": "camera_position",
                   "offset": 64,
+                  "type": {
+                    "kind": "vector",
+                    "scalar": "float32",
+                    "count": 3,
+                    "size": 12
+                  }
+                },
+                {
+                  "name": "first_instance",
+                  "offset": 76,
                   "type": {
                     "kind": "scalar",
                     "scalar": "uint32",

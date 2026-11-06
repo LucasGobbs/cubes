@@ -66,10 +66,10 @@ simple_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 
 	// Raw geometry: animated quad through the unlit pipeline.
 	state.quad_vertices = {
-		{position = {-1, -1, 0}, color = {1, 1, 1, 1}, uv = {0, 0}},
-		{position = {1, -1, 0}, color = {1, 1, 1, 1}, uv = {1, 0}},
-		{position = {1, 1, 0}, color = {1, 1, 1, 1}, uv = {1, 1}},
-		{position = {-1, 1, 0}, color = {1, 1, 1, 1}, uv = {0, 1}},
+		{position = {-1, -1, 0}, color = {1, 1, 1, 1}, normal = {0, 0, 1}, uv = {0, 0}},
+		{position = {1, -1, 0}, color = {1, 1, 1, 1}, normal = {0, 0, 1}, uv = {1, 0}},
+		{position = {1, 1, 0}, color = {1, 1, 1, 1}, normal = {0, 0, 1}, uv = {1, 1}},
+		{position = {-1, 1, 0}, color = {1, 1, 1, 1}, normal = {0, 0, 1}, uv = {0, 1}},
 	}
 	state.quad_indices = {0, 1, 2, 2, 3, 0}
 	state.quad_mesh = gbbfx.mesh_create(gfx, state.quad_vertices[:], state.quad_indices[:])

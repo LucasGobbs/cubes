@@ -89,3 +89,12 @@ clean:
 	rm -rf shaders/generated src/gbbfx/defaults/generated
 	rm -f src/shader_parameters/*_shader_parameters.odin \
 		src/gbbfx/defaults/*_shader_parameters.odin
+
+.PHONY: dist
+# Release bundle: binary + static assets. Shaders are embedded at build time,
+# so run from inside dist/ (asset paths are relative to the cwd).
+dist: build
+	rm -rf dist
+	mkdir dist
+	cp $(BIN) dist/
+	cp -R static dist/
