@@ -20,7 +20,7 @@ Scene :: struct {
 	fps_timer: f32,
 }
 
-SCENE_NAMES :: [4]string{"simple", "editor", "models", "benchmark"}
+SCENE_NAMES := [4]string{"simple", "editor", "models", "benchmark"}
 
 scene_lookup :: proc(name: string) -> (Scene, bool) {
 	switch name {

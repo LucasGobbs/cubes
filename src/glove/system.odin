@@ -47,6 +47,40 @@ add_axis_2d :: proc(system: ^System, name: string) -> Axis_2D_Action {
 	return action
 }
 
+// Snapshot of how many actions exist, so a scene can register its own and
+// drop them on exit without touching the app-level ones registered before.
+Mark :: struct {
+	buttons, axes_2d: int,
+}
+
+system_mark :: proc(system: ^System) -> Mark {
+	return {len(system.button_actions), len(system.axis_2d_actions)}
+}
+
+// Removes every action created after the mark, plus the bindings that point
+// at them. Action handles issued after the mark become invalid.
+system_rewind :: proc(system: ^System, mark: Mark) {
+	for action in system.button_actions[mark.buttons:] do delete(action.name, system.allocator)
+	for action in system.axis_2d_actions[mark.axes_2d:] do delete(action.name, system.allocator)
+	resize(&system.button_actions, mark.buttons)
+	resize(&system.axis_2d_actions, mark.axes_2d)
+	retain_bindings(&system.key_bindings, mark.buttons)
+	retain_bindings(&system.mouse_button_bindings, mark.buttons)
+	retain_bindings(&system.button_axis_2d_bindings, mark.axes_2d)
+}
+
+@(private = "file")
+retain_bindings :: proc(bindings: ^[dynamic]$B, action_count: int) {
+	kept := 0
+	for binding in bindings {
+		if int(binding.action) < action_count {
+			bindings[kept] = binding
+			kept += 1
+		}
+	}
+	resize(bindings, kept)
+}
+
 update :: proc(system: ^System) {
 	assert(system != nil)
 	system.frame_index += 1
