@@ -9,6 +9,7 @@ Texture :: struct {
 	usage:               sdl.GPUTextureUsageFlags,
 	width, height:       u32,
 	sample_count:        sdl.GPUSampleCount,
+	mip_levels:          u32,
 	_temporary_raw_data: []byte,
 }
 
@@ -27,7 +28,12 @@ gfx_texture_create_with_usage :: proc(
 	format: sdl.GPUTextureFormat,
 	usage: sdl.GPUTextureUsageFlags,
 	sample_count := sdl.GPUSampleCount._1,
+	// > 1 needs usage to include .COLOR_TARGET (mip generation renders to the
+	// levels). Level 0 is uploaded; uploader_flush* generates the rest.
+	mip_levels := u32(1),
 ) -> Texture_Handle {
+	assert(mip_levels >= 1)
+	assert(mip_levels == 1 || .COLOR_TARGET in usage, "mipmapped textures need COLOR_TARGET")
 	resource := Texture {
 		handle = sdl.CreateGPUTexture(
 			gfx.gpu,
@@ -37,7 +43,7 @@ gfx_texture_create_with_usage :: proc(
 				width = width,
 				height = height,
 				layer_count_or_depth = 1,
-				num_levels = 1,
+				num_levels = mip_levels,
 				sample_count = sample_count,
 			},
 		),
@@ -46,6 +52,7 @@ gfx_texture_create_with_usage :: proc(
 		width  = width,
 		height = height,
 		sample_count = sample_count,
+		mip_levels = mip_levels,
 	}
 	assert(resource.handle != nil)
 	handle := Texture_Handle(handle_pool_acquire(&gfx.texture_handles))
@@ -74,9 +81,10 @@ gfx_texture_resize :: proc(gfx: ^Gfx, handle: ^Texture_Handle, width, height: u3
 	format := texture.format
 	usage := texture.usage
 	sample_count := texture.sample_count
+	mip_levels := mip_level_count(width, height) if texture.mip_levels > 1 else 1
 	_ = sdl.WaitForGPUIdle(gfx.gpu)
 	gfx_texture_destroy(gfx, handle^)
-	handle^ = gfx_texture_create_with_usage(gfx, width, height, format, usage, sample_count)
+	handle^ = gfx_texture_create_with_usage(gfx, width, height, format, usage, sample_count, mip_levels)
 	return true
 }
 
@@ -91,10 +99,13 @@ gfx_texture_destroy :: proc(gfx: ^Gfx, handle: Texture_Handle) {
 
 // Loads an image file (PNG/JPEG) into a sampled RGBA8 texture and uploads it
 // (blocking). Standalone textures for ground planes, skyboxes, raw meshes.
-gfx_texture_load :: proc(gfx: ^Gfx, path: string) -> Texture_Handle {
+// srgb: true for color art (albedo), false for data (normal/roughness maps),
+// whose bytes are math and must not be gamma-decoded. mipmaps: build the full
+// chain (pair with a sampler whose mipmap_mode is .LINEAR, see SAMPLER_TRILINEAR).
+gfx_texture_load :: proc(gfx: ^Gfx, path: string, srgb := true, mipmaps := true) -> Texture_Handle {
 	image := loader.image_load(path)
 	defer loader.image_destroy(&image)
-	handle := gfx_texture_create(gfx, image.width, image.height, .R8G8B8A8_UNORM, .SAMPLER)
+	handle := gfx_texture_create_rgba8(gfx, image.width, image.height, srgb, mipmaps)
 	texture := gfx_texture_get(gfx, handle)
 	texture._temporary_raw_data = image.pixels
 	uploader_begin(&gfx.renderer.uploader)
@@ -102,4 +113,14 @@ gfx_texture_load :: proc(gfx: ^Gfx, path: string) -> Texture_Handle {
 	uploader_flush_blocking(&gfx.renderer.uploader)
 	texture._temporary_raw_data = nil
 	return handle
+}
+
+// Sampled RGBA8 texture, optionally with a full mip chain. Fill
+// _temporary_raw_data with level 0 and upload through the Uploader.
+gfx_texture_create_rgba8 :: proc(gfx: ^Gfx, width, height: u32, srgb: bool, mipmaps: bool) -> Texture_Handle {
+	format := sdl.GPUTextureFormat.R8G8B8A8_UNORM_SRGB if srgb else .R8G8B8A8_UNORM
+	levels := mip_level_count(width, height) if mipmaps else 1
+	usage := sdl.GPUTextureUsageFlags{.SAMPLER}
+	if levels > 1 do usage += {.COLOR_TARGET}
+	return gfx_texture_create_with_usage(gfx, width, height, format, usage, ._1, levels)
 }

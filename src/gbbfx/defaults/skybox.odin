@@ -31,7 +31,7 @@ skybox_create :: proc(gfx: ^gbbfx.Gfx, path: string) -> Skybox {
 			bind_draw = bind_skybox_draw,
 		},
 	)
-	skybox.texture = gbbfx.gfx_texture_load(gfx, path)
+	skybox.texture = gbbfx.gfx_texture_load(gfx, path, mipmaps = false) // shader samples level 0
 	skybox.sampler = gbbfx.gfx_sampler_create(
 		gfx,
 		{

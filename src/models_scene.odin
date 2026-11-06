@@ -38,7 +38,7 @@ models_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state.fly_camera = fly_camera_create(gfx, "models")
 
 	state.pipeline = defaults.create_textured_pipeline(gfx)
-	state.sampler = gbbfx.gfx_sampler_create(gfx)
+	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
 
 	for path, index in MODEL_PATHS {
 		state.models[index] = load_textured_model(

@@ -24,12 +24,14 @@ model_create :: proc(
 		material = material_create(pipeline),
 	}
 	if len(imported.image.pixels) > 0 {
-		model.owned_texture = gfx_texture_create(
+		// glTF base color textures are sRGB by spec.
+		assert(imported.image.format == .RGBA8_UNORM)
+		model.owned_texture = gfx_texture_create_rgba8(
 			gfx,
 			imported.image.width,
 			imported.image.height,
-			image_format_to_gpu(imported.image.format),
-			.SAMPLER,
+			srgb = true,
+			mipmaps = true,
 		)
 		gfx_texture_get(gfx, model.owned_texture)._temporary_raw_data = imported.image.pixels
 	}
@@ -38,11 +40,6 @@ model_create :: proc(
 
 model_texture :: proc(model: ^Model) -> Texture_Handle {
 	return model.owned_texture
-}
-
-image_format_to_gpu :: proc(format: loader.ImageFormat) -> sdl.GPUTextureFormat {
-	assert(format == .RGBA8_UNORM)
-	return .R8G8B8A8_UNORM
 }
 
 model_upload_to_gpu :: proc(model: ^Model, uploader: ^Uploader) {

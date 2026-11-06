@@ -2,6 +2,21 @@ package gbbfx
 
 import sdl "vendor:sdl3"
 
+// Trilinear + 8x anisotropic, repeating: the default for mipmapped color
+// textures (models, ground). The zero-value GPUSamplerCreateInfo is nearest /
+// no mips, which suits pixel-exact data such as the font atlas.
+SAMPLER_TRILINEAR :: sdl.GPUSamplerCreateInfo {
+	min_filter        = .LINEAR,
+	mag_filter        = .LINEAR,
+	mipmap_mode       = .LINEAR,
+	address_mode_u    = .REPEAT,
+	address_mode_v    = .REPEAT,
+	address_mode_w    = .REPEAT,
+	enable_anisotropy = true,
+	max_anisotropy    = 8,
+	max_lod           = 1000, // zero would clamp sampling to mip 0
+}
+
 Sampler :: struct {
 	handle: ^sdl.GPUSampler,
 }
