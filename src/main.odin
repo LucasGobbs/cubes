@@ -11,7 +11,7 @@ import glove "glove"
 import sdl "vendor:sdl3"
 
 quit_action: glove.Button_Action
-switch_actions: [len(SCENE_NAMES)]glove.Button_Action
+switch_actions: [len(SCENES)]glove.Button_Action
 current_scene: int
 // Input state before the scene registered its own actions; switching rewinds
 // to it so scenes do not accumulate dead actions and bindings.
@@ -23,9 +23,10 @@ main :: proc() {
 	name := "benchmark"
 	if len(os.args) > 1 do name = os.args[1]
 	scene, found := scene_lookup(name)
-	for scene_name, index in SCENE_NAMES do if scene_name == name do current_scene = index
+	for new_scene, index in SCENES do if new_scene.name == name do current_scene = index
 	if !found {
-		log.errorf("unknown scene %q — expected one of: %v", name, SCENE_NAMES)
+		log.errorf("unknown scene %q — expected one of:", name)
+		for s in SCENES do log.errorf("%s", s.name)
 		os.exit(1)
 	}
 
@@ -44,7 +45,7 @@ scene_create :: proc(gfx: ^gbbfx.Gfx, raw_scene: rawptr) -> bool {
 	quit_action = glove.add_button(inputs, "app.quit")
 	glove.bind_key(inputs, quit_action, .ESCAPE)
 	for &action, index in switch_actions {
-		action = glove.add_button(inputs, SCENE_NAMES[index])
+		action = glove.add_button(inputs, SCENES[index].name)
 		glove.bind_key(inputs, action, glove.Key(int(glove.Key._1) + index))
 	}
 	scene_input_mark = glove.system_mark(inputs)
@@ -82,17 +83,17 @@ scene_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, raw_scene: rawptr) {
 // Tears the running scene down and starts another without restarting the
 // device. Runs at the top of a tick, so no frame or pass is open.
 scene_switch :: proc(gfx: ^gbbfx.Gfx, scene: ^Scene, index: int) {
-	log.infof("switching scene: %s -> %s", SCENE_NAMES[current_scene], SCENE_NAMES[index])
+	log.infof("switching scene: %s -> %s", SCENES[current_scene].name, SCENES[index].name)
 	_ = sdl.WaitForGPUIdle(gfx.gpu) // the old scene's buffers may still be in flight
 	scene_destroy(gfx, rawptr(scene))
 	glove.system_rewind(gbbfx.gfx_input(gfx), scene_input_mark)
 	gbbfx.gfx_set_present_mode(gfx, .VSYNC) // the benchmark scene uncaps it
 
-	next, _ := scene_lookup(SCENE_NAMES[index])
+	next, _ := scene_lookup(SCENES[index].name)
 	scene^ = next
 	current_scene = index
 	if !next.create(scene, gfx) {
-		log.errorf("scene %q failed to create", SCENE_NAMES[index])
+		log.errorf("scene %q failed to create", SCENES[index].name)
 		gbbfx.gfx_request_quit(gfx)
 	}
 }
