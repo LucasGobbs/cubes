@@ -14,6 +14,7 @@ Demo of the `gbbfx` renderer (Odin + SDL3 GPU + Slang) with four scenes.
 ```
 make build                     # release binary ./main
 make run ARGS=models           # scenes: simple, editor, models, benchmark (default)
+make run ARGS="benchmark --bench 10"  # run 10 s without input, print fps/draws/CPU stats, exit
 make editor                    # debug build with the microui editor overlay
 make test                      # shader generation + all test packages
 make dist                      # dist/: binary + static/ assets

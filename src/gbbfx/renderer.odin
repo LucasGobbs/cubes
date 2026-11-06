@@ -3,6 +3,7 @@ package gbbfx
 import "core:math/linalg"
 import "core:mem"
 import "core:slice"
+import "core:time"
 import loader "loader"
 import sdl "vendor:sdl3"
 
@@ -48,6 +49,11 @@ Renderer :: struct {
 
 	// Number of GPU draws issued in the last flush (HUD/profiling).
 	draw_calls:      int,
+	// GPU triangles submitted in the last flush.
+	triangles:       int,
+	// CPU time of the last frame's prepare and flush (benchmark mode reads these).
+	prepare_time:    time.Duration,
+	flush_time:      time.Duration,
 
 	// Cached only during an active pass.
 	bound_pipeline:  Pipeline_Handle,
@@ -200,6 +206,7 @@ renderer_unload :: proc(renderer: ^Renderer, model: ^Model) {
 }
 
 renderer_begin_frame :: proc(renderer: ^Renderer) {
+	uploader_collect(&renderer.uploader) // frees staging of uploads the GPU has finished
 	_ = gfx_begin_frame(renderer.gfx)
 }
 
@@ -208,13 +215,48 @@ renderer_end_frame :: proc(renderer: ^Renderer) {
 	gfx_end_frame(renderer.gfx)
 }
 
+// Left/right/bottom/top planes (xyz = inward unit normal, w = offset) from a
+// view-projection matrix (Gribb-Hartmann). Near/far are skipped: reverse-Z,
+// infinite far, and a near-plane miss costs nothing.
+frustum_planes :: proc(vp: matrix[4, 4]f32) -> (planes: [4][4]f32) {
+	row :: proc(m: matrix[4, 4]f32, r: int) -> [4]f32 {
+		return {m[r, 0], m[r, 1], m[r, 2], m[r, 3]}
+	}
+	r0, r1, r3 := row(vp, 0), row(vp, 1), row(vp, 3)
+	planes = {r3 + r0, r3 - r0, r3 + r1, r3 - r1}
+	for &plane in planes do plane /= linalg.length(plane.xyz)
+	return
+}
+
+// True when the mesh's world-space bounding sphere is fully outside a side plane.
+renderable_culled :: proc(
+	planes: ^[4][4]f32,
+	mesh: ^Mesh,
+	transform: matrix[4, 4]f32,
+) -> bool {
+	if mesh.radius <= 0 do return false
+	center := (transform * [4]f32{mesh.center.x, mesh.center.y, mesh.center.z, 1}).xyz
+	scale := max(
+		linalg.length(Vec3{transform[0, 0], transform[1, 0], transform[2, 0]}),
+		linalg.length(Vec3{transform[0, 1], transform[1, 1], transform[2, 1]}),
+		linalg.length(Vec3{transform[0, 2], transform[1, 2], transform[2, 2]}),
+	)
+	radius := mesh.radius * scale
+	for plane in planes {
+		if linalg.dot(plane.xyz, center) + plane.w < -radius do return true
+	}
+	return false
+}
+
 renderer_render_scene :: proc(renderer: ^Renderer, scene: ^Scene) {
 	assert(renderer.gfx.frame_open)
 	if renderer.gfx.swapchain == nil do return
+	planes := frustum_planes(camera_view_projection(&renderer.camera))
 	for &entity in scene.entities {
 		for &component in entity.components {
 			#partial switch renderable in &component {
 			case Renderable:
+				if renderable.cull && renderable_culled(&planes, renderable.mesh, entity.transform) do continue
 				renderer_submit(
 					renderer,
 					renderable.mesh,
@@ -225,9 +267,13 @@ renderer_render_scene :: proc(renderer: ^Renderer, scene: ^Scene) {
 			}
 		}
 	}
+	start := time.tick_now()
 	renderer_prepare(renderer)
+	renderer.prepare_time = time.tick_since(start)
 	renderer_begin_pass(renderer, camera_view_projection(&renderer.camera))
+	start = time.tick_now()
 	renderer_flush(renderer)
+	renderer.flush_time = time.tick_since(start)
 	renderer_end_pass(renderer)
 }
 
@@ -239,6 +285,7 @@ renderer_prepare :: proc(renderer: ^Renderer) {
 	clear(&renderer.instance_transforms)
 	clear(&renderer.instance_offsets)
 	renderer.draw_calls = 0
+	renderer.triangles = 0
 	for item in renderer.draw_items {
 		pipeline := gfx_pipeline_get(renderer.gfx, item.material.pipeline)
 		if pipeline.instanced {
@@ -264,7 +311,7 @@ renderer_prepare :: proc(renderer: ^Renderer) {
 	)
 	uploader_begin(&renderer.uploader)
 	uploader_upload_buffer(&renderer.uploader, renderer.instance_buffer)
-	uploader_flush_blocking(&renderer.uploader)
+	uploader_flush(&renderer.uploader)
 	gfx_buffer_get(renderer.gfx, renderer.instance_buffer)._temporary_raw_data = nil
 }
 
@@ -413,6 +460,7 @@ renderer_draw_item :: proc(renderer: ^Renderer, item: ^DrawItem) {
 	)
 	mesh_draw(renderer.gfx, mesh, renderer.pass)
 	renderer.draw_calls += 1
+	renderer.triangles += triangle_count(mesh)
 }
 
 // One instanced draw for a run of items sharing mesh and material. The
@@ -457,6 +505,13 @@ renderer_draw_instanced_run :: proc(
 	)
 	mesh_draw_instanced(renderer.gfx, mesh, renderer.pass, u32(count), 0)
 	renderer.draw_calls += 1
+	renderer.triangles += count * triangle_count(mesh)
+}
+
+triangle_count :: proc(mesh: ^Mesh) -> int {
+	n := mesh.num_indices
+	if n == 0 do n = mesh.num_vertices
+	return int(n) / 3
 }
 
 // Open submission path for scene-free experiments: call any number of times

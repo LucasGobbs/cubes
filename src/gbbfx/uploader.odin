@@ -8,8 +8,10 @@ Uploader :: struct {
 	// Fences ready
 	free:           [dynamic]Staging,
 
-	// Fences still submiting to GPU
+	// Recorded in the open copy pass, not yet submitted
 	pending:        [dynamic]Staging,
+	// Submitted; collect frees them once their fence signals
+	in_flight:      [dynamic]Staging,
 	command_buffer: ^sdl.GPUCommandBuffer,
 	pass:           ^sdl.GPUCopyPass,
 
@@ -89,13 +91,13 @@ uploader_generate_mips :: proc(up: ^Uploader) {
 }
 
 uploader_flush :: proc(up: ^Uploader) {
+	assert(len(up.pending) > 0) // a fence with no staging would never be released
 	sdl.EndGPUCopyPass(up.pass)
 	uploader_generate_mips(up)
 	fence := sdl.SubmitGPUCommandBufferAndAcquireFence(up.command_buffer)
-	for s in up.pending {
-		s := s
+	for &s in up.pending {
 		s.fence = fence
-		append(&up.pending, s)
+		append(&up.in_flight, s)
 	}
 	clear(&up.pending)
 	up.pass, up.command_buffer = nil, nil
@@ -117,13 +119,18 @@ uploader_flush_blocking :: proc(up: ^Uploader) {
 }
 
 uploader_collect :: proc(up: ^Uploader) {
-	for i := len(up.pending) - 1; i >= 0; i -= 1 {
-		s := up.pending[i]
+	for i := len(up.in_flight) - 1; i >= 0; i -= 1 {
+		s := up.in_flight[i]
 		if !sdl.QueryGPUFence(up.gfx.gpu, s.fence) do continue
-		sdl.ReleaseGPUFence(up.gfx.gpu, s.fence)
+		// Stagings of one submit share its fence; release it with the last of them.
+		shared := 0
+		for other in up.in_flight {
+			if other.fence == s.fence do shared += 1
+		}
+		if shared == 1 do sdl.ReleaseGPUFence(up.gfx.gpu, s.fence)
 		s.fence = nil
 		append(&up.free, s)
-		unordered_remove(&up.pending, i)
+		unordered_remove(&up.in_flight, i)
 	}
 }
 uploader_acquire_staging :: proc(uploader: ^Uploader, size: u32) -> Staging {
@@ -142,6 +149,9 @@ uploader_destroy :: proc(up: ^Uploader) {
 	assert(up.pass == nil)
 	assert(up.command_buffer == nil)
 	assert(len(up.pending) == 0)
+	_ = sdl.WaitForGPUIdle(up.gfx.gpu) // in-flight uploads still read their staging
+	uploader_collect(up)
+	assert(len(up.in_flight) == 0)
 
 	for staging in up.free {
 		assert(staging.fence == nil)
@@ -152,6 +162,7 @@ uploader_destroy :: proc(up: ^Uploader) {
 
 	delete(up.free)
 	delete(up.pending)
+	delete(up.in_flight)
 	delete(up.mip_targets)
 	up^ = {}
 }

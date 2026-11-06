@@ -12,6 +12,8 @@ Renderable :: struct {
 	mesh:     ^Mesh,
 	material: ^Material,
 	layer:    Render_Layer,
+	// Screen-space layers (skybox, UI, post-process) have no world position to test.
+	cull:     bool,
 }
 
 Component :: union {
@@ -69,7 +71,7 @@ entity_add_renderable :: proc(
 	assert(mesh != nil && material != nil)
 	entity_add_component(
 		entity,
-		Renderable{mesh = mesh, material = material, layer = layer},
+		Renderable{mesh = mesh, material = material, layer = layer, cull = layer == .WORLD || layer == .TRANSPARENT},
 	)
 }
 

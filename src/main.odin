@@ -1,11 +1,13 @@
 // Entry point: forwards to one scene picked by CLI argument, e.g.
 // `./main simple` or `make run ARGS=simple`. Defaults to "benchmark".
 // Number keys 1-4 switch scene at runtime (order of SCENES); M toggles MSAA.
+// `./main benchmark --bench 10` runs 10 seconds without input, prints stats, exits.
 package main
 
 import "core:fmt"
 import "core:log"
 import "core:os"
+import "core:strconv"
 import gbbfx "gbbfx"
 import glove "glove"
 import sdl "vendor:sdl3"
@@ -17,12 +19,30 @@ current_scene: int
 // Input state before the scene registered its own actions; switching rewinds
 // to it so scenes do not accumulate dead actions and bindings.
 scene_input_mark: glove.Mark
+// Benchmark mode (--bench SECONDS); seconds 0 leaves it off.
+bench: Bench_Run
 
 main :: proc() {
 	context.logger = log.create_console_logger()
 
 	name := "benchmark"
-	if len(os.args) > 1 do name = os.args[1]
+	for i := 1; i < len(os.args); i += 1 {
+		if os.args[i] == "--bench" {
+			if i + 1 >= len(os.args) {
+				log.errorf("--bench needs a duration in seconds")
+				os.exit(1)
+			}
+			seconds, ok := strconv.parse_f64(os.args[i + 1])
+			if !ok || seconds <= 0 {
+				log.errorf("--bench: invalid duration %q", os.args[i + 1])
+				os.exit(1)
+			}
+			bench.seconds = seconds
+			i += 1
+		} else {
+			name = os.args[i]
+		}
+	}
 	scene, found := scene_lookup(name)
 	for new_scene, index in SCENES do if new_scene.name == name do current_scene = index
 	if !found {
@@ -38,6 +58,7 @@ main :: proc() {
 	// sdl.ShowSimpleMessageBox({.ERROR}, "Couldn't initialize SDL!", "Error", nil)
 	defer gbbfx.gfx_destroy(&gfx, rawptr(&scene), scene_destroy)
 	gbbfx.gfx_update(&gfx, rawptr(&scene), scene_tick)
+	if bench.seconds > 0 do bench_report(&bench, &gfx, scene.name)
 }
 
 scene_create :: proc(gfx: ^gbbfx.Gfx, raw_scene: rawptr) -> bool {
@@ -86,6 +107,11 @@ scene_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, raw_scene: rawptr) {
 			allocator = context.temp_allocator,
 		)
 		_ = sdl.SetWindowTitle(gfx.window, title)
+	}
+
+	if bench.seconds > 0 {
+		bench_record(&bench, gfx, delta_time)
+		if bench_done(&bench) do gbbfx.gfx_request_quit(gfx)
 	}
 }
 
