@@ -51,6 +51,7 @@ create_textured_overlay_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Hand
 			depth_test = false,
 			depth_write = false,
 			blend = true,
+			single_sample = true, // drawn in 1x overlay/present passes
 			bind_draw = bind_textured_draw,
 		},
 	)

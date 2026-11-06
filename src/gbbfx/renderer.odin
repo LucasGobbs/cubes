@@ -6,6 +6,9 @@ import "core:slice"
 import loader "loader"
 import sdl "vendor:sdl3"
 
+// Sample count of the MSAA mode (4x is supported by every SDL GPU backend).
+MSAA_SAMPLES :: sdl.GPUSampleCount._4
+
 Renderer :: struct {
 	// Gfx owns native resources and must outlive Renderer.
 	gfx:             ^Gfx,
@@ -21,11 +24,18 @@ Renderer :: struct {
 
 	// The scene pass renders here instead of the swapchain, so post
 	// processing can run before renderer_present blits to the screen.
+	// Always 1x: with MSAA on it is the resolve target, so everything that
+	// reads the scene (blur, overlay, present) is unaffected by MSAA.
 	scene_color:     Texture_Handle,
-	// Depth buffer matching scene_color's size. Reverse-Z: cleared to 0 (far),
-	// pipelines compare GREATER (see camera_perspective). Resize both together
-	// with renderer_resize_targets.
+	// Depth buffer matching scene_color's size and sample count. Reverse-Z:
+	// cleared to 0 (far), pipelines compare GREATER (see camera_perspective).
+	// Resize all targets together with renderer_resize_targets.
 	scene_depth:     Texture_Handle,
+	// MSAA: scene pass renders into scene_color_msaa (generation 0 when off)
+	// and resolves into scene_color. Toggle with renderer_set_msaa.
+	scene_color_msaa: Texture_Handle,
+	msaa_enabled:    bool,
+	msaa_supported:  bool, // device can do MSAA_SAMPLES for color and depth
 
 	// Instancing: per-frame transform storage for instanced runs, uploaded
 	// between prepare and the pass. offsets are indexed by draw item.
@@ -42,6 +52,7 @@ Renderer :: struct {
 	// Cached only during an active pass.
 	bound_pipeline:  Pipeline_Handle,
 	bound_material:  ^Material,
+	pass_msaa:       bool, // the open pass is multisampled
 }
 
 // Layers render in declaration order inside the pass: everything in WORLD
@@ -102,7 +113,51 @@ renderer_create :: proc(gfx: ^Gfx) -> Renderer {
 		.D32_FLOAT,
 		{.DEPTH_STENCIL_TARGET},
 	)
+	color_format := sdl.GetGPUSwapchainTextureFormat(gfx.gpu, gfx.window)
+	renderer.msaa_supported =
+		sdl.GPUTextureSupportsSampleCount(gfx.gpu, color_format, MSAA_SAMPLES) &&
+		sdl.GPUTextureSupportsSampleCount(gfx.gpu, .D32_FLOAT, MSAA_SAMPLES)
 	return renderer
+}
+
+// Turns MSAA on or off by rebuilding the scene depth (and the multisampled
+// color target). Returns the resulting state: false when asked to enable on a
+// device without support. Waits for GPU idle; call between frames, outside a
+// pass. Pipelines need no rebuild: each carries both variants.
+renderer_set_msaa :: proc(renderer: ^Renderer, enabled: bool) -> bool {
+	assert(renderer.pass == nil)
+	enabled := enabled && renderer.msaa_supported
+	if enabled == renderer.msaa_enabled do return enabled
+
+	gfx := renderer.gfx
+	_ = sdl.WaitForGPUIdle(gfx.gpu)
+	size := gfx_texture_get(gfx, renderer.scene_color)
+	width, height := size.width, size.height
+	gfx_texture_destroy(gfx, renderer.scene_depth)
+	gfx_texture_destroy(gfx, renderer.scene_color_msaa)
+	renderer.scene_color_msaa = {}
+
+	samples := MSAA_SAMPLES if enabled else sdl.GPUSampleCount._1
+	renderer.scene_depth = gfx_texture_create_with_usage(
+		gfx,
+		width,
+		height,
+		.D32_FLOAT,
+		{.DEPTH_STENCIL_TARGET},
+		samples,
+	)
+	if enabled {
+		renderer.scene_color_msaa = gfx_texture_create_with_usage(
+			gfx,
+			width,
+			height,
+			size.format,
+			{.COLOR_TARGET},
+			samples,
+		)
+	}
+	renderer.msaa_enabled = enabled
+	return enabled
 }
 
 renderer_destroy :: proc(renderer: ^Renderer) {
@@ -113,16 +168,20 @@ renderer_destroy :: proc(renderer: ^Renderer) {
 	delete(renderer.instance_previous)
 	gfx_texture_destroy(renderer.gfx, renderer.scene_color)
 	gfx_texture_destroy(renderer.gfx, renderer.scene_depth)
+	gfx_texture_destroy(renderer.gfx, renderer.scene_color_msaa)
 	uploader_destroy(&renderer.uploader)
 	delete(renderer.draw_items)
 	renderer^ = {}
 }
 
-// Resizes the scene color and depth targets together (they must match).
+// Resizes the scene color, depth and MSAA color targets together (they must match).
 // Waits for GPU idle; call between frames.
 renderer_resize_targets :: proc(renderer: ^Renderer, width, height: u32) {
 	gfx_texture_resize(renderer.gfx, &renderer.scene_color, width, height)
 	gfx_texture_resize(renderer.gfx, &renderer.scene_depth, width, height)
+	if renderer.msaa_enabled {
+		gfx_texture_resize(renderer.gfx, &renderer.scene_color_msaa, width, height)
+	}
 }
 
 renderer_load :: proc(renderer: ^Renderer, desc: Renderer_Load_Desc) -> Model {
@@ -220,6 +279,13 @@ renderer_begin_pass :: proc(renderer: ^Renderer, view_projection: matrix[4, 4]f3
 		clear_color = {0.2, 0.2, 0.5, 1},
 		store_op    = .STORE,
 	}
+	if renderer.msaa_enabled {
+		// Draw into the multisampled texture; at pass end the samples are
+		// averaged into scene_color and the multisampled data is dropped.
+		color_target.resolve_texture = color_target.texture
+		color_target.texture = gfx_texture_get(renderer.gfx, renderer.scene_color_msaa).handle
+		color_target.store_op = .RESOLVE
+	}
 	depth_target := sdl.GPUDepthStencilTargetInfo {
 		texture     = gfx_texture_get(renderer.gfx, renderer.scene_depth).handle,
 		load_op     = .CLEAR,
@@ -235,6 +301,7 @@ renderer_begin_pass :: proc(renderer: ^Renderer, view_projection: matrix[4, 4]f3
 	)
 	assert(renderer.pass != nil)
 	renderer.view_projection = view_projection
+	renderer.pass_msaa = renderer.msaa_enabled
 	renderer.bound_pipeline = {}
 	renderer.bound_material = nil
 }
@@ -243,6 +310,7 @@ renderer_end_pass :: proc(renderer: ^Renderer) {
 	assert(renderer.pass != nil)
 	sdl.EndGPURenderPass(renderer.pass)
 	renderer.pass = nil
+	renderer.pass_msaa = false // overlay/present passes are always 1x
 	renderer.view_projection = {}
 	renderer.bound_pipeline = {}
 	renderer.bound_material = nil
@@ -318,7 +386,7 @@ renderer_draw_item :: proc(renderer: ^Renderer, item: ^DrawItem) {
 	pipeline := gfx_pipeline_get(renderer.gfx, material.pipeline)
 
 	if renderer.bound_pipeline != material.pipeline {
-		sdl.BindGPUGraphicsPipeline(renderer.pass, pipeline.handle)
+		sdl.BindGPUGraphicsPipeline(renderer.pass, pipeline_native(pipeline, renderer.pass_msaa))
 		renderer.bound_pipeline = material.pipeline
 		renderer.bound_material = nil
 	}
@@ -361,7 +429,7 @@ renderer_draw_instanced_run :: proc(
 	pipeline := gfx_pipeline_get(renderer.gfx, material.pipeline)
 
 	if renderer.bound_pipeline != material.pipeline {
-		sdl.BindGPUGraphicsPipeline(renderer.pass, pipeline.handle)
+		sdl.BindGPUGraphicsPipeline(renderer.pass, pipeline_native(pipeline, renderer.pass_msaa))
 		renderer.bound_pipeline = material.pipeline
 		renderer.bound_material = nil
 	}
