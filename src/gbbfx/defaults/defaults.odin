@@ -14,7 +14,6 @@ create_textured_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
 			depth_test = true,
 			depth_write = true,
 			cull_mode = .BACK,
-			front_face = .CLOCKWISE,
 			bind_draw = bind_textured_draw,
 		},
 	)
@@ -32,7 +31,6 @@ create_unlit_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
 			depth_test = true,
 			depth_write = true,
 			cull_mode = .BACK,
-			front_face = .CLOCKWISE,
 			bind_draw = bind_unlit_draw,
 		},
 	)
@@ -73,7 +71,6 @@ create_textured_instanced_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Ha
 			depth_test = true,
 			depth_write = true,
 			cull_mode = .BACK,
-			front_face = .CLOCKWISE,
 			instanced = true,
 			bind_draw = bind_textured_instanced_draw,
 		},

@@ -8,7 +8,6 @@ Gfx :: struct {
 	window:                   ^sdl.Window,
 	gpu:                      ^sdl.GPUDevice,
 	window_size:              [2]i32,
-	depth_texture:            ^sdl.GPUTexture,
 	using clock:              Clock,
 
 	// Received via sdl.AcquireGPUCommandBuffer and released after sdl.SubmitGPUCommandBuffer (Short lived)
@@ -60,22 +59,9 @@ create :: proc(
 	ok = sdl.GetWindowSize(window, &window_size.x, &window_size.y); assert(ok)
 	ok = sdl.SetWindowRelativeMouseMode(window, true); assert(ok)
 	ok = sdl.SetWindowMouseGrab(window, true); assert(ok)
-	depth_texture := sdl.CreateGPUTexture(
-		gpu,
-		{
-			format = .D32_FLOAT,
-			usage = {.DEPTH_STENCIL_TARGET},
-			width = u32(window_size.x),
-			height = u32(window_size.y),
-			layer_count_or_depth = 1,
-			num_levels = 1,
-		},
-	)
-	assert(depth_texture != nil)
 	gfx.window = window
 	gfx.gpu = gpu
 	gfx.window_size = window_size
-	gfx.depth_texture = depth_texture
 	gfx.inputs = glove.system_create(glove_sdl.create())
 	gfx.renderer = renderer_create(gfx)
 
@@ -206,9 +192,6 @@ gfx_destroy :: proc(gfx: ^Gfx, game_state: rawptr, game_destroy_callback: Gfx_Ga
 	handle_pool_destroy(&gfx.texture_handles)
 	handle_pool_destroy(&gfx.buffer_handles)
 
-	if gfx.depth_texture != nil {
-		sdl.ReleaseGPUTexture(gfx.gpu, gfx.depth_texture)
-	}
 	if gfx.gpu != nil && gfx.window != nil {
 		sdl.ReleaseWindowFromGPUDevice(gfx.gpu, gfx.window)
 	}

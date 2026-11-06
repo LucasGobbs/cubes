@@ -31,12 +31,17 @@ Graphics_Pipeline_Desc :: struct {
 	vertex_stride:     u32,
 	depth_test:        bool,
 	depth_write:       bool,
+	// Zero value (.INVALID) means .GREATER, the reverse-Z convention (see
+	// camera_perspective). Use .GREATER_OR_EQUAL for geometry at exactly the
+	// far plane, such as a skybox.
+	depth_compare:     sdl.GPUCompareOp,
 	// Alpha blending (src alpha / one-minus-src-alpha), for UI and
 	// transparency. A pipeline with neither depth flag is created without a
 	// depth-stencil target, matching depth-less overlay passes.
 	blend:             bool,
 	// Face culling. Zero values keep the previous behavior (no culling,
-	// counter-clockwise front); closed meshes should cull .BACK.
+	// counter-clockwise front, which is glTF's outward winding); closed meshes
+	// should cull .BACK.
 	cull_mode:         sdl.GPUCullMode,
 	front_face:        sdl.GPUFrontFace,
 	// The shader reads per-instance data from a storage buffer by
@@ -92,6 +97,8 @@ gfx_pipeline_create :: proc(gfx: ^Gfx, desc: Graphics_Pipeline_Desc) -> Pipeline
 		color_target.blend_state.enable_blend = true
 	}
 	has_depth := desc.depth_test || desc.depth_write
+	depth_compare := desc.depth_compare
+	if depth_compare == .INVALID do depth_compare = .GREATER
 	native := sdl.CreateGPUGraphicsPipeline(
 		gfx.gpu,
 		{
@@ -114,7 +121,7 @@ gfx_pipeline_create :: proc(gfx: ^Gfx, desc: Graphics_Pipeline_Desc) -> Pipeline
 			depth_stencil_state = {
 				enable_depth_test = desc.depth_test,
 				enable_depth_write = desc.depth_write,
-				compare_op = .LESS,
+				compare_op = depth_compare,
 			},
 			target_info = {
 				num_color_targets = 1,

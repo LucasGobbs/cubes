@@ -1,0 +1,48 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 90 "core"
+struct pixelOutput_0
+{
+    float4 output_0 [[color(0)]];
+};
+
+
+#line 90
+struct pixelInput_0
+{
+    float3 direction_0 [[user(DIRECTION)]];
+};
+
+
+#line 20 "src/gbbfx/defaults/shaders/skybox.slang"
+struct KernelContext_0
+{
+    texture2d<float, access::sample> tex_0;
+    sampler tex_sampler_0;
+};
+
+
+#line 42
+[[fragment]] pixelOutput_0 pixelMain(pixelInput_0 _S1 [[stage_in]], float4 position_0 [[position]], texture2d<float, access::sample> tex_1 [[texture(0)]], sampler tex_sampler_1 [[sampler(0)]])
+{
+
+#line 42
+    thread KernelContext_0 kernelContext_0;
+
+#line 42
+    (&kernelContext_0)->tex_0 = tex_1;
+
+#line 42
+    (&kernelContext_0)->tex_sampler_0 = tex_sampler_1;
+    float3 d_0 = normalize(_S1.direction_0);
+
+#line 43
+    pixelOutput_0 _S2 = { ((tex_1).sample((tex_sampler_1), (float2(atan2(d_0.z, d_0.x) / 6.28318548202514648f + 0.5f, acos(clamp(d_0.y, -1.0f, 1.0f)) / 3.14159274101257324f)), level((0.0f)))) };
+
+#line 48
+    return _S2;
+}
+

@@ -8,10 +8,10 @@ import glove "glove"
 import "core:math/linalg"
 
 MODEL_PATHS :: [4]string {
-	"static/boat-tug-a.obj",
-	"static/ship-cargo-a.obj",
-	"static/ship-large.obj",
-	"static/ship-small-ghost.obj",
+	"static/models/boat-tug-a.glb",
+	"static/models/ship-cargo-a.glb",
+	"static/models/ship-large.glb",
+	"static/models/ship-small-ghost.glb",
 }
 
 Models_State :: struct {
@@ -22,6 +22,7 @@ Models_State :: struct {
 	ground_material: gbbfx.Material,
 	ground_mesh:     gbbfx.Mesh,
 	scene:           gbbfx.Scene,
+	skybox:          defaults.Skybox,
 	entities:        [4]int,
 	rotation:        f32,
 
@@ -61,7 +62,6 @@ models_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 		state.models[index] = load_textured_model(
 			gfx,
 			path,
-			"static/colormap.png",
 			state.pipeline,
 			state.sampler,
 		)
@@ -75,7 +75,10 @@ models_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	}
 
 	// Ground plane: raw quad, tiled mud texture.
-	state.ground_texture = load_texture(gfx, "static/muddy_ground.jpg")
+	state.skybox = defaults.skybox_create(gfx, SKYBOX_PATH)
+	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
+
+	state.ground_texture = gbbfx.gfx_texture_load(gfx, "static/muddy_ground.jpg")
 	state.ground_material = gbbfx.material_create(state.pipeline)
 	defaults.bind_textured_material(&state.ground_material, state.ground_texture, state.sampler)
 	tiling :: f32(40)
@@ -125,6 +128,7 @@ models_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 models_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
 	state := cast(^Models_State)demo.state
 	gbbfx.scene_destroy(&state.scene)
+	defaults.skybox_destroy(gfx, &state.skybox)
 	gbbfx.mesh_destroy(gfx, &state.ground_mesh)
 	gbbfx.material_destroy(&state.ground_material)
 	gbbfx.gfx_texture_destroy(gfx, state.ground_texture)

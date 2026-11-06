@@ -58,15 +58,33 @@ camera_rotate :: proc(camera: ^Camera, yaw_delta, pitch_delta: f32) {
 	camera.up = linalg.normalize(linalg.cross(camera.right, camera.direction))
 }
 
+CAMERA_FOV_Y :: 70 * math.RAD_PER_DEG
+CAMERA_NEAR :: 0.1
+
+// Reverse-Z, infinite-far perspective for the right-handed view from
+// camera_view and NDC depth in [0, 1] (Metal/Vulkan/D3D): depth is 1 at the
+// near plane and tends to 0 at infinity. Float depth keeps most of its
+// precision far from the camera, where a standard 0..1 mapping (or Odin's
+// OpenGL-style linalg.matrix4_perspective, which Metal half-clips) loses it.
+// The renderer clears depth to 0 and pipelines compare GREATER to match.
+camera_perspective :: proc(
+	aspect: f32,
+	fov_y: f32 = CAMERA_FOV_Y,
+	near: f32 = CAMERA_NEAR,
+) -> (
+	m: matrix[4, 4]f32,
+) {
+	focal := 1 / math.tan(0.5 * fov_y)
+	m[0, 0] = focal / aspect
+	m[1, 1] = focal
+	m[3, 2] = -1
+	m[2, 3] = near
+	return
+}
+
 // Rebuilds the projection with a different aspect ratio (viewport resize).
-// Keeps the same fov/near/far as the previous projection.
 camera_set_aspect :: proc(camera: ^Camera, aspect: f32) {
-	camera.projection = linalg.matrix4_perspective(
-		linalg.to_radians(f32(70)),
-		aspect,
-		0.1,
-		1000,
-	)
+	camera.projection = camera_perspective(aspect)
 }
 
 camera_view :: proc(camera: ^Camera) -> matrix[4, 4]f32 {

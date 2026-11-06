@@ -48,10 +48,12 @@ test-glove-optimized:
 
 test-gbbfx: default-shaders
 	$(ODIN) test src/gbbfx
+	$(ODIN) test src/gbbfx/loader
 	$(ODIN) test src/gbbfx/sdl_gpu
 
 test-gbbfx-optimized: default-shaders
 	$(ODIN) test src/gbbfx $(RELEASE_FLAGS)
+	$(ODIN) test src/gbbfx/loader $(RELEASE_FLAGS)
 	$(ODIN) test src/gbbfx/sdl_gpu $(RELEASE_FLAGS)
 
 build: shaders

@@ -1,4 +1,4 @@
-// Benchmark: N instances of each of the 4 models, with on-screen text
+// Benchmark: N instances of each boat model plus a few huge Stanford dragons, with on-screen text
 // (FPS, object count, controls) drawn through the gbbfx font renderer.
 // = / - add and remove instances.
 package main
@@ -11,13 +11,38 @@ import defaults "gbbfx/defaults"
 import glove "glove"
 import sdl "vendor:sdl3"
 
-BENCH_STEP :: 25 // per model, per keypress (= ±100 total)
+BENCH_STEP :: 10 // per boat model, per keypress
+
+BOAT_PATHS :: [?]string {
+	"static/models/boat-tug-a.glb",
+	"static/models/boat-tug-b.glb",
+	"static/models/boat-fishing-small.glb",
+	"static/models/boat-row-large.glb",
+	"static/models/boat-sail-a.glb",
+	"static/models/boat-sail-b.glb",
+	"static/models/boat-speed-a.glb",
+	"static/models/boat-speed-h.glb",
+	"static/models/boat-tow-a.glb",
+	"static/models/ship-cargo-a.glb",
+	"static/models/ship-large.glb",
+	"static/models/ship-ocean-liner.glb",
+	"static/models/ship-small-ghost.glb",
+}
+BOAT_COUNT :: len(BOAT_PATHS)
+
+// Dragon mesh is ~140 units long (boats are 3-20): scaled up it towers over
+// the fleet. 58k vertices each; one instanced draw for all of them.
+DRAGON_PATH :: "static/models/stanford_dragon_pbr.glb"
+DRAGON_COUNT :: 3
+DRAGON_SCALE :: 0.6
 
 Benchmark_State :: struct {
 	pipeline:         gbbfx.Pipeline_Handle,
 	sampler:          gbbfx.Sampler_Handle,
-	models:           [4]gbbfx.Model,
+	models:           [BOAT_COUNT]gbbfx.Model,
+	dragon:           gbbfx.Model,
 	scene:            gbbfx.Scene,
+	skybox:           defaults.Skybox,
 	per_model:        int,
 	font:             gbbfx.Font,
 	overlay_pipeline: gbbfx.Pipeline_Handle,
@@ -68,17 +93,21 @@ benchmark_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 
 	state.pipeline = defaults.create_textured_instanced_pipeline(gfx)
 	state.sampler = gbbfx.gfx_sampler_create(gfx)
-	for path, index in MODEL_PATHS {
-		state.models[index] = gbbfx.gfx_load(
-			gfx,
-			{model_path = path, texture_path = "static/colormap.png", pipeline = state.pipeline},
-		)
+	boat_paths := BOAT_PATHS
+	for path, index in boat_paths {
+		state.models[index] = gbbfx.gfx_load(gfx, {model_path = path, pipeline = state.pipeline})
 		defaults.bind_textured_instanced_material(
 			&state.models[index].material,
 			gbbfx.model_texture(&state.models[index]),
 			state.sampler,
 		)
 	}
+	state.dragon = gbbfx.gfx_load(gfx, {model_path = DRAGON_PATH, pipeline = state.pipeline})
+	defaults.bind_textured_instanced_material(
+		&state.dragon.material,
+		gbbfx.model_texture(&state.dragon),
+		state.sampler,
+	)
 
 	// On-screen text: font atlas + blended depth-less overlay pipeline.
 	font, font_ok := gbbfx.font_create(gfx, "static/fonts/andale-mono.ttf")
@@ -91,8 +120,10 @@ benchmark_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state.text_mesh = gbbfx.mesh_create_unindexed(gfx, dummy[:])
 	gbbfx.mesh_upload(&gfx.renderer, &state.text_mesh)
 
+	state.skybox = defaults.skybox_create(gfx, SKYBOX_PATH)
+
 	rand.reset(u64(sdl.GetTicks()))
-	benchmark_populate(state, 450)
+	benchmark_populate(state, 150)
 	return true
 }
 
@@ -102,6 +133,7 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 	state.per_model = per_model
 	gbbfx.scene_destroy(&state.scene)
 	state.scene = {}
+	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
 	for &model in state.models {
 		for _ in 0 ..< per_model {
 			position := gbbfx.Vec3 {
@@ -118,6 +150,18 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 			scale := 0.25 + rand.float32_range(0, 0.2)
 			gbbfx.scene_add_model(&state.scene, &model, position, {scale, scale, scale}, yaw)
 		}
+	}
+	// Dragons stand behind the fleet, independent of the per-model count.
+	for index in 0 ..< DRAGON_COUNT {
+		x := (f32(index) - 1) * 110
+		scale := f32(DRAGON_SCALE)
+		gbbfx.scene_add_model(
+			&state.scene,
+			&state.dragon,
+			{x, 0, -270},
+			{scale, scale, scale},
+			linalg.quaternion_from_euler_angles_f32(0, f32(index) * 0.6, 0, .XYZ),
+		)
 	}
 }
 
@@ -198,7 +242,7 @@ benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	benchmark_push_text(
 		state,
 		gfx,
-		fmt.bprintf(count_buffer[:], "objects: %d", state.per_model * len(state.models)),
+		fmt.bprintf(count_buffer[:], "objects: %d", state.per_model * BOAT_COUNT + DRAGON_COUNT),
 		10,
 		30,
 		{1, 1, 1, 1},
@@ -259,12 +303,14 @@ benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 benchmark_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
 	state := cast(^Benchmark_State)demo.state
 	gbbfx.scene_destroy(&state.scene)
+	defaults.skybox_destroy(gfx, &state.skybox)
 	delete(state.text_vertices)
 	gbbfx.mesh_destroy(gfx, &state.text_mesh)
 	gbbfx.material_destroy(&state.overlay_material)
 	gbbfx.gfx_pipeline_destroy(gfx, state.overlay_pipeline)
 	gbbfx.font_destroy(gfx, &state.font)
 	for &model in state.models do gbbfx.gfx_unload(gfx, &model)
+	gbbfx.gfx_unload(gfx, &state.dragon)
 	gbbfx.gfx_sampler_destroy(gfx, state.sampler)
 	gbbfx.gfx_pipeline_destroy(gfx, state.pipeline)
 	free(state)
