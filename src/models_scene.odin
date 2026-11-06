@@ -4,8 +4,6 @@ package main
 
 import gbbfx "gbbfx"
 import defaults "gbbfx/defaults"
-import glove "glove"
-import "core:math/linalg"
 
 MODEL_PATHS :: [4]string {
 	"static/models/boat-tug-a.glb",
@@ -25,11 +23,7 @@ Models_State :: struct {
 	skybox:          defaults.Skybox,
 	entities:        [4]int,
 	rotation:        f32,
-
-	move_action:     glove.Axis_2D_Action,
-	boost_action:    glove.Button_Action,
-	up_action:       glove.Button_Action,
-	down_action:     glove.Button_Action,
+	fly_camera:      FlyCamera,
 }
 
 models_scene :: proc() -> Scene {
@@ -41,19 +35,7 @@ models_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	demo.state = state
 	camera_reset(gfx, {0, 2, 4})
 
-	inputs := gbbfx.gfx_input(gfx)
-	state.move_action = glove.add_axis_2d(inputs, "models.move")
-	state.boost_action = glove.add_button(inputs, "models.boost")
-	state.up_action = glove.add_button(inputs, "models.up")
-	state.down_action = glove.add_button(inputs, "models.down")
-	glove.bind_button_axis_2d(
-		inputs,
-		state.move_action,
-		{up = .W, down = .S, left = .A, right = .D, normalize = true},
-	)
-	glove.bind_key(inputs, state.boost_action, .LSHIFT)
-	glove.bind_key(inputs, state.up_action, .SPACE)
-	glove.bind_key(inputs, state.down_action, .LCTRL)
+	state.fly_camera = fly_camera_create(gfx, "models")
 
 	state.pipeline = defaults.create_textured_pipeline(gfx)
 	state.sampler = gbbfx.gfx_sampler_create(gfx)
@@ -100,18 +82,7 @@ models_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 models_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	state := cast(^Models_State)demo.state
 
-	inputs := gbbfx.gfx_input(gfx)
-	camera := gbbfx.gfx_camera(gfx)
-	look := glove.mouse_delta(inputs)
-	gbbfx.camera_rotate(camera, look.x * 0.1 * linalg.PI / 180, -look.y * 0.1 * linalg.PI / 180)
-	move := glove.axis_2d(inputs, state.move_action)
-	vertical: f32
-	if glove.down(inputs, state.up_action) do vertical += 1
-	if glove.down(inputs, state.down_action) do vertical -= 1
-	boost: f32 = 1
-	if glove.down(inputs, state.boost_action) do boost = 4
-	direction := camera.direction * move.y + camera.right * move.x + gbbfx.Vec3{0, vertical, 0}
-	if direction != {} do camera.position += direction * f32(5) * boost * delta_time
+	fly_camera_tick(&state.fly_camera, gfx, delta_time)
 
 	state.rotation += delta_time
 	for entity, index in state.entities {

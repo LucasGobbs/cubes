@@ -1,10 +1,10 @@
 // Simple scene: one textured ship, one unlit ship, one animated raw quad.
 package main
 
+import "core:math/linalg"
 import gbbfx "gbbfx"
 import defaults "gbbfx/defaults"
 import glove "glove"
-import "core:math/linalg"
 
 Simple_State :: struct {
 	textured_pipeline: gbbfx.Pipeline_Handle,
@@ -19,11 +19,11 @@ Simple_State :: struct {
 	skybox:            defaults.Skybox,
 	spinning:          int,
 	rotation:          f32,
-
-	move_action:       glove.Axis_2D_Action,
-	boost_action:      glove.Button_Action,
-	up_action:         glove.Button_Action,
-	down_action:       glove.Button_Action,
+	fly_camera:        FlyCamera,
+	// move_action:       glove.Axis_2D_Action,
+	// boost_action:      glove.Button_Action,
+	// up_action:         glove.Button_Action,
+	// down_action:       glove.Button_Action,
 }
 
 simple_scene :: proc() -> Scene {
@@ -35,19 +35,7 @@ simple_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	demo.state = state
 	camera_reset(gfx)
 
-	inputs := gbbfx.gfx_input(gfx)
-	state.move_action = glove.add_axis_2d(inputs, "simple.move")
-	state.boost_action = glove.add_button(inputs, "simple.boost")
-	state.up_action = glove.add_button(inputs, "simple.up")
-	state.down_action = glove.add_button(inputs, "simple.down")
-	glove.bind_button_axis_2d(
-		inputs,
-		state.move_action,
-		{up = .W, down = .S, left = .A, right = .D, normalize = true},
-	)
-	glove.bind_key(inputs, state.boost_action, .LSHIFT)
-	glove.bind_key(inputs, state.up_action, .SPACE)
-	glove.bind_key(inputs, state.down_action, .LCTRL)
+	state.fly_camera = fly_camera_create(gfx, "simple")
 
 	state.textured_pipeline = defaults.create_textured_pipeline(gfx)
 	state.unlit_pipeline = defaults.create_unlit_pipeline(gfx)
@@ -96,18 +84,7 @@ simple_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 simple_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	state := cast(^Simple_State)demo.state
 
-	inputs := gbbfx.gfx_input(gfx)
-	camera := gbbfx.gfx_camera(gfx)
-	look := glove.mouse_delta(inputs)
-	gbbfx.camera_rotate(camera, look.x * 0.1 * linalg.PI / 180, -look.y * 0.1 * linalg.PI / 180)
-	move := glove.axis_2d(inputs, state.move_action)
-	vertical: f32
-	if glove.down(inputs, state.up_action) do vertical += 1
-	if glove.down(inputs, state.down_action) do vertical -= 1
-	boost: f32 = 1
-	if glove.down(inputs, state.boost_action) do boost = 4
-	direction := camera.direction * move.y + camera.right * move.x + gbbfx.Vec3{0, vertical, 0}
-	if direction != {} do camera.position += direction * f32(5) * boost * delta_time
+	fly_camera_tick(&state.fly_camera, gfx, delta_time)
 
 	state.rotation += linalg.to_radians(f32(60)) * delta_time
 	gbbfx.entity_set_rotation_euler(
@@ -119,7 +96,12 @@ simple_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 
 	state.quad_vertices[2].position.y = 1 + 0.5 * linalg.sin(gfx.time * 2)
 	state.quad_vertices[3].position.y = 1 - 0.5 * linalg.sin(gfx.time * 2)
-	gbbfx.mesh_update(&gfx.renderer, &state.quad_mesh, state.quad_vertices[:], state.quad_indices[:])
+	gbbfx.mesh_update(
+		&gfx.renderer,
+		&state.quad_mesh,
+		state.quad_vertices[:],
+		state.quad_indices[:],
+	)
 
 	gbbfx.gfx_render(gfx, &state.scene)
 }

@@ -20,30 +20,30 @@ Scene :: struct {
 	fps_timer: f32,
 }
 
-SCENE_NAMES := [4]string{"simple", "editor", "models", "benchmark"}
+SceneEntry :: struct {
+	name: string,
+	make: proc() -> Scene,
+}
+
+SCENES := [?]SceneEntry {
+	{"simple", simple_scene},
+	{"editor", editor_scene},
+	{"models", models_scene},
+	{"benchmark", benchmark_scene},
+}
 
 scene_lookup :: proc(name: string) -> (Scene, bool) {
-	switch name {
-	case "simple":
-		return simple_scene(), true
-	case "editor":
-		return editor_scene(), true
-	case "models":
-		return models_scene(), true
-	case "benchmark":
-		return benchmark_scene(), true
+	for scene in SCENES {
+		if scene.name == name do return scene.make(), true
 	}
+
 	return {}, false
 }
 
 // Restores the camera and the offscreen targets to full-window defaults;
 // demos call this in create because the editor demo shrinks both to its
 // viewport widget.
-camera_reset :: proc(
-	gfx: ^gbbfx.Gfx,
-	position := gbbfx.Vec3{0, 0, 3},
-	target := gbbfx.Vec3{},
-) {
+camera_reset :: proc(gfx: ^gbbfx.Gfx, position := gbbfx.Vec3{0, 0, 3}, target := gbbfx.Vec3{}) {
 	camera := gbbfx.gfx_camera(gfx)
 	camera^ = gbbfx.camera_create(
 		position = position,

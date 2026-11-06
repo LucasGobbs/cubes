@@ -49,10 +49,7 @@ Benchmark_State :: struct {
 	overlay_material: gbbfx.Material,
 	text_mesh:        gbbfx.Mesh,
 	text_vertices:    [dynamic]gbbfx.VertexData,
-	move_action:      glove.Axis_2D_Action,
-	boost_action:     glove.Button_Action,
-	up_action:        glove.Button_Action,
-	down_action:      glove.Button_Action,
+	fly_camera:       FlyCamera,
 	add_action:       glove.Button_Action,
 	subtract_action:  glove.Button_Action,
 }
@@ -74,20 +71,9 @@ benchmark_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	gbbfx.gfx_set_present_mode(gfx, .IMMEDIATE)
 
 	inputs := gbbfx.gfx_input(gfx)
-	state.move_action = glove.add_axis_2d(inputs, "benchmark.move")
-	state.boost_action = glove.add_button(inputs, "benchmark.boost")
-	state.up_action = glove.add_button(inputs, "benchmark.up")
-	state.down_action = glove.add_button(inputs, "benchmark.down")
+	state.fly_camera = fly_camera_create(gfx, "benchmark")
 	state.add_action = glove.add_button(inputs, "benchmark.add")
 	state.subtract_action = glove.add_button(inputs, "benchmark.subtract")
-	glove.bind_button_axis_2d(
-		inputs,
-		state.move_action,
-		{up = .W, down = .S, left = .A, right = .D, normalize = true},
-	)
-	glove.bind_key(inputs, state.boost_action, .LSHIFT)
-	glove.bind_key(inputs, state.up_action, .SPACE)
-	glove.bind_key(inputs, state.down_action, .LCTRL)
 	glove.bind_key(inputs, state.add_action, .EQUALS)
 	glove.bind_key(inputs, state.subtract_action, .MINUS)
 
@@ -215,17 +201,7 @@ benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 		benchmark_populate(state, state.per_model - BENCH_STEP)
 	}
 
-	camera := gbbfx.gfx_camera(gfx)
-	look := glove.mouse_delta(inputs)
-	gbbfx.camera_rotate(camera, look.x * 0.1 * linalg.PI / 180, -look.y * 0.1 * linalg.PI / 180)
-	move := glove.axis_2d(inputs, state.move_action)
-	vertical: f32
-	if glove.down(inputs, state.up_action) do vertical += 1
-	if glove.down(inputs, state.down_action) do vertical -= 1
-	boost: f32 = 1
-	if glove.down(inputs, state.boost_action) do boost = 4
-	direction := camera.direction * move.y + camera.right * move.x + gbbfx.Vec3{0, vertical, 0}
-	if direction != {} do camera.position += direction * f32(5) * boost * delta_time
+	fly_camera_tick(&state.fly_camera, gfx, delta_time)
 
 	// HUD text.
 	clear(&state.text_vertices)

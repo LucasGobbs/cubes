@@ -5,7 +5,6 @@ package main
 import gbbfx "gbbfx"
 import defaults "gbbfx/defaults"
 import editor "editor"
-import glove "glove"
 import shader_parameters "shader_parameters"
 import "core:math/linalg"
 import "core:math/rand"
@@ -32,14 +31,10 @@ Editor_State :: struct {
 	tint:              [4]f32,
 	scene:             gbbfx.Scene,
 	center_entity:     int,
-	mouse_sensitivity: f32,
 	rotation_speed:    f32,
 	rotation:          f32,
 
-	move_action:       glove.Axis_2D_Action,
-	boost_action:      glove.Button_Action,
-	up_action:         glove.Button_Action,
-	down_action:       glove.Button_Action,
+	fly_camera:        FlyCamera,
 }
 
 editor_scene :: proc() -> Scene {
@@ -55,19 +50,7 @@ ed_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	demo.state = state
 	camera_reset(gfx)
 
-	inputs := gbbfx.gfx_input(gfx)
-	state.move_action = glove.add_axis_2d(inputs, "editor.move")
-	state.boost_action = glove.add_button(inputs, "editor.boost")
-	state.up_action = glove.add_button(inputs, "editor.up")
-	state.down_action = glove.add_button(inputs, "editor.down")
-	glove.bind_button_axis_2d(
-		inputs,
-		state.move_action,
-		{up = .W, down = .S, left = .A, right = .D, normalize = true},
-	)
-	glove.bind_key(inputs, state.boost_action, .LSHIFT)
-	glove.bind_key(inputs, state.up_action, .SPACE)
-	glove.bind_key(inputs, state.down_action, .LCTRL)
+	state.fly_camera = fly_camera_create(gfx, "editor")
 
 	state.textured_pipeline = defaults.create_textured_pipeline(gfx)
 	state.unlit_pipeline = defaults.create_unlit_pipeline(gfx)
@@ -165,7 +148,6 @@ ed_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 		gbbfx.scene_add_model(&state.scene, &state.textured_model, position, {scale, scale, scale}, yaw)
 	}
 
-	state.mouse_sensitivity = linalg.to_radians(f32(0.1))
 	state.rotation_speed = linalg.to_radians(f32(90))
 	state.ui.rotation_speed = &state.rotation_speed
 	state.ui.tint = &state.tint
@@ -181,24 +163,10 @@ ed_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	when gbbfx.EDITOR {
 		mouse_in_viewport = editor.editor_mouse_in_viewport(state.editor, state.ui.viewport)
 	}
-	camera := gbbfx.gfx_camera(gfx)
-	inputs := gbbfx.gfx_input(gfx)
-	if mouse_in_viewport {
-		look := glove.mouse_delta(inputs)
-		gbbfx.camera_rotate(camera, look.x * state.mouse_sensitivity, -look.y * state.mouse_sensitivity)
-	}
-	move := glove.axis_2d(inputs, state.move_action)
-	vertical: f32
-	if glove.down(inputs, state.up_action) do vertical += 1
-	if glove.down(inputs, state.down_action) do vertical -= 1
-	boost: f32 = 1
-	if glove.down(inputs, state.boost_action) do boost = 4
-	move_direction := camera.direction * move.y + camera.right * move.x + gbbfx.Vec3{0, vertical, 0}
-	if move_direction != {} {
-		camera.position += move_direction * f32(5) * boost * delta_time
-	}
+	fly_camera_tick(&state.fly_camera, gfx, delta_time, look = mouse_in_viewport)
 
 	when gbbfx.EDITOR {
+		camera := gbbfx.gfx_camera(gfx)
 		state.ui.fps = 1 / delta_time
 		editor.editor_build_ui(state.editor, &state.ui)
 		defaults.set_unlit_color(&state.shared_material, state.tint)
