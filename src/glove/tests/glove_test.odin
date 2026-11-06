@@ -122,3 +122,28 @@ glove_mock_drives_mouse :: proc(t: ^testing.T) {
 	testing.expect_value(t, glove.mouse_position(&inputs), [2]f32{40, 50})
 	testing.expect_value(t, glove.mouse_delta(&inputs), [2]f32{3, -2})
 }
+
+@(test)
+glove_rewind_drops_actions_and_bindings_added_after_mark :: proc(t: ^testing.T) {
+	inputs := glove.system_create(mock.create())
+	defer glove.system_destroy(&inputs)
+	quit := glove.add_button(&inputs, "app.quit")
+	glove.bind_key(&inputs, quit, .ESCAPE)
+
+	mark := glove.system_mark(&inputs)
+	jump := glove.add_button(&inputs, "scene.jump")
+	move := glove.add_axis_2d(&inputs, "scene.move")
+	glove.bind_key(&inputs, jump, .SPACE)
+	glove.bind_button_axis_2d(&inputs, move, {up = .W, down = .S, left = .A, right = .D})
+	glove.system_rewind(&inputs, mark)
+
+	testing.expect_value(t, len(inputs.button_actions), 1)
+	testing.expect_value(t, len(inputs.axis_2d_actions), 0)
+	testing.expect_value(t, len(inputs.key_bindings), 1)
+	testing.expect_value(t, len(inputs.button_axis_2d_bindings), 0)
+
+	event := mock.key_event(.ESCAPE, true)
+	glove.register_event(&inputs, &event)
+	glove.update(&inputs)
+	testing.expect(t, glove.pressed(&inputs, quit))
+}
