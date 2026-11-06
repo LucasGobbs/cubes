@@ -52,6 +52,10 @@ Benchmark_State :: struct {
 	fly_camera:       FlyCamera,
 	add_action:       glove.Button_Action,
 	subtract_action:  glove.Button_Action,
+	hud_time:         f32,
+	hud_frames:       int,
+	hud_fps:          f32,
+	hud_draws:        int,
 }
 
 benchmark_scene :: proc() -> Scene {
@@ -108,7 +112,7 @@ benchmark_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 
 	state.skybox = defaults.skybox_create(gfx, SKYBOX_PATH)
 
-	rand.reset(u64(sdl.GetTicks()))
+	rand.reset(1) // fixed layout: every run draws the same fleet, so results compare
 	benchmark_populate(state, 150)
 	return true
 }
@@ -203,13 +207,22 @@ benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 
 	fly_camera_tick(&state.fly_camera, gfx, delta_time)
 
+	// FPS and draws refresh once per second so the text stays readable.
+	state.hud_time += delta_time
+	state.hud_frames += 1
+	if state.hud_time >= 1 || (state.hud_fps == 0 && state.hud_time > 0) {
+		state.hud_fps = f32(state.hud_frames) / state.hud_time
+		state.hud_draws = gfx.renderer.draw_calls
+		state.hud_time, state.hud_frames = 0, 0
+	}
+
 	// HUD text.
 	clear(&state.text_vertices)
 	fps_buffer: [32]byte
 	benchmark_push_text(
 		state,
 		gfx,
-		fmt.bprintf(fps_buffer[:], "%.0f FPS", 1 / delta_time),
+		fmt.bprintf(fps_buffer[:], "%.0f FPS", state.hud_fps),
 		10,
 		10,
 		{1, 1, 1, 1},
@@ -227,7 +240,7 @@ benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	benchmark_push_text(
 		state,
 		gfx,
-		fmt.bprintf(draws_buffer[:], "draws: %d", gfx.renderer.draw_calls),
+		fmt.bprintf(draws_buffer[:], "draws: %d", state.hud_draws),
 		10,
 		50,
 		{1, 1, 1, 1},

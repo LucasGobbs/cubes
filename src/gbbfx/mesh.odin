@@ -1,4 +1,7 @@
 package gbbfx
+import "core:math"
+import "core:math/linalg"
+import loader "loader"
 import sdl "vendor:sdl3"
 
 VertexData :: struct {
@@ -18,6 +21,9 @@ Mesh :: struct {
 	num_indices:   u32,
 	num_vertices:  u32,
 	index_size:    sdl.GPUIndexElementSize,
+	// Local-space bounding sphere for frustum culling; radius 0 = unknown, never culled.
+	center:        Vec3,
+	radius:        f32,
 }
 
 // Raw geometry seam: vertices/indices are user-built slices in whatever
@@ -28,19 +34,41 @@ mesh_create :: proc(
 	indices: []$I,
 ) -> Mesh where size_of(I) == 2 ||
 	size_of(I) == 4 {
-	return {
+	mesh := Mesh {
 		vertex_buffer = gfx_buffer_create_from_bytes(gfx, vertices, .VERTEX),
 		index_buffer = gfx_buffer_create_from_bytes(gfx, indices, .INDEX),
 		num_indices = u32(len(indices)),
 		num_vertices = u32(len(vertices)),
 		index_size = size_of(I) == 2 ? ._16BIT : ._32BIT,
 	}
+	mesh_set_bounds(&mesh, vertices)
+	return mesh
 }
 
 mesh_create_unindexed :: proc(gfx: ^Gfx, vertices: []$V) -> Mesh {
-	return {
+	mesh := Mesh {
 		vertex_buffer = gfx_buffer_create_from_bytes(gfx, vertices, .VERTEX),
 		num_vertices = u32(len(vertices)),
+	}
+	mesh_set_bounds(&mesh, vertices)
+	return mesh
+}
+
+// Local-space bounding sphere from vertex positions. Only layouts known to
+// start with a [3]f32 position are measured; any other layout keeps radius 0,
+// which the renderer treats as "unbounded, never cull".
+mesh_set_bounds :: proc(mesh: ^Mesh, vertices: []$V) {
+	when V == VertexData || V == loader.VertexData {
+		if len(vertices) == 0 do return
+		low, high := vertices[0].position, vertices[0].position
+		for vertex in vertices {
+			low = linalg.min(low, vertex.position)
+			high = linalg.max(high, vertex.position)
+		}
+		mesh.center = (low + high) / 2
+		farthest: f32
+		for vertex in vertices do farthest = max(farthest, linalg.length2(vertex.position - mesh.center))
+		mesh.radius = math.sqrt(farthest)
 	}
 }
 
@@ -61,6 +89,7 @@ mesh_update :: proc(
 	mesh.num_vertices = u32(len(vertices))
 	mesh.num_indices = u32(len(indices))
 	mesh.index_size = size_of(I) == 2 ? ._16BIT : ._32BIT
+	mesh_set_bounds(mesh, vertices)
 	mesh_upload(renderer, mesh)
 }
 
@@ -68,6 +97,7 @@ mesh_update_unindexed :: proc(renderer: ^Renderer, mesh: ^Mesh, vertices: []$V) 
 	assert(len(vertices) > 0)
 	mesh.vertex_buffer = gfx_buffer_stage(renderer.gfx, mesh.vertex_buffer, vertices, .VERTEX)
 	mesh.num_vertices = u32(len(vertices))
+	mesh_set_bounds(mesh, vertices)
 	mesh_upload(renderer, mesh)
 }
 
@@ -77,7 +107,7 @@ mesh_upload :: proc(renderer: ^Renderer, mesh: ^Mesh) {
 	if Resource_Handle(mesh.index_buffer).generation != 0 {
 		uploader_upload_buffer(&renderer.uploader, mesh.index_buffer)
 	}
-	uploader_flush_blocking(&renderer.uploader)
+	uploader_flush(&renderer.uploader)
 	gfx_buffer_get(renderer.gfx, mesh.vertex_buffer)._temporary_raw_data = nil
 	if Resource_Handle(mesh.index_buffer).generation != 0 {
 		gfx_buffer_get(renderer.gfx, mesh.index_buffer)._temporary_raw_data = nil
