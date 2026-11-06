@@ -48,12 +48,19 @@ Graphics_Pipeline_Desc :: struct {
 	// SV_InstanceID, so the renderer may collapse runs of identical
 	// (mesh, material) draw items into one instanced draw.
 	instanced:         bool,
+	// Only ever bound in passes that render to 1x targets (overlay/present
+	// passes). Skips building the MSAA variant.
+	single_sample:     bool,
 	bind_draw:         Pipeline_Bind_Draw_Proc,
 	user_data:         rawptr,
 }
 
 Pipeline :: struct {
-	handle:    ^sdl.GPUGraphicsPipeline,
+	// 1x variant: overlay/present passes and MSAA off.
+	handle:      ^sdl.GPUGraphicsPipeline,
+	// MSAA_SAMPLES variant for the scene pass; nil when single_sample or the
+	// device lacks support.
+	handle_msaa: ^sdl.GPUGraphicsPipeline,
 	user_data: rawptr,
 	bind_draw: Pipeline_Bind_Draw_Proc,
 	instanced: bool,
@@ -99,18 +106,17 @@ gfx_pipeline_create :: proc(gfx: ^Gfx, desc: Graphics_Pipeline_Desc) -> Pipeline
 	has_depth := desc.depth_test || desc.depth_write
 	depth_compare := desc.depth_compare
 	if depth_compare == .INVALID do depth_compare = .GREATER
-	native := sdl.CreateGPUGraphicsPipeline(
-		gfx.gpu,
-		{
+	buffer_description := sdl.GPUVertexBufferDescription {
+		slot  = 0,
+		pitch = desc.vertex_stride,
+	}
+	info := sdl.GPUGraphicsPipelineCreateInfo {
 			vertex_shader = vertex_shader,
 			fragment_shader = fragment_shader,
 			primitive_type = .TRIANGLELIST,
 			vertex_input_state = {
 				num_vertex_buffers = 1,
-				vertex_buffer_descriptions = &(sdl.GPUVertexBufferDescription {
-						slot = 0,
-						pitch = desc.vertex_stride,
-					}),
+				vertex_buffer_descriptions = &buffer_description,
 				num_vertex_attributes = u32(len(attributes)),
 				vertex_attributes = raw_data(attributes),
 			},
@@ -129,11 +135,18 @@ gfx_pipeline_create :: proc(gfx: ^Gfx, desc: Graphics_Pipeline_Desc) -> Pipeline
 				has_depth_stencil_target = has_depth,
 				depth_stencil_format = .D32_FLOAT if has_depth else .INVALID,
 			},
-		},
-	)
+	}
+	native := sdl.CreateGPUGraphicsPipeline(gfx.gpu, info)
 	assert(native != nil)
+	native_msaa: ^sdl.GPUGraphicsPipeline
+	if !desc.single_sample && gfx.renderer.msaa_supported {
+		info.multisample_state.sample_count = MSAA_SAMPLES
+		native_msaa = sdl.CreateGPUGraphicsPipeline(gfx.gpu, info)
+		assert(native_msaa != nil)
+	}
 	resource := Pipeline {
-		handle    = native,
+		handle      = native,
+		handle_msaa = native_msaa,
 		user_data = desc.user_data,
 		bind_draw = desc.bind_draw,
 		instanced = desc.instanced,
@@ -148,6 +161,13 @@ gfx_pipeline_create :: proc(gfx: ^Gfx, desc: Graphics_Pipeline_Desc) -> Pipeline
 	return handle
 }
 
+// Native pipeline for a pass: the MSAA variant when the pass is multisampled
+// (and the pipeline has one), else the 1x variant.
+pipeline_native :: proc(pipeline: ^Pipeline, msaa_pass: bool) -> ^sdl.GPUGraphicsPipeline {
+	if msaa_pass && pipeline.handle_msaa != nil do return pipeline.handle_msaa
+	return pipeline.handle
+}
+
 gfx_pipeline_get :: proc(gfx: ^Gfx, handle: Pipeline_Handle) -> ^Pipeline {
 	raw := Resource_Handle(handle)
 	assert(handle_pool_contains(&gfx.pipeline_handles, raw), "stale pipeline handle")
@@ -159,6 +179,7 @@ gfx_pipeline_destroy :: proc(gfx: ^Gfx, handle: Pipeline_Handle) {
 	if !handle_pool_contains(&gfx.pipeline_handles, raw) do return
 	resource := &gfx.pipelines[raw.index]
 	if resource.handle != nil do sdl.ReleaseGPUGraphicsPipeline(gfx.gpu, resource.handle)
+	if resource.handle_msaa != nil do sdl.ReleaseGPUGraphicsPipeline(gfx.gpu, resource.handle_msaa)
 	resource^ = {}
 	assert(handle_pool_release(&gfx.pipeline_handles, raw))
 }

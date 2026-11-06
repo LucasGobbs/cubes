@@ -8,6 +8,7 @@ Texture :: struct {
 	format:              sdl.GPUTextureFormat,
 	usage:               sdl.GPUTextureUsageFlags,
 	width, height:       u32,
+	sample_count:        sdl.GPUSampleCount,
 	_temporary_raw_data: []byte,
 }
 
@@ -25,6 +26,7 @@ gfx_texture_create_with_usage :: proc(
 	width, height: u32,
 	format: sdl.GPUTextureFormat,
 	usage: sdl.GPUTextureUsageFlags,
+	sample_count := sdl.GPUSampleCount._1,
 ) -> Texture_Handle {
 	resource := Texture {
 		handle = sdl.CreateGPUTexture(
@@ -36,12 +38,14 @@ gfx_texture_create_with_usage :: proc(
 				height = height,
 				layer_count_or_depth = 1,
 				num_levels = 1,
+				sample_count = sample_count,
 			},
 		),
 		format = format,
 		usage  = usage,
 		width  = width,
 		height = height,
+		sample_count = sample_count,
 	}
 	assert(resource.handle != nil)
 	handle := Texture_Handle(handle_pool_acquire(&gfx.texture_handles))
@@ -69,9 +73,10 @@ gfx_texture_resize :: proc(gfx: ^Gfx, handle: ^Texture_Handle, width, height: u3
 	if texture.width == width && texture.height == height do return false
 	format := texture.format
 	usage := texture.usage
+	sample_count := texture.sample_count
 	_ = sdl.WaitForGPUIdle(gfx.gpu)
 	gfx_texture_destroy(gfx, handle^)
-	handle^ = gfx_texture_create_with_usage(gfx, width, height, format, usage)
+	handle^ = gfx_texture_create_with_usage(gfx, width, height, format, usage, sample_count)
 	return true
 }
 

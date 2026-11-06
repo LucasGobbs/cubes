@@ -1,6 +1,6 @@
 // Entry point: forwards to one scene picked by CLI argument, e.g.
 // `./main simple` or `make run ARGS=simple`. Defaults to "benchmark".
-// Number keys 1-4 switch scene at runtime (order of SCENE_NAMES).
+// Number keys 1-4 switch scene at runtime (order of SCENES); M toggles MSAA.
 package main
 
 import "core:fmt"
@@ -11,6 +11,7 @@ import glove "glove"
 import sdl "vendor:sdl3"
 
 quit_action: glove.Button_Action
+msaa_action: glove.Button_Action
 switch_actions: [len(SCENES)]glove.Button_Action
 current_scene: int
 // Input state before the scene registered its own actions; switching rewinds
@@ -44,6 +45,8 @@ scene_create :: proc(gfx: ^gbbfx.Gfx, raw_scene: rawptr) -> bool {
 	inputs := gbbfx.gfx_input(gfx)
 	quit_action = glove.add_button(inputs, "app.quit")
 	glove.bind_key(inputs, quit_action, .ESCAPE)
+	msaa_action = glove.add_button(inputs, "app.msaa")
+	glove.bind_key(inputs, msaa_action, .M)
 	for &action, index in switch_actions {
 		action = glove.add_button(inputs, SCENES[index].name)
 		glove.bind_key(inputs, action, glove.Key(int(glove.Key._1) + index))
@@ -59,6 +62,11 @@ scene_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, raw_scene: rawptr) {
 		gbbfx.gfx_request_quit(gfx)
 		return
 	}
+	if glove.pressed(inputs, msaa_action) {
+		renderer := &gfx.renderer
+		on := gbbfx.renderer_set_msaa(renderer, !renderer.msaa_enabled)
+		log.infof("MSAA %s", on ? "4x" : (renderer.msaa_supported ? "off" : "unsupported"))
+	}
 	for action, index in switch_actions {
 		if index != current_scene && glove.pressed(inputs, action) {
 			scene_switch(gfx, scene, index)
@@ -71,9 +79,10 @@ scene_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, raw_scene: rawptr) {
 	if scene.fps_timer >= 0.5 {
 		scene.fps_timer = 0
 		title := fmt.caprintf(
-			"Cubes — %s — %.0f FPS",
+			"Cubes — %s — %.0f FPS — MSAA %s (M)",
 			scene.name,
 			1 / delta_time,
+			gfx.renderer.msaa_enabled ? "4x" : "off",
 			allocator = context.temp_allocator,
 		)
 		_ = sdl.SetWindowTitle(gfx.window, title)

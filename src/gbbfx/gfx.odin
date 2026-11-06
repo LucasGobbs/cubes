@@ -64,6 +64,7 @@ create :: proc(
 	gfx.window_size = window_size
 	gfx.inputs = glove.system_create(glove_sdl.create())
 	gfx.renderer = renderer_create(gfx)
+	_ = renderer_set_msaa(&gfx.renderer, true) // on by default where supported
 
 	gfx.running = true
 	return game_create_callback(gfx, game_state)
