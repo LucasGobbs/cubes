@@ -8,7 +8,7 @@ import "core:time"
 import gbbfx "gbbfx"
 
 // Frames before this are loading and GPU warm-up; they are not sampled.
-BENCH_WARMUP :: 2.0
+BENCH_WARMUP :: 4.0
 
 Bench_Run :: struct {
 	seconds:    f64, // 0 = off

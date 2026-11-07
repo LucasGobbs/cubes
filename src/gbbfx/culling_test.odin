@@ -54,6 +54,18 @@ culling_never_rejects_unbounded_mesh :: proc(t: ^testing.T) {
 }
 
 @(test)
+culling_drops_spheres_beyond_view_distance :: proc(t: ^testing.T) {
+	near := Mesh{radius = 1}
+	eye := Vec3{0, 0, 0}
+	testing.expect(t, !renderable_beyond(eye, &near, linalg.matrix4_translate_f32({0, 0, -100}), 150), "inside")
+	testing.expect(t, renderable_beyond(eye, &near, linalg.matrix4_translate_f32({0, 0, -200}), 150), "far")
+	// Sphere edge exactly at the limit (151 - radius 1 = 150) is kept.
+	testing.expect(t, !renderable_beyond(eye, &near, linalg.matrix4_translate_f32({0, 0, -151}), 150), "edge")
+	unknown := Mesh{} // radius 0 = bounds unknown, never culled
+	testing.expect(t, !renderable_beyond(eye, &unknown, linalg.matrix4_translate_f32({0, 0, -1000}), 150), "unbounded")
+}
+
+@(test)
 mesh_bounds_enclose_all_vertices :: proc(t: ^testing.T) {
 	vertices := [3]VertexData{{position = {-1, 0, 0}}, {position = {3, 0, 0}}, {position = {1, 2, 0}}}
 	mesh: Mesh

@@ -1,0 +1,319 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 34 "shaders/sea.slang"
+float2 mod289_2_0(float2 x_0)
+{
+
+#line 34
+    return x_0 - floor(x_0 * float2(0.00346020772121847f) ) * float2(289.0f) ;
+}
+
+
+#line 33
+float3 mod289_3_0(float3 x_1)
+{
+
+#line 33
+    return x_1 - floor(x_1 * float3(0.00346020772121847f) ) * float3(289.0f) ;
+}
+
+
+#line 35
+float3 permute3_0(float3 x_2)
+{
+
+#line 35
+    return mod289_3_0((x_2 * float3(34.0f)  + float3(1.0f) ) * x_2);
+}
+
+
+#line 37
+float simplex2_0(float2 v_0)
+{
+    float2 i_0 = floor(v_0 + float2(dot(v_0, float2(0.3660254180431366f, 0.3660254180431366f))) );
+    float2 x0_0 = v_0 - i_0 + float2(dot(i_0, float2(0.21132487058639526f, 0.21132487058639526f))) ;
+    float _S1 = x0_0.x;
+
+#line 41
+    float _S2 = x0_0.y;
+
+#line 41
+    float2 i1_0;
+
+#line 41
+    if(_S1 > _S2)
+    {
+
+#line 41
+        i1_0 = float2(1.0f, 0.0f);
+
+#line 41
+    }
+    else
+    {
+
+#line 41
+        i1_0 = float2(0.0f, 1.0f);
+
+#line 41
+    }
+    float4 _S3 = x0_0.xyxy + float4(0.21132487058639526f, 0.21132487058639526f, -0.57735025882720947f, -0.57735025882720947f);
+
+#line 42
+    thread float4 x12_0 = _S3;
+    x12_0.xy = _S3.xy - i1_0;
+    float2 i_1 = mod289_2_0(i_0);
+
+#line 44
+    float3 _S4 = float3(0.5f) ;
+
+    float3 m_0 = max(_S4 - float3(dot(x0_0, x0_0), dot(x12_0.xy, x12_0.xy), dot(x12_0.zw, x12_0.zw)), float3(0.0f) );
+    float3 m_1 = m_0 * m_0;
+
+    float3 x_3 = float3(2.0f)  * fract(permute3_0(permute3_0(float3(i_1.y)  + float3(0.0f, i1_0.y, 1.0f)) + float3(i_1.x)  + float3(0.0f, i1_0.x, 1.0f)) * float3(0.02439024299383163f, 0.02439024299383163f, 0.02439024299383163f)) - float3(1.0f) ;
+    float3 h_0 = abs(x_3) - _S4;
+
+    float3 a0_0 = x_3 - floor(x_3 + _S4);
+    float3 m_2 = m_1 * m_1 * (float3(1.79284286499023438f)  - float3(0.85373473167419434f)  * (a0_0 * a0_0 + h_0 * h_0));
+    thread float3 g_0;
+    g_0.x = a0_0.x * _S1 + h_0.x * _S2;
+    g_0.yz = a0_0.yz * x12_0.xz + h_0.yz * x12_0.yw;
+    return 130.0f * dot(m_2, g_0);
+}
+
+
+
+float3 swell_0(float2 p_0, float freq_0, float speed_0, float time_0)
+{
+
+#line 63
+    float2 q_0 = p_0 * float2(freq_0)  + float2(time_0 * speed_0, 0.0f);
+    float s_0 = simplex2_0(q_0);
+    return float3(s_0, simplex2_0(q_0 + float2(freq_0, 0.0f)) - s_0, simplex2_0(q_0 + float2(0.0f, freq_0)) - s_0);
+}
+
+
+#line 74
+float wave_height_0(float2 p_1, float time_1, float dist_0, int wave_count_0, bool fine_0, float2 thread* grad_0)
+{
+    *grad_0 = float2(0.0f, 0.0f);
+
+#line 76
+    int i_2 = int(0);
+
+#line 76
+    float wavelength_0 = 70.0f;
+
+#line 76
+    float angle_0 = 0.30000001192092896f;
+
+#line 76
+    float h_1 = 0.0f;
+
+
+    for(;;)
+    {
+
+#line 79
+        if(i_2 < wave_count_0)
+        {
+        }
+        else
+        {
+
+#line 79
+            break;
+        }
+
+#line 80
+        float k_0 = 6.28318548202514648f / wavelength_0;
+
+        float amplitude_0 = 0.05999999865889549f / k_0;
+        float2 dir_0 = float2(cos(angle_0), sin(angle_0));
+        float fade_0 = 1.0f - smoothstep(wavelength_0 * 80.0f, wavelength_0 * 160.0f, dist_0);
+        float phase_0 = dot(dir_0, p_1) * k_0 - sqrt(9.81000041961669922f * k_0) * time_1;
+        float h_2 = h_1 + amplitude_0 * sin(phase_0) * fade_0;
+        *grad_0 = *grad_0 + float2((amplitude_0 * k_0 * cos(phase_0)))  * dir_0 * float2(fade_0) ;
+        float wavelength_1 = wavelength_0 * 0.68000000715255737f;
+        float angle_1 = angle_0 + 2.39996004104614258f;
+
+#line 79
+        i_2 = i_2 + int(1);
+
+#line 79
+        wavelength_0 = wavelength_1;
+
+#line 79
+        angle_0 = angle_1;
+
+#line 79
+        h_1 = h_2;
+
+#line 79
+    }
+
+#line 92
+    float nf_0 = 1.0f - smoothstep(300.0f, 1500.0f, dist_0);
+    float3 broad_0 = swell_0(p_1, 0.00800000037997961f, 0.00999999977648258f, time_1);
+    float _S5 = nf_0 * 3.0f;
+
+#line 94
+    float h_3 = h_1 + _S5 * broad_0.x;
+    *grad_0 = *grad_0 + float2(_S5)  * broad_0.yz;
+    if(fine_0)
+    {
+        float3 fine_swell_0 = swell_0(p_1, 0.02999999932944775f, -0.01999999955296516f, time_1);
+        float _S6 = nf_0 * 1.5f;
+
+#line 99
+        float h_4 = h_3 + _S6 * fine_swell_0.x;
+        *grad_0 = *grad_0 + float2(_S6)  * fine_swell_0.yz;
+
+#line 100
+        h_1 = h_4;
+
+#line 96
+    }
+    else
+    {
+
+#line 96
+        h_1 = h_3;
+
+#line 96
+    }
+
+#line 102
+    return h_1;
+}
+
+
+#line 90 "core"
+struct vertexMain_Result_0
+{
+    float4 position_0 [[position]];
+    float3 world_0 [[user(WORLD)]];
+    float3 to_camera_0 [[user(TO_CAMERA)]];
+    float time_2 [[user(TIME)]];
+    float4 fog_0 [[user(FOG)]];
+};
+
+
+#line 90
+struct vertexInput_0
+{
+    float3 position_1 [[attribute(0)]];
+};
+
+
+#line 90
+struct _MatrixStorage_float4x4_ColMajornatural_0
+{
+    array<float4, int(4)> data_0;
+};
+
+
+#line 90
+struct Uniforms_natural_0
+{
+    _MatrixStorage_float4x4_ColMajornatural_0 mvp_0;
+    _MatrixStorage_float4x4_ColMajornatural_0 model_0;
+    float4 camera_position_0;
+    float4 time_3;
+    float4 fog_1;
+};
+
+
+#line 90
+struct SLANG_ParameterGroup_UniformBlock_natural_0
+{
+    Uniforms_natural_0 data_1;
+};
+
+
+#line 23 "shaders/sea.slang"
+struct VertexOutput_0
+{
+    float4 position_2;
+    float3 world_1;
+    float3 to_camera_1;
+    float time_4;
+    float4 fog_2;
+};
+
+
+#line 23
+[[vertex]] vertexMain_Result_0 vertexMain(vertexInput_0 _S7 [[stage_in]], SLANG_ParameterGroup_UniformBlock_natural_0 constant* UniformBlock_0 [[buffer(0)]])
+{
+
+#line 110
+    float4 flat_world_0 = (((float4(_S7.position_1, 1.0f)) * (matrix<float,int(4),int(4)> ((&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(3)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(3)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(3)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(3)]))));
+
+    float dist_1 = length((&UniformBlock_0->data_1)->camera_position_0.xyz - flat_world_0.xyz);
+    thread float3 local_0 = _S7.position_1;
+
+#line 111
+    thread float2 grad_1;
+
+
+    local_0.y = local_0.y + wave_height_0(flat_world_0.xz, (&UniformBlock_0->data_1)->time_3.x, dist_1, int(3), false, &grad_1);
+    float4 world_2 = (((float4(local_0, 1.0f)) * (matrix<float,int(4),int(4)> ((&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(3)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(3)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(3)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(3)]))));
+
+#line 109
+    thread VertexOutput_0 output_0;
+
+#line 116
+    (&output_0)->position_2 = (((float4(local_0, 1.0f)) * (matrix<float,int(4),int(4)> ((&UniformBlock_0->data_1)->mvp_0.data_0[int(0)][int(0)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(1)][int(0)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(2)][int(0)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(3)][int(0)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(0)][int(1)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(1)][int(1)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(2)][int(1)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(3)][int(1)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(0)][int(2)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(1)][int(2)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(2)][int(2)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(3)][int(2)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(0)][int(3)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(1)][int(3)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(2)][int(3)], (&UniformBlock_0->data_1)->mvp_0.data_0[int(3)][int(3)]))));
+    float3 _S8 = world_2.xyz;
+
+#line 117
+    (&output_0)->world_1 = _S8;
+    (&output_0)->to_camera_1 = (&UniformBlock_0->data_1)->camera_position_0.xyz - _S8;
+    (&output_0)->time_4 = (&UniformBlock_0->data_1)->time_3.x;
+
+#line 119
+    float t_0;
+    if(((&UniformBlock_0->data_1)->fog_1.w) > 0.0f)
+    {
+
+#line 120
+        t_0 = saturate((length((&output_0)->to_camera_1) - 0.60000002384185791f * (&UniformBlock_0->data_1)->fog_1.w) / (0.40000000596046448f * (&UniformBlock_0->data_1)->fog_1.w));
+
+#line 120
+    }
+    else
+    {
+
+#line 120
+        t_0 = 0.0f;
+
+#line 120
+    }
+    (&output_0)->fog_2 = float4((&UniformBlock_0->data_1)->fog_1.xyz, t_0);
+    VertexOutput_0 _S9 = output_0;
+
+#line 122
+    thread vertexMain_Result_0 _S10;
+
+#line 122
+    (&_S10)->position_0 = _S9.position_2;
+
+#line 122
+    (&_S10)->world_0 = _S9.world_1;
+
+#line 122
+    (&_S10)->to_camera_0 = _S9.to_camera_1;
+
+#line 122
+    (&_S10)->time_2 = _S9.time_4;
+
+#line 122
+    (&_S10)->fog_0 = _S9.fog_2;
+
+#line 122
+    return _S10;
+}
+

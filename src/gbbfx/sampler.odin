@@ -17,6 +17,15 @@ SAMPLER_TRILINEAR :: sdl.GPUSamplerCreateInfo {
 	max_lod           = 1000, // zero would clamp sampling to mip 0
 }
 
+// Linear filtering with clamped edges, no mips: full-screen post-process reads.
+SAMPLER_LINEAR_CLAMP :: sdl.GPUSamplerCreateInfo {
+	min_filter     = .LINEAR,
+	mag_filter     = .LINEAR,
+	address_mode_u = .CLAMP_TO_EDGE,
+	address_mode_v = .CLAMP_TO_EDGE,
+	address_mode_w = .CLAMP_TO_EDGE,
+}
+
 Sampler :: struct {
 	handle: ^sdl.GPUSampler,
 }

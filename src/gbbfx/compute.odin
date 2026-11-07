@@ -52,6 +52,7 @@ gfx_compute_dispatch :: proc(
 	sampled_textures: []Texture_Handle,
 	sampler: Sampler_Handle,
 	groups: [3]u32,
+	uniform_data: []byte = nil,
 ) {
 	assert(gfx.frame_open && gfx.command_buffer != nil)
 
@@ -73,6 +74,9 @@ gfx_compute_dispatch :: proc(
 	assert(pass != nil)
 
 	sdl.BindGPUComputePipeline(pass, gfx_compute_pipeline_get(gfx, pipeline).handle)
+	if len(uniform_data) > 0 {
+		sdl.PushGPUComputeUniformData(gfx.command_buffer, 0, raw_data(uniform_data), u32(len(uniform_data)))
+	}
 
 	if len(sampled_textures) > 0 {
 		bindings := make(

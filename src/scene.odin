@@ -29,6 +29,9 @@ SCENES := [?]SceneEntry {
 	{"simple", simple_scene},
 	{"editor", editor_scene},
 	{"models", models_scene},
+	{"skinned", skinned_demo_scene},
+	{"postfx", postfx_demo_scene},
+	{"game", game_demo_scene},
 	{"benchmark", benchmark_scene},
 }
 

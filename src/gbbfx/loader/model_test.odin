@@ -1,5 +1,6 @@
 package loader
 
+import "core:math"
 import "core:math/linalg"
 import "core:testing"
 
@@ -73,4 +74,42 @@ gltf_normals_point_outward_matching_triangle_winding :: proc(t: ^testing.T) {
 	}
 	testing.expect(t, total > 0)
 	testing.expect(t, f32(agree) / f32(total) > 0.99)
+}
+
+@(test)
+skinned_import_satisfies_joint_and_weight_invariants :: proc(t: ^testing.T) {
+	model, ok := model_import_skinned_from_gltf("static/models/rigged_cesiumman.glb")
+	testing.expect(t, ok)
+	defer skinned_model_destroy(&model)
+	if !ok do return
+
+	joint_count := len(model.skin.joints)
+	testing.expect(t, joint_count > 0 && joint_count <= MAX_JOINTS)
+	testing.expect_value(t, len(model.skin.inverse_bind), joint_count)
+	for joint, i in model.skin.joints do testing.expect(t, joint.parent < i32(i))
+	for vertex in model.vertices {
+		for joint in vertex.joints do testing.expect(t, int(joint) < joint_count)
+		sum := vertex.weights[0] + vertex.weights[1] + vertex.weights[2] + vertex.weights[3]
+		testing.expect(t, abs(sum - 1) < 1e-3)
+	}
+}
+
+// CesiumMan's only root joint is under Armature (Rz -90°) under Z_UP (Rx -90°),
+// both non-joint nodes: their product must reach the joint's palette.
+@(test)
+skinned_import_keeps_non_joint_root_ancestors :: proc(t: ^testing.T) {
+	model, ok := model_import_skinned_from_gltf("static/models/rigged_cesiumman.glb")
+	testing.expect(t, ok)
+	defer skinned_model_destroy(&model)
+	if !ok do return
+
+	expected := linalg.matrix4_rotate_f32(-math.PI / 2, {1, 0, 0}) * linalg.matrix4_rotate_f32(-math.PI / 2, {0, 0, 1})
+	testing.expect(t, model.skin.joints[0].parent == -1)
+	for c in 0 ..< 4 do testing.expect(t, linalg.length(model.skin.joints[0].pre[c] - expected[c]) < 1e-4)
+}
+
+@(test)
+gltf_has_skin_detects_rigged_models :: proc(t: ^testing.T) {
+	testing.expect(t, gltf_has_skin("static/models/rigged_cesiumman.glb"))
+	testing.expect(t, !gltf_has_skin("static/models/ship-large.glb"))
 }

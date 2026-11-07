@@ -21,7 +21,7 @@ EDITOR_DEFINE := -define:EDITOR=$(EDITOR)
 
 .PHONY: all build run run-optimized debug debug-optimized shaders default-shaders \
         submodules test-glove test-glove-optimized test-gbbfx \
-        test-gbbfx-optimized test test-optimized compute editor clean
+        test-gbbfx-optimized test test-optimized compute editor example clean
 all: build
 
 # Fail early with the fix instead of an Odin "package not found" error.
@@ -50,11 +50,13 @@ test-gbbfx: default-shaders
 	$(ODIN) test src/gbbfx
 	$(ODIN) test src/gbbfx/loader
 	$(ODIN) test src/gbbfx/sdl_gpu
+	$(ODIN) test src/engine
 
 test-gbbfx-optimized: default-shaders
 	$(ODIN) test src/gbbfx $(RELEASE_FLAGS)
 	$(ODIN) test src/gbbfx/loader $(RELEASE_FLAGS)
 	$(ODIN) test src/gbbfx/sdl_gpu $(RELEASE_FLAGS)
+	$(ODIN) test src/engine $(RELEASE_FLAGS)
 
 build: shaders
 	$(ODIN) build $(SRC) -out:$(BIN) $(RELEASE_FLAGS) $(EDITOR_DEFINE)
@@ -83,6 +85,9 @@ test: shaders test-glove test-gbbfx
 
 test-optimized: shaders test-glove-optimized test-gbbfx-optimized
 	$(ODIN) test $(SRC) -all-packages $(RELEASE_FLAGS)
+
+example: default-shaders
+	$(ODIN) build examples/hello_engine -out:hello_engine $(RELEASE_FLAGS)
 
 clean:
 	rm -f $(BIN) $(BIN_DEBUG) $(GOOSE_BUILD_BIN)

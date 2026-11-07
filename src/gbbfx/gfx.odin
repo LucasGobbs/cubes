@@ -46,13 +46,22 @@ create :: proc(
 	window_title: string = "Game Window Title",
 	window_width: int = 1280,
 	window_height: int = 780,
+	fullscreen: bool = false, // sized from the desktop mode; window_size is read once, here
 ) -> bool {
 	ok := sdl.Init({.VIDEO}); assert(ok)
+	flags := sdl.WindowFlags{.ALWAYS_ON_TOP, .MOUSE_GRABBED}
+	width, height := c.int(window_width), c.int(window_height)
+	if fullscreen {
+		mode := sdl.GetDesktopDisplayMode(sdl.GetPrimaryDisplay())
+		assert(mode != nil)
+		width, height = mode.w, mode.h
+		flags += {.FULLSCREEN}
+	}
 	window := sdl.CreateWindow(
 		strings.clone_to_cstring(window_title, context.temp_allocator),
-		c.int(window_width),
-		c.int(window_height),
-		{.ALWAYS_ON_TOP, .MOUSE_GRABBED},
+		width,
+		height,
+		flags,
 	); assert(window != nil)
 	gpu := sdl.CreateGPUDevice({.MSL, .SPIRV}, true, nil); assert(gpu != nil)
 	ok = sdl.ClaimWindowForGPUDevice(gpu, window); assert(ok)
@@ -159,15 +168,15 @@ gfx_request_quit :: proc(gfx: ^Gfx) {
 	gfx.running = false
 }
 
-// Simple no-post-processing frame: scene -> offscreen -> blit to screen.
-// Compose renderer_begin_frame/render_scene/your compute/renderer_present/
-// gfx_end_frame yourself to insert post processing between scene and present.
+// Simple frame: scene -> offscreen -> post passes (renderer_set_passes) -> blit
+// to screen. For a frame with your own steps, compose renderer_begin_frame,
+// renderer_render_scene, renderer_run_post, renderer_present and renderer_end_frame.
+scene_extract_proc :: proc(r: ^Renderer, user: rawptr) {
+	renderer_extract_scene(r, (^Scene)(user))
+}
+
 gfx_render :: proc(gfx: ^Gfx, scene: ^Scene) {
-	renderer_begin_frame(&gfx.renderer)
-	renderer_render_scene(&gfx.renderer, scene)
-	renderer_present(&gfx.renderer, gfx.renderer.scene_color)
-	renderer_end_frame(&gfx.renderer)
-	free_all(context.temp_allocator)
+	renderer_render_frame(&gfx.renderer, scene_extract_proc, scene)
 }
 gfx_end_frame :: proc(gfx: ^Gfx) {
 	assert(gfx.frame_open && gfx.command_buffer != nil)

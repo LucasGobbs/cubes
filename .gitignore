@@ -1,6 +1,7 @@
 /odin
 main
 main_debug
+/hello_engine
 *.dSYM/
 output.ppm
 output.qoi

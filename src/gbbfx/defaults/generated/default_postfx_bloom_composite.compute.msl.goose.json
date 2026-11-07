@@ -1,0 +1,152 @@
+{
+  "stage": "compute",
+  "entryPoint": "computeMain",
+  "threadGroupSize": [
+    8,
+    8,
+    1
+  ],
+  "vertexInputs": [
+
+  ],
+  "uniformBlocks": [
+    {
+      "name": "compute_UniformBlock",
+      "typeName": "DefaultPostfxBloomCompositeComputeUniformBlock",
+      "slot": 0,
+      "space": 0,
+      "size": 16,
+      "type": {
+        "kind": "struct",
+        "size": 16,
+        "typeName": "DefaultPostfxBloomCompositeComputeUniformBlock",
+        "fields": [
+          {
+            "name": "params",
+            "offset": 0,
+            "type": {
+              "kind": "struct",
+              "size": 16,
+              "typeName": "DefaultPostfxBloomCompositeComputeCompositeParams",
+              "fields": [
+                {
+                  "name": "intensity",
+                  "offset": 0,
+                  "type": {
+                    "kind": "scalar",
+                    "scalar": "float32",
+                    "size": 4
+                  }
+                },
+                {
+                  "name": "pad0",
+                  "offset": 4,
+                  "type": {
+                    "kind": "scalar",
+                    "scalar": "float32",
+                    "size": 4
+                  }
+                },
+                {
+                  "name": "pad1",
+                  "offset": 8,
+                  "type": {
+                    "kind": "scalar",
+                    "scalar": "float32",
+                    "size": 4
+                  }
+                },
+                {
+                  "name": "pad2",
+                  "offset": 12,
+                  "type": {
+                    "kind": "scalar",
+                    "scalar": "float32",
+                    "size": 4
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "blockName": "UniformBlock",
+      "sdlSlot": 0,
+      "descriptorSet": 0,
+      "descriptorBinding": 0
+    }
+  ],
+  "resources": [
+    {
+      "name": "scene_image",
+      "kind": "resource",
+      "slot": 0,
+      "space": 0
+    },
+    {
+      "name": "bloom_image",
+      "kind": "resource",
+      "slot": 1,
+      "space": 0
+    },
+    {
+      "name": "scene_sampler",
+      "kind": "samplerState",
+      "slot": 0,
+      "space": 0
+    },
+    {
+      "name": "bloom_sampler",
+      "kind": "samplerState",
+      "slot": 1,
+      "space": 0
+    },
+    {
+      "name": "output_image",
+      "kind": "resource",
+      "slot": 2,
+      "space": 0
+    }
+  ],
+  "schema": "goose.stage/1",
+  "shader": "default_postfx_bloom_composite",
+  "target": "metal",
+  "format": "msl",
+  "artifact": "default_postfx_bloom_composite.compute.msl",
+  "entrySymbol": "computeMain",
+  "layout": "native",
+  "numSamplers": 2,
+  "numUniformBuffers": 1,
+  "numReadonlyStorageTextures": 0,
+  "numReadonlyStorageBuffers": 0,
+  "numReadwriteStorageTextures": 1,
+  "numReadwriteStorageBuffers": 0,
+  "samplers": [
+    {
+      "slot": 0,
+      "texture": "scene_image",
+      "sampler": "scene_sampler",
+      "combined": false,
+      "set": 0,
+      "binding": 0
+    },
+    {
+      "slot": 1,
+      "texture": "bloom_image",
+      "sampler": "bloom_sampler",
+      "combined": false,
+      "set": 0,
+      "binding": 1
+    }
+  ],
+  "storage": [
+    {
+      "name": "output_image",
+      "kind": "texture",
+      "access": "readwrite",
+      "slot": 0,
+      "set": 0,
+      "binding": 2
+    }
+  ]
+}

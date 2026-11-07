@@ -189,7 +189,7 @@ model_import_from_gltf :: proc(path: string) -> (model: ImportedModel, ok: bool)
 
 // Embedded images (.glb bufferView) decode from memory; external ones load
 // relative to the model file. Falls back to white when absent or unreadable.
-@(private = "file")
+
 gltf_load_image :: proc(model_path: string, source: ^gltf.image) -> ImageData {
 	if source == nil do return image_white()
 

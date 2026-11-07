@@ -1,6 +1,7 @@
 package defaults
 
 import "core:math/linalg"
+import sdl "vendor:sdl3"
 import gbbfx ".."
 
 create_textured_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
@@ -79,6 +80,29 @@ create_textured_instanced_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Ha
 	)
 }
 
+// Skinned textured pipeline: bind-pose vertices plus joint indices and weights.
+// Skinned runs are drawn with bind_textured_skinned_storage supplying the
+// per-instance transforms and joint palettes.
+create_textured_skinned_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
+	attributes := default_textured_skinned_vertex_attributes(gbbfx.SkinnedVertexData)
+	return gbbfx.gfx_pipeline_create(
+		gfx,
+		{
+			vertex = default_textured_skinned_vertex(),
+			fragment = default_textured_skinned_fragment(),
+			vertex_attributes = attributes[:],
+			vertex_stride = u32(size_of(gbbfx.SkinnedVertexData)),
+			depth_test = true,
+			depth_write = true,
+			cull_mode = .BACK,
+			instanced = true,
+			skinned = true,
+			bind_draw = bind_textured_skinned_draw,
+			bind_skinned_storage = bind_textured_skinned_storage,
+		},
+	)
+}
+
 bind_textured_instanced_draw :: proc(
 	user_data: rawptr,
 	draw_context: ^gbbfx.Draw_Context,
@@ -90,6 +114,7 @@ bind_textured_instanced_draw :: proc(
 			view_projection = parameters.view_projection,
 			first_instance = parameters.first_instance,
 			camera_position = parameters.camera_position,
+			fog = parameters.fog,
 		},
 	}
 	gbbfx.draw_push_uniform(
@@ -112,6 +137,65 @@ bind_textured_instanced_material :: proc(
 		DEFAULT_TEXTURED_INSTANCED_FRAGMENT_TEX_SAMPLER,
 		texture,
 		sampler,
+	)
+}
+
+bind_textured_skinned_draw :: proc(
+	user_data: rawptr,
+	draw_context: ^gbbfx.Draw_Context,
+	parameters: gbbfx.Draw_Parameters,
+) {
+	_ = user_data
+	uniforms := DefaultTexturedSkinnedVertexUniformBlock {
+		data = {
+			view_projection = parameters.view_projection,
+			first_instance = parameters.first_instance,
+			camera_position = parameters.camera_position,
+			fog = parameters.fog,
+		},
+	}
+	gbbfx.draw_push_uniform(draw_context, DEFAULT_TEXTURED_SKINNED_VERTEX_UNIFORM_BLOCK, &uniforms)
+}
+
+bind_textured_skinned_material :: proc(
+	material: ^gbbfx.Material,
+	texture: gbbfx.Texture_Handle,
+	sampler: gbbfx.Sampler_Handle,
+) {
+	gbbfx.material_bind_texture(
+		material,
+		DEFAULT_TEXTURED_SKINNED_FRAGMENT_TEX,
+		DEFAULT_TEXTURED_SKINNED_FRAGMENT_TEX_SAMPLER,
+		texture,
+		sampler,
+	)
+}
+
+// Binds the skinned shader's two vertex storage buffers for the current pass,
+// at the slots the generated parameters declare: transforms (slot 0) and
+// palettes (slot 1). For a skinned run, SV_InstanceID + first_instance selects
+// transforms[i] and palettes[i * MAX_JOINTS ..< (i + 1) * MAX_JOINTS], so both
+// buffers must be laid out with the same instance index. Binding replaces the
+// pass's slot 0, so rebind the static instance buffer before later static runs.
+bind_textured_skinned_storage :: proc(
+	gfx: ^gbbfx.Gfx,
+	pass: ^sdl.GPURenderPass,
+	transforms: gbbfx.Buffer_Handle,
+	palettes: gbbfx.Buffer_Handle,
+) {
+	transform_buffer := gbbfx.gfx_buffer_get(gfx, transforms)
+	palette_buffer := gbbfx.gfx_buffer_get(gfx, palettes)
+	sdl.BindGPUVertexStorageBuffers(
+		pass,
+		DEFAULT_TEXTURED_SKINNED_VERTEX_INSTANCE_TRANSFORMS.location.slot,
+		&transform_buffer.handle,
+		1,
+	)
+	sdl.BindGPUVertexStorageBuffers(
+		pass,
+		DEFAULT_TEXTURED_SKINNED_VERTEX_PALETTES.location.slot,
+		&palette_buffer.handle,
+		1,
 	)
 }
 

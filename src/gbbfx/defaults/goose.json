@@ -23,10 +23,31 @@
       "fragment": "pixelMain"
     },
     {
+      "name": "default_textured_skinned",
+      "source": "src/gbbfx/defaults/shaders/textured_skinned.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
       "name": "default_skybox",
       "source": "src/gbbfx/defaults/shaders/skybox.slang",
       "vertex": "vertexMain",
       "fragment": "pixelMain"
+    },
+    {
+      "name": "default_postfx_blur",
+      "source": "src/gbbfx/defaults/shaders/postfx_blur.slang",
+      "compute": "computeMain"
+    },
+    {
+      "name": "default_postfx_bloom_prefilter",
+      "source": "src/gbbfx/defaults/shaders/postfx_bloom_prefilter.slang",
+      "compute": "computeMain"
+    },
+    {
+      "name": "default_postfx_bloom_composite",
+      "source": "src/gbbfx/defaults/shaders/postfx_bloom_composite.slang",
+      "compute": "computeMain"
     }
   ]
 }
