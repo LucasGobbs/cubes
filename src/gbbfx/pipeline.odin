@@ -13,6 +13,7 @@ Draw_Parameters :: struct {
 	// (instanced pipelines only; 0 otherwise).
 	camera_position: [3]f32,
 	first_instance:  u32,
+	fog:             [4]f32, // rgb = linear fog color, a = view distance (<= 0 = off)
 }
 
 Draw_Context :: struct {
@@ -23,6 +24,13 @@ Pipeline_Bind_Draw_Proc :: #type proc(
 	user_data: rawptr,
 	draw_context: ^Draw_Context,
 	parameters: Draw_Parameters,
+)
+
+Pipeline_Bind_Skinned_Storage_Proc :: #type proc(
+	gfx: ^Gfx,
+	pass: ^sdl.GPURenderPass,
+	transforms: Buffer_Handle,
+	palettes: Buffer_Handle,
 )
 
 Graphics_Pipeline_Desc :: struct {
@@ -49,10 +57,14 @@ Graphics_Pipeline_Desc :: struct {
 	// SV_InstanceID, so the renderer may collapse runs of identical
 	// (mesh, material) draw items into one instanced draw.
 	instanced:         bool,
+	// Skinned pipelines also read joint palettes from a second storage buffer
+	// (see defaults.bind_textured_skinned_storage). Set together with instanced.
+	skinned:           bool,
 	// Only ever bound in passes that render to 1x targets (overlay/present
 	// passes). Skips building the MSAA variant.
 	single_sample:     bool,
 	bind_draw:         Pipeline_Bind_Draw_Proc,
+	bind_skinned_storage: Pipeline_Bind_Skinned_Storage_Proc,
 	user_data:         rawptr,
 }
 
@@ -64,7 +76,9 @@ Pipeline :: struct {
 	handle_msaa: ^sdl.GPUGraphicsPipeline,
 	user_data: rawptr,
 	bind_draw: Pipeline_Bind_Draw_Proc,
+	bind_skinned_storage: Pipeline_Bind_Skinned_Storage_Proc,
 	instanced: bool,
+	skinned: bool,
 }
 
 draw_push_uniform :: proc(draw_context: ^Draw_Context, binding: goose.UniformBlock, data: ^$T) {
@@ -150,7 +164,9 @@ gfx_pipeline_create :: proc(gfx: ^Gfx, desc: Graphics_Pipeline_Desc) -> Pipeline
 		handle_msaa = native_msaa,
 		user_data = desc.user_data,
 		bind_draw = desc.bind_draw,
+		bind_skinned_storage = desc.bind_skinned_storage,
 		instanced = desc.instanced,
+		skinned = desc.skinned,
 	}
 	handle := Pipeline_Handle(handle_pool_acquire(&gfx.pipeline_handles))
 	index := Resource_Handle(handle).index

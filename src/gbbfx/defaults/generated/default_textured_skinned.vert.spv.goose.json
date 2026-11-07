@@ -1,0 +1,156 @@
+{
+  "stage": "vertex",
+  "entryPoint": "vertexMain",
+  "threadGroupSize": [
+    0,
+    0,
+    0
+  ],
+  "vertexInputs": [
+    {
+      "name": "position",
+      "location": 0,
+      "format": "Float3"
+    },
+    {
+      "name": "normal",
+      "location": 1,
+      "format": "Float3"
+    },
+    {
+      "name": "uv",
+      "location": 2,
+      "format": "Float2"
+    },
+    {
+      "name": "joints",
+      "location": 3,
+      "format": "Uint16x4"
+    },
+    {
+      "name": "weights",
+      "location": 4,
+      "format": "Float4"
+    }
+  ],
+  "uniformBlocks": [
+    {
+      "name": "vertex_UniformBlock",
+      "typeName": "DefaultTexturedSkinnedVertexUniformBlock",
+      "slot": 0,
+      "space": 0,
+      "size": 96,
+      "type": {
+        "kind": "struct",
+        "size": 96,
+        "typeName": "DefaultTexturedSkinnedVertexUniformBlock",
+        "fields": [
+          {
+            "name": "data",
+            "offset": 0,
+            "type": {
+              "kind": "struct",
+              "size": 96,
+              "typeName": "DefaultTexturedSkinnedVertexUniforms",
+              "fields": [
+                {
+                  "name": "view_projection",
+                  "offset": 0,
+                  "type": {
+                    "kind": "matrix",
+                    "scalar": "float32",
+                    "rows": 4,
+                    "columns": 4,
+                    "stride": 16,
+                    "size": 64
+                  }
+                },
+                {
+                  "name": "camera_position",
+                  "offset": 64,
+                  "type": {
+                    "kind": "vector",
+                    "scalar": "float32",
+                    "count": 3,
+                    "size": 12
+                  }
+                },
+                {
+                  "name": "first_instance",
+                  "offset": 76,
+                  "type": {
+                    "kind": "scalar",
+                    "scalar": "uint32",
+                    "size": 4
+                  }
+                },
+                {
+                  "name": "fog",
+                  "offset": 80,
+                  "type": {
+                    "kind": "vector",
+                    "scalar": "float32",
+                    "count": 4,
+                    "size": 16
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "blockName": "UniformBlock",
+      "sdlSlot": 0,
+      "descriptorSet": 0,
+      "descriptorBinding": 0
+    }
+  ],
+  "resources": [
+    {
+      "name": "instance_transforms",
+      "kind": "resource",
+      "slot": 1,
+      "space": 0
+    },
+    {
+      "name": "palettes",
+      "kind": "resource",
+      "slot": 2,
+      "space": 0
+    }
+  ],
+  "schema": "goose.stage/1",
+  "shader": "default_textured_skinned",
+  "target": "spirv",
+  "format": "spv",
+  "artifact": "default_textured_skinned.vert.spv",
+  "entrySymbol": "main",
+  "layout": "native",
+  "numSamplers": 0,
+  "numUniformBuffers": 1,
+  "numReadonlyStorageTextures": 0,
+  "numReadonlyStorageBuffers": 2,
+  "numReadwriteStorageTextures": 0,
+  "numReadwriteStorageBuffers": 0,
+  "samplers": [
+
+  ],
+  "storage": [
+    {
+      "name": "instance_transforms",
+      "kind": "buffer",
+      "access": "readonly",
+      "slot": 0,
+      "set": 0,
+      "binding": 1
+    },
+    {
+      "name": "palettes",
+      "kind": "buffer",
+      "access": "readonly",
+      "slot": 1,
+      "set": 0,
+      "binding": 2
+    }
+  ]
+}

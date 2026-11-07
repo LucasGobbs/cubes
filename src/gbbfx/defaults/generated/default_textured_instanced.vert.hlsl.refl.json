@@ -56,17 +56,32 @@
                                             ]
                                         },
                                         "binding": {"kind": "uniform", "offset": 76, "size": 4, "elementStride": 0}
+                                    },
+                                    {
+                                        "name": "fog",
+                                        "type": {
+                                            "kind": "vector",
+                                            "elementCount": 4,
+                                            "elementType": {
+                                                "kind": "scalar",
+                                                "scalarType": "float32"
+                                            },
+                                            "sizes": [
+                                                {"kind": "uniform", "value": 16, "alignment": 4}
+                                            ]
+                                        },
+                                        "binding": {"kind": "uniform", "offset": 80, "size": 16, "elementStride": 4}
                                     }
                                 ],
                                 "sizes": [
-                                    {"kind": "uniform", "value": 80, "alignment": 16}
+                                    {"kind": "uniform", "value": 96, "alignment": 16}
                                 ]
                             },
-                            "binding": {"kind": "uniform", "offset": 0, "size": 80, "elementStride": 0}
+                            "binding": {"kind": "uniform", "offset": 0, "size": 96, "elementStride": 0}
                         }
                     ],
                     "sizes": [
-                        {"kind": "uniform", "value": 80, "alignment": 16}
+                        {"kind": "uniform", "value": 96, "alignment": 16}
                     ]
                 },
                 "containerVarLayout": {
@@ -123,20 +138,35 @@
                                                 ]
                                             },
                                             "binding": {"kind": "uniform", "offset": 76, "size": 4, "elementStride": 0}
+                                        },
+                                        {
+                                            "name": "fog",
+                                            "type": {
+                                                "kind": "vector",
+                                                "elementCount": 4,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float32"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 16, "alignment": 4}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 80, "size": 16, "elementStride": 4}
                                         }
                                     ],
                                     "sizes": [
-                                        {"kind": "uniform", "value": 80, "alignment": 16}
+                                        {"kind": "uniform", "value": 96, "alignment": 16}
                                     ]
                                 },
-                                "binding": {"kind": "uniform", "offset": 0, "size": 80, "elementStride": 0}
+                                "binding": {"kind": "uniform", "offset": 0, "size": 96, "elementStride": 0}
                             }
                         ],
                         "sizes": [
-                            {"kind": "uniform", "value": 80, "alignment": 16}
+                            {"kind": "uniform", "value": 96, "alignment": 16}
                         ]
                     },
-                    "binding": {"kind": "uniform", "offset": 0, "size": 80, "elementStride": 0}
+                    "binding": {"kind": "uniform", "offset": 0, "size": 96, "elementStride": 0}
                 },
                 "sizes": [
                     {"kind": "constantBuffer", "value": 1}
@@ -254,17 +284,32 @@
                                                 ]
                                             },
                                             "binding": {"kind": "uniform", "offset": 76, "size": 4, "elementStride": 0}
+                                        },
+                                        {
+                                            "name": "fog",
+                                            "type": {
+                                                "kind": "vector",
+                                                "elementCount": 4,
+                                                "elementType": {
+                                                    "kind": "scalar",
+                                                    "scalarType": "float32"
+                                                },
+                                                "sizes": [
+                                                    {"kind": "uniform", "value": 16, "alignment": 4}
+                                                ]
+                                            },
+                                            "binding": {"kind": "uniform", "offset": 80, "size": 16, "elementStride": 4}
                                         }
                                     ],
                                     "sizes": [
-                                        {"kind": "uniform", "value": 80, "alignment": 16}
+                                        {"kind": "uniform", "value": 96, "alignment": 16}
                                     ]
                                 },
-                                "binding": {"kind": "uniform", "offset": 0, "size": 80, "elementStride": 0}
+                                "binding": {"kind": "uniform", "offset": 0, "size": 96, "elementStride": 0}
                             }
                         ],
                         "sizes": [
-                            {"kind": "uniform", "value": 80, "alignment": 16}
+                            {"kind": "uniform", "value": 96, "alignment": 16}
                         ]
                     },
                     "containerVarLayout": {
@@ -321,20 +366,35 @@
                                                     ]
                                                 },
                                                 "binding": {"kind": "uniform", "offset": 76, "size": 4, "elementStride": 0}
+                                            },
+                                            {
+                                                "name": "fog",
+                                                "type": {
+                                                    "kind": "vector",
+                                                    "elementCount": 4,
+                                                    "elementType": {
+                                                        "kind": "scalar",
+                                                        "scalarType": "float32"
+                                                    },
+                                                    "sizes": [
+                                                        {"kind": "uniform", "value": 16, "alignment": 4}
+                                                    ]
+                                                },
+                                                "binding": {"kind": "uniform", "offset": 80, "size": 16, "elementStride": 4}
                                             }
                                         ],
                                         "sizes": [
-                                            {"kind": "uniform", "value": 80, "alignment": 16}
+                                            {"kind": "uniform", "value": 96, "alignment": 16}
                                         ]
                                     },
-                                    "binding": {"kind": "uniform", "offset": 0, "size": 80, "elementStride": 0}
+                                    "binding": {"kind": "uniform", "offset": 0, "size": 96, "elementStride": 0}
                                 }
                             ],
                             "sizes": [
-                                {"kind": "uniform", "value": 80, "alignment": 16}
+                                {"kind": "uniform", "value": 96, "alignment": 16}
                             ]
                         },
-                        "binding": {"kind": "uniform", "offset": 0, "size": 80, "elementStride": 0}
+                        "binding": {"kind": "uniform", "offset": 0, "size": 96, "elementStride": 0}
                     },
                     "sizes": [
                         {"kind": "constantBuffer", "value": 1}
@@ -594,7 +654,7 @@
             ],
             "result": {
                 "stage": "vertex",
-                "binding": {"kind": "varyingOutput", "index": 0, "count": 5},
+                "binding": {"kind": "varyingOutput", "index": 0, "count": 6},
                 "type": {
                     "kind": "struct",
                     "name": "VertexOutput",
@@ -698,10 +758,27 @@
                             "stage": "vertex",
                             "binding": {"kind": "varyingOutput", "index": 4},
                             "semanticName": "EYE"
+                        },
+                        {
+                            "name": "fog",
+                            "type": {
+                                "kind": "vector",
+                                "elementCount": 4,
+                                "elementType": {
+                                    "kind": "scalar",
+                                    "scalarType": "float32"
+                                },
+                                "sizes": [
+                                    {"kind": "varyingOutput", "value": 1}
+                                ]
+                            },
+                            "stage": "vertex",
+                            "binding": {"kind": "varyingOutput", "index": 5},
+                            "semanticName": "FOG"
                         }
                     ],
                     "sizes": [
-                        {"kind": "varyingOutput", "value": 5}
+                        {"kind": "varyingOutput", "value": 6}
                     ]
                 }
             },

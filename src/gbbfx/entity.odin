@@ -1,6 +1,7 @@
 package gbbfx
 
 import "core:math/linalg"
+import loader "loader"
 
 // Entities are plain scene objects: position/rotation/scale plus a list of
 // components. The renderer never owns entities or the assets they point at;
@@ -14,6 +15,13 @@ Renderable :: struct {
 	layer:    Render_Layer,
 	// Screen-space layers (skybox, UI, post-process) have no world position to test.
 	cull:     bool,
+	// Skinned only (skin nil = static): the borrowed skin, the clip index
+	// (-1 = rest pose) and its time, and the pose sampled from them. The
+	// entity owns pose.
+	skin:      ^loader.Skin,
+	clip:      int,
+	clip_time: f32,
+	pose:      ^Pose,
 }
 
 Component :: union {
@@ -75,6 +83,25 @@ entity_add_renderable :: proc(
 	)
 }
 
+entity_add_skinned_renderable :: proc(
+	entity: ^Entity,
+	mesh: ^Mesh,
+	material: ^Material,
+	skin: ^loader.Skin,
+	layer: Render_Layer = .WORLD,
+) {
+	assert(mesh != nil && material != nil && skin != nil)
+	pose := new(Pose)
+	clip := -1
+	if len(skin.clips) > 0 do clip = 0
+	clip_sample(skin, clip, 0, pose)
+	// Skinned meshes have no bounds (see mesh_set_bounds), so culling stays off.
+	entity_add_component(
+		entity,
+		Renderable{mesh = mesh, material = material, layer = layer, skin = skin, clip = clip, pose = pose},
+	)
+}
+
 entity_renderable :: proc(entity: ^Entity) -> ^Renderable {
 	for &component in entity.components {
 		if _, is_renderable := component.(Renderable); is_renderable {
@@ -84,7 +111,36 @@ entity_renderable :: proc(entity: ^Entity) -> ^Renderable {
 	return nil
 }
 
+// Switches the skinned entity to the named clip, restarting it. Returns false
+// and keeps the current clip when the skin has no clip with that name.
+entity_play_clip :: proc(entity: ^Entity, name: string) -> bool {
+	renderable := entity_renderable(entity)
+	assert(renderable != nil && renderable.skin != nil)
+	index, found := clip_find(renderable.skin, name)
+	if !found do return false
+	if index != renderable.clip {
+		renderable.clip = index
+		renderable.clip_time = 0
+	}
+	return true
+}
+
+// Advances the entity's skinned renderable clip and samples its pose palette.
+entity_tick_animation :: proc(entity: ^Entity, dt: f32) {
+	for &component in entity.components {
+		#partial switch &renderable in component {
+		case Renderable:
+			if renderable.skin == nil do break
+			renderable.clip_time += dt
+			clip_sample(renderable.skin, renderable.clip, renderable.clip_time, renderable.pose)
+		}
+	}
+}
+
 entity_destroy :: proc(entity: ^Entity) {
+	for component in entity.components {
+		if renderable, ok := component.(Renderable); ok && renderable.pose != nil do free(renderable.pose)
+	}
 	delete(entity.components)
 	entity^ = {}
 }

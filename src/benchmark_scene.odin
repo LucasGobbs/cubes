@@ -4,28 +4,50 @@
 package main
 
 import "core:fmt"
+import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
 import gbbfx "gbbfx"
 import defaults "gbbfx/defaults"
 import glove "glove"
+import shader_parameters "shader_parameters"
 import sdl "vendor:sdl3"
 
 BENCH_STEP :: 10 // per boat model, per keypress
 
 BOAT_PATHS :: [?]string {
-	"static/models/boat-tug-a.glb",
-	"static/models/boat-tug-b.glb",
+	"static/models/boat-fan.glb",
 	"static/models/boat-fishing-small.glb",
+	"static/models/boat-house-a.glb",
+	"static/models/boat-house-b.glb",
+	"static/models/boat-house-c.glb",
+	"static/models/boat-house-d.glb",
 	"static/models/boat-row-large.glb",
+	"static/models/boat-row-small.glb",
 	"static/models/boat-sail-a.glb",
 	"static/models/boat-sail-b.glb",
 	"static/models/boat-speed-a.glb",
+	"static/models/boat-speed-b.glb",
+	"static/models/boat-speed-c.glb",
+	"static/models/boat-speed-d.glb",
+	"static/models/boat-speed-e.glb",
+	"static/models/boat-speed-f.glb",
+	"static/models/boat-speed-g.glb",
 	"static/models/boat-speed-h.glb",
+	"static/models/boat-speed-i.glb",
+	"static/models/boat-speed-j.glb",
 	"static/models/boat-tow-a.glb",
+	"static/models/boat-tow-b.glb",
+	"static/models/boat-tug-a.glb",
+	"static/models/boat-tug-b.glb",
+	"static/models/boat-tug-c.glb",
 	"static/models/ship-cargo-a.glb",
+	"static/models/ship-cargo-b.glb",
+	"static/models/ship-cargo-c.glb",
 	"static/models/ship-large.glb",
 	"static/models/ship-ocean-liner.glb",
+	"static/models/ship-ocean-liner-small.glb",
+	"static/models/ship-small.glb",
 	"static/models/ship-small-ghost.glb",
 }
 BOAT_COUNT :: len(BOAT_PATHS)
@@ -33,8 +55,24 @@ BOAT_COUNT :: len(BOAT_PATHS)
 // Dragon mesh is ~140 units long (boats are 3-20): scaled up it towers over
 // the fleet. 58k vertices each; one instanced draw for all of them.
 DRAGON_PATH :: "static/models/stanford_dragon_pbr.glb"
-DRAGON_COUNT :: 3
+DRAGON_COUNT :: 12
 DRAGON_SCALE :: 0.6
+DRAGON_RING_RADIUS :: 450
+FLEET_CENTER_Z :: -135 // middle of the boat spawn area in benchmark_populate
+
+// Flat unlit sea, far larger than the view so its edge never shows at the horizon.
+SEA_HALF :: 2000
+SEA_Y :: -0.6
+SEA_CELLS :: 400 // 10-unit cells: coarser aliases the 32-unit waves the mesh displaces
+FOG_VIEW_DISTANCE :: 700
+BOAT_DRAFT :: 0.1 // boat origin height above sea level at rest
+
+// Boat rest position in x/z and yaw; tick sets its height and tilt from the sea.
+Boat_Slot :: struct {
+	entity: int,
+	x, z:   f32,
+	yaw:    linalg.Quaternionf32,
+}
 
 Benchmark_State :: struct {
 	pipeline:         gbbfx.Pipeline_Handle,
@@ -43,6 +81,11 @@ Benchmark_State :: struct {
 	dragon:           gbbfx.Model,
 	scene:            gbbfx.Scene,
 	skybox:           defaults.Skybox,
+	sea_pipeline:     gbbfx.Pipeline_Handle,
+	sea_material:     gbbfx.Material,
+	sea_mesh:         gbbfx.Mesh,
+	sea_time:         f32,
+	boats:            [dynamic]Boat_Slot,
 	per_model:        int,
 	font:             gbbfx.Font,
 	overlay_pipeline: gbbfx.Pipeline_Handle,
@@ -52,10 +95,12 @@ Benchmark_State :: struct {
 	fly_camera:       FlyCamera,
 	add_action:       glove.Button_Action,
 	subtract_action:  glove.Button_Action,
+	fog_action:       glove.Button_Action,
 	hud_time:         f32,
 	hud_frames:       int,
 	hud_fps:          f32,
 	hud_draws:        int,
+	fog_on:           bool,
 }
 
 benchmark_scene :: proc() -> Scene {
@@ -69,6 +114,7 @@ benchmark_scene :: proc() -> Scene {
 
 benchmark_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Benchmark_State)
+	state.fog_on = true // haze by default so boats and dragons share the sea's horizon blend
 	demo.state = state
 	camera_reset(gfx, {0, 8, 20})
 	// Uncapped: the point of this scene is measuring real frame cost.
@@ -80,6 +126,8 @@ benchmark_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state.subtract_action = glove.add_button(inputs, "benchmark.subtract")
 	glove.bind_key(inputs, state.add_action, .EQUALS)
 	glove.bind_key(inputs, state.subtract_action, .MINUS)
+	state.fog_action = glove.add_button(inputs, "benchmark.fog")
+	glove.bind_key(inputs, state.fog_action, .V)
 
 	state.pipeline = defaults.create_textured_instanced_pipeline(gfx)
 	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
@@ -111,6 +159,9 @@ benchmark_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	gbbfx.mesh_upload(&gfx.renderer, &state.text_mesh)
 
 	state.skybox = defaults.skybox_create(gfx, SKYBOX_PATH)
+	state.sea_pipeline = sea_pipeline_create(gfx, state)
+	state.sea_material = gbbfx.material_create(state.sea_pipeline)
+	state.sea_mesh = sea_mesh_create(gfx)
 
 	rand.reset(1) // fixed layout: every run draws the same fleet, so results compare
 	benchmark_populate(state, 150)
@@ -123,13 +174,21 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 	state.per_model = per_model
 	gbbfx.scene_destroy(&state.scene)
 	state.scene = {}
+	clear(&state.boats)
 	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
+	sea := gbbfx.scene_add_entity(&state.scene)
+	gbbfx.entity_add_renderable(
+		gbbfx.scene_entity(&state.scene, sea),
+		&state.sea_mesh,
+		&state.sea_material,
+		.WORLD,
+	)
 	for &model in state.models {
 		for _ in 0 ..< per_model {
 			position := gbbfx.Vec3 {
-				rand.float32_range(-80, 80),
+				rand.float32_range(-700, 700),
 				-0.5,
-				rand.float32_range(-180, -20),
+				rand.float32_range(-650, -20),
 			}
 			yaw := linalg.quaternion_from_euler_angles_f32(
 				0,
@@ -138,19 +197,21 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 				.XYZ,
 			)
 			scale := 0.25 + rand.float32_range(0, 0.2)
-			gbbfx.scene_add_model(&state.scene, &model, position, {scale, scale, scale}, yaw)
+			if rand.float32() < 0.12 do scale *= rand.float32_range(2, 4) // a few big ships among the small boats
+			index := gbbfx.scene_add_model(&state.scene, &model, position, {scale, scale, scale}, yaw)
+			append(&state.boats, Boat_Slot{entity = index, x = position.x, z = position.z, yaw = yaw})
 		}
 	}
-	// Dragons stand behind the fleet, independent of the per-model count.
+	// Dragons ring the fleet, facing its centre, independent of the per-model count.
 	for index in 0 ..< DRAGON_COUNT {
-		x := (f32(index) - 1) * 110
+		angle := f32(index) / DRAGON_COUNT * linalg.TAU
 		scale := f32(DRAGON_SCALE)
 		gbbfx.scene_add_model(
 			&state.scene,
 			&state.dragon,
-			{x, 0, -270},
+			{math.cos(angle) * DRAGON_RING_RADIUS, 0, FLEET_CENTER_Z + math.sin(angle) * DRAGON_RING_RADIUS},
 			{scale, scale, scale},
-			linalg.quaternion_from_euler_angles_f32(0, f32(index) * 0.6, 0, .XYZ),
+			linalg.quaternion_from_euler_angles_f32(0, -angle - linalg.PI / 2, 0, .XYZ),
 		)
 	}
 }
@@ -194,6 +255,67 @@ benchmark_push_text :: proc(
 	}
 }
 
+sea_mesh_create :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Mesh {
+	n :: SEA_CELLS + 1
+	cell :: f32(2 * SEA_HALF) / SEA_CELLS
+	vertices := make([dynamic]gbbfx.VertexData, 0, n * n, context.temp_allocator)
+	for z in 0 ..< n {
+		for x in 0 ..< n {
+			position := gbbfx.Vec3{-SEA_HALF + f32(x) * cell, SEA_Y, -SEA_HALF + f32(z) * cell}
+			append(&vertices, gbbfx.VertexData{position = position})
+		}
+	}
+	indices := make([dynamic]u32, 0, SEA_CELLS * SEA_CELLS * 6, context.temp_allocator)
+	stride := u32(n)
+	for z in 0 ..< SEA_CELLS {
+		for x in 0 ..< SEA_CELLS {
+			i := u32(z * n + x)
+			append(&indices, i, i + stride, i + 1, i + 1, i + stride, i + stride + 1)
+		}
+	}
+	mesh := gbbfx.mesh_create(gfx, vertices[:], indices[:])
+	gbbfx.mesh_upload(&gfx.renderer, &mesh)
+	return mesh
+}
+
+sea_pipeline_create :: proc(gfx: ^gbbfx.Gfx, state: ^Benchmark_State) -> gbbfx.Pipeline_Handle {
+	attributes := shader_parameters.sea_vertex_attributes(gbbfx.VertexData)
+	return gbbfx.gfx_pipeline_create(
+		gfx,
+		{
+			vertex = shader_parameters.sea_vertex(),
+			fragment = shader_parameters.sea_fragment(),
+			vertex_attributes = attributes[:],
+			vertex_stride = u32(size_of(gbbfx.VertexData)),
+			depth_test = true,
+			depth_write = true,
+			cull_mode = .BACK,
+			bind_draw = sea_bind_draw,
+			user_data = state,
+		},
+	)
+}
+
+// Pushes per-draw transforms and the time the wave field advances on.
+sea_bind_draw :: proc(
+	user_data: rawptr,
+	draw_context: ^gbbfx.Draw_Context,
+	parameters: gbbfx.Draw_Parameters,
+) {
+	state := cast(^Benchmark_State)user_data
+	camera := parameters.camera_position
+	uniforms := shader_parameters.SeaVertexUniformBlock {
+		data = {
+			mvp = parameters.view_projection * parameters.model_transform,
+			model = parameters.model_transform,
+			camera_position = {camera.x, camera.y, camera.z, 1},
+			time = {state.sea_time, 0, 0, 0},
+			fog = parameters.fog,
+		},
+	}
+	gbbfx.draw_push_uniform(draw_context, shader_parameters.SEA_VERTEX_UNIFORM_BLOCK, &uniforms)
+}
+
 benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	state := cast(^Benchmark_State)demo.state
 
@@ -204,8 +326,29 @@ benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	if glove.pressed(inputs, state.subtract_action) && state.per_model >= BENCH_STEP {
 		benchmark_populate(state, state.per_model - BENCH_STEP)
 	}
+	if glove.pressed(inputs, state.fog_action) {
+		state.fog_on = !state.fog_on
+	}
+	fog_rgb := gbbfx.color_srgb_to_linear({0.671, 0.757, 0.949, 1}) // skybox horizon; matches `sky` in sea.slang
+	gfx.renderer.fog = state.fog_on ? {fog_rgb.r, fog_rgb.g, fog_rgb.b, FOG_VIEW_DISTANCE} : [4]f32{}
 
 	fly_camera_tick(&state.fly_camera, gfx, delta_time)
+	state.sea_time += delta_time
+	camera := gfx.renderer.camera.position
+	for boat in state.boats {
+		flat := gbbfx.Vec3{boat.x, SEA_Y, boat.z}
+		h, grad := sea_surface_height(flat.xz, state.sea_time, linalg.distance(camera, flat))
+		normal := linalg.normalize(gbbfx.Vec3{-grad.x, 1, -grad.y})
+		gbbfx.entity_set_position(
+			gbbfx.scene_entity(&state.scene, boat.entity),
+			{boat.x, SEA_Y + h + BOAT_DRAFT, boat.z},
+		)
+		tilt := linalg.quaternion_angle_axis_f32(
+			math.acos(clamp(normal.y, -1, 1)),
+			linalg.normalize0(linalg.cross(gbbfx.Vec3{0, 1, 0}, normal)),
+		)
+		gbbfx.entity_set_rotation(gbbfx.scene_entity(&state.scene, boat.entity), tilt * boat.yaw)
+	}
 
 	// FPS and draws refresh once per second so the text stays readable.
 	state.hud_time += delta_time
@@ -248,7 +391,15 @@ benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	benchmark_push_text(
 		state,
 		gfx,
-		"=/- objects  wasd move  shift fast",
+		state.fog_on ? "fog + view distance on (V)" : "fog + view distance off (V)",
+		10,
+		90,
+		{1, 1, 1, 1},
+	)
+	benchmark_push_text(
+		state,
+		gfx,
+		"=/- objects  wasd move  shift fast  c smooth cam",
 		10,
 		70,
 		gbbfx.color_srgb_to_linear({0.8, 0.8, 0.8, 1}),
@@ -293,6 +444,9 @@ benchmark_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
 	state := cast(^Benchmark_State)demo.state
 	gbbfx.scene_destroy(&state.scene)
 	defaults.skybox_destroy(gfx, &state.skybox)
+	gbbfx.mesh_destroy(gfx, &state.sea_mesh)
+	gbbfx.material_destroy(&state.sea_material)
+	gbbfx.gfx_pipeline_destroy(gfx, state.sea_pipeline)
 	delete(state.text_vertices)
 	gbbfx.mesh_destroy(gfx, &state.text_mesh)
 	gbbfx.material_destroy(&state.overlay_material)

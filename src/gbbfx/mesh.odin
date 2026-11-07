@@ -11,6 +11,17 @@ VertexData :: struct {
 	normal:   [3]f32,
 }
 
+// Bind-pose vertex plus up to four joint influences. Layout mirrors
+// loader.SkinnedVertexData (asserted in model.odin). No color: the skinned
+// shader outputs white vertex color.
+SkinnedVertexData :: struct {
+	position: [3]f32,
+	normal:   [3]f32,
+	uv:       [2]f32,
+	joints:   [4]u16,
+	weights:  [4]f32,
+}
+
 // A mesh is just buffers + counts. The vertex format lives in the pipeline,
 // not here, so raw geometry of any layout flows through the same type as
 // loaded models. Buffers start CPU-side (see Buffer._temporary_raw_data) and

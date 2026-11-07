@@ -10,6 +10,8 @@ struct Uniforms {
     float4x4 view_projection;
  float3 camera_position;
     uint first_instance;
+    // rgb = linear fog color, a = view distance (<= 0 = fog off)
+    float4 fog;
 };
 
 [[vk::binding(0, 0)]]
@@ -37,6 +39,7 @@ struct VertexOutput {
  float3 normal : NORMAL;
  float3 world_pos : WORLD_POS;
  float3 eye : EYE;
+ float4 fog : FOG;
 };
 
 // Inverse transpose of the model's 3x3 part, via cofactor columns. Keeps
@@ -60,6 +63,8 @@ VertexOutput vertexMain(VertexInput input, uint instance_id : SV_InstanceID) {
  output.world_pos = world.xyz;
  output.normal = world_normal(model, input.normal);
  output.eye = data.camera_position;
+ float d = distance(data.camera_position, world.xyz);
+ output.fog = float4(data.fog.rgb, data.fog.a > 0.0 ? saturate((d - 0.6 * data.fog.a) / (0.4 * data.fog.a)) : 0.0);
  return output;
 }
 
@@ -75,5 +80,6 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
  float diffuse = max(dot(n, l), 0.0);
  float specular = diffuse > 0.0 ? pow(max(dot(reflect(-l, n), v), 0.0), 32.0) : 0.0;
  float3 ambient = float3(0.12, 0.12, 0.12);
- return float4(albedo.rgb * (ambient + diffuse) + specular * 0.5, albedo.a);
+ float3 lit = albedo.rgb * (ambient + diffuse) + specular * 0.5;
+ return float4(lerp(lit, input.fog.rgb, input.fog.a), albedo.a);
 }

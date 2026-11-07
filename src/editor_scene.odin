@@ -5,7 +5,6 @@ package main
 import gbbfx "gbbfx"
 import defaults "gbbfx/defaults"
 import editor "editor"
-import shader_parameters "shader_parameters"
 import "core:math/linalg"
 import "core:math/rand"
 import sdl "vendor:sdl3"
@@ -24,8 +23,7 @@ Editor_State :: struct {
 	quad_vertices:     [4]gbbfx.VertexData,
 	quad_indices:      [6]u16,
 	quad_mesh:         gbbfx.Mesh,
-	blur_pipeline:     gbbfx.Compute_Pipeline_Handle,
-	blur_target:       gbbfx.Texture_Handle,
+	blur:              defaults.Blur,
 	ui:                editor.Ui_State,
 	editor:            ^editor.Editor,
 	tint:              [4]f32,
@@ -106,19 +104,10 @@ ed_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	gbbfx.entity_set_position(quad_entity, {0, 1.2, -8})
 	gbbfx.entity_add_renderable(quad_entity, &state.quad_mesh, &state.shared_material, .UI)
 
-	// Compute post-processing: 5x5 box blur, scene -> blur_target.
-	state.blur_pipeline = gbbfx.gfx_compute_pipeline_create(gfx, shader_parameters.blur_compute())
-	blur_format := sdl.GetGPUSwapchainTextureFormat(gfx.gpu, gfx.window)
-	if !sdl.GPUTextureSupportsFormat(gfx.gpu, blur_format, .D2, {.COMPUTE_STORAGE_WRITE}) {
-		blur_format = .R8G8B8A8_UNORM
-	}
-	state.blur_target = gbbfx.gfx_texture_create_with_usage(
-		gfx,
-		u32(gfx.window_size.x),
-		u32(gfx.window_size.y),
-		blur_format,
-		{.COMPUTE_STORAGE_WRITE, .SAMPLER},
-	)
+	// Post-processing: separable gaussian blur over scene_color, run by the
+	// renderer after the scene (renderer_run_post).
+	state.blur = defaults.blur_create(gfx, 2)
+	gbbfx.renderer_set_passes(&gfx.renderer, .Post, []gbbfx.Render_Pass{defaults.blur_pass(&state.blur)})
 
 	when gbbfx.EDITOR {
 		state.editor = new(editor.Editor)
@@ -177,12 +166,10 @@ ed_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 			vp := state.ui.viewport
 			if vp.w > 0 && vp.h > 0 {
 				gbbfx.renderer_resize_targets(&gfx.renderer, u32(vp.w), u32(vp.h))
-				gbbfx.gfx_texture_resize(gfx, &state.blur_target, u32(vp.w), u32(vp.h))
 				gbbfx.camera_set_aspect(camera, f32(vp.w) / f32(vp.h))
 			}
 		} else {
 			gbbfx.renderer_resize_targets(&gfx.renderer, u32(gfx.window_size.x), u32(gfx.window_size.y))
-			gbbfx.gfx_texture_resize(gfx, &state.blur_target, u32(gfx.window_size.x), u32(gfx.window_size.y))
 			gbbfx.camera_set_aspect(camera, gbbfx.gfx_aspect_ratio(gfx))
 		}
 	}
@@ -200,24 +187,20 @@ ed_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 		0,
 	)
 
-	// Frame flow: scene -> offscreen, blur -> blur_target, editor overlay
+	// Frame flow: scene -> offscreen, post passes -> final, editor overlay
 	// (or plain present) -> swapchain.
 	gbbfx.renderer_begin_frame(&gfx.renderer)
 	gbbfx.renderer_render_scene(&gfx.renderer, &state.scene)
 	if gfx.swapchain != nil {
-		blur_size := gbbfx.gfx_texture_get(gfx, state.blur_target)
-		groups := [3]u32{(blur_size.width + 7) / 8, (blur_size.height + 7) / 8, 1}
-		writes := [1]gbbfx.Texture_Handle{state.blur_target}
-		reads := [1]gbbfx.Texture_Handle{gfx.renderer.scene_color}
-		gbbfx.gfx_compute_dispatch(gfx, state.blur_pipeline, writes[:], reads[:], state.sampler, groups)
+		final := gbbfx.renderer_run_post(&gfx.renderer)
 		when gbbfx.EDITOR {
 			if state.editor.visible {
-				editor.editor_draw(state.editor, gfx, state.blur_target, state.ui.viewport)
+				editor.editor_draw(state.editor, gfx, final, state.ui.viewport)
 			} else {
-				gbbfx.renderer_present(&gfx.renderer, state.blur_target)
+				gbbfx.renderer_present(&gfx.renderer, final)
 			}
 		} else {
-			gbbfx.renderer_present(&gfx.renderer, state.blur_target)
+			gbbfx.renderer_present(&gfx.renderer, final)
 		}
 	}
 	gbbfx.gfx_end_frame(gfx)
@@ -233,8 +216,7 @@ ed_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
 		editor.editor_destroy(gfx, state.editor)
 		free(state.editor)
 	}
-	gbbfx.gfx_compute_pipeline_destroy(gfx, state.blur_pipeline)
-	gbbfx.gfx_texture_destroy(gfx, state.blur_target)
+	gbbfx.renderer_clear_passes(&gfx.renderer, .Post) // passes point into state
 	gbbfx.mesh_destroy(gfx, &state.quad_mesh)
 	gbbfx.material_destroy(&state.shared_material)
 	gbbfx.gfx_unload(gfx, &state.textured_model)

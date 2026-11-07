@@ -43,6 +43,12 @@ scene_add_model :: proc(
 	return index
 }
 
+// Advances every skinned renderable's clip and samples its pose into the
+// entity's palette. Call once per frame, before the scene renders.
+scene_tick_animations :: proc(scene: ^Scene, dt: f32) {
+	for &entity in scene.entities do entity_tick_animation(&entity, dt)
+}
+
 scene_destroy :: proc(scene: ^Scene) {
 	for &entity in scene.entities do entity_destroy(&entity)
 	delete(scene.entities)

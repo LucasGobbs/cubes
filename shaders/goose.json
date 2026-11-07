@@ -17,13 +17,14 @@
       "fragment": "pixelMain"
     },
     {
-      "name": "compute_demo",
-      "source": "shaders/compute.slang",
-      "compute": "computeMain"
+      "name": "sea",
+      "source": "shaders/sea.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
     },
     {
-      "name": "blur",
-      "source": "shaders/blur.slang",
+      "name": "compute_demo",
+      "source": "shaders/compute.slang",
       "compute": "computeMain"
     }
   ]

@@ -1,7 +1,8 @@
 // Entry point: forwards to one scene picked by CLI argument, e.g.
 // `./main simple` or `make run ARGS=simple`. Defaults to "benchmark".
-// Number keys 1-4 switch scene at runtime (order of SCENES); M toggles MSAA.
+// Number keys 1-7 switch scene at runtime (order of SCENES); M toggles MSAA.
 // `./main benchmark --bench 10` runs 10 seconds without input, prints stats, exits.
+// Fullscreen at desktop size by default (skips the compositor); `--WINDOWED` opts out.
 package main
 
 import "core:fmt"
@@ -26,6 +27,7 @@ main :: proc() {
 	context.logger = log.create_console_logger()
 
 	name := "benchmark"
+	windowed := false
 	for i := 1; i < len(os.args); i += 1 {
 		if os.args[i] == "--bench" {
 			if i + 1 >= len(os.args) {
@@ -39,6 +41,8 @@ main :: proc() {
 			}
 			bench.seconds = seconds
 			i += 1
+		} else if os.args[i] == "--WINDOWED" {
+			windowed = true
 		} else {
 			name = os.args[i]
 		}
@@ -52,7 +56,8 @@ main :: proc() {
 	}
 
 	gfx: gbbfx.Gfx
-	created := gbbfx.create(&gfx, rawptr(&scene), scene_create)
+	// Fullscreen skips the compositor (~2 ms floor, 16 ms spikes); --WINDOWED opts out.
+	created := gbbfx.create(&gfx, rawptr(&scene), scene_create, fullscreen = !windowed)
 	assert(created)
 	// sdl.FlashWindow(gfx.window, .UNTIL_FOCUSED)
 	// sdl.ShowSimpleMessageBox({.ERROR}, "Couldn't initialize SDL!", "Error", nil)

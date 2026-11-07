@@ -34,10 +34,10 @@
       "typeName": "DefaultTexturedInstancedVertexUniformBlock",
       "slot": 0,
       "space": 0,
-      "size": 80,
+      "size": 96,
       "type": {
         "kind": "struct",
-        "size": 80,
+        "size": 96,
         "typeName": "DefaultTexturedInstancedVertexUniformBlock",
         "fields": [
           {
@@ -45,7 +45,7 @@
             "offset": 0,
             "type": {
               "kind": "struct",
-              "size": 80,
+              "size": 96,
               "typeName": "DefaultTexturedInstancedVertexUniforms",
               "fields": [
                 {
@@ -77,6 +77,16 @@
                     "kind": "scalar",
                     "scalar": "uint32",
                     "size": 4
+                  }
+                },
+                {
+                  "name": "fog",
+                  "offset": 80,
+                  "type": {
+                    "kind": "vector",
+                    "scalar": "float32",
+                    "count": 4,
+                    "size": 16
                   }
                 }
               ]

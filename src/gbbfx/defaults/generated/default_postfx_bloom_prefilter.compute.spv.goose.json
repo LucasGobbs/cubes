@@ -1,0 +1,124 @@
+{
+  "stage": "compute",
+  "entryPoint": "computeMain",
+  "threadGroupSize": [
+    8,
+    8,
+    1
+  ],
+  "vertexInputs": [
+
+  ],
+  "uniformBlocks": [
+    {
+      "name": "compute_UniformBlock",
+      "typeName": "DefaultPostfxBloomPrefilterComputeUniformBlock",
+      "slot": 0,
+      "space": 0,
+      "size": 16,
+      "type": {
+        "kind": "struct",
+        "size": 16,
+        "typeName": "DefaultPostfxBloomPrefilterComputeUniformBlock",
+        "fields": [
+          {
+            "name": "params",
+            "offset": 0,
+            "type": {
+              "kind": "struct",
+              "size": 16,
+              "typeName": "DefaultPostfxBloomPrefilterComputePrefilterParams",
+              "fields": [
+                {
+                  "name": "threshold",
+                  "offset": 0,
+                  "type": {
+                    "kind": "scalar",
+                    "scalar": "float32",
+                    "size": 4
+                  }
+                },
+                {
+                  "name": "knee",
+                  "offset": 4,
+                  "type": {
+                    "kind": "scalar",
+                    "scalar": "float32",
+                    "size": 4
+                  }
+                },
+                {
+                  "name": "pad",
+                  "offset": 8,
+                  "type": {
+                    "kind": "vector",
+                    "scalar": "float32",
+                    "count": 2,
+                    "size": 8
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "blockName": "UniformBlock",
+      "sdlSlot": 0,
+      "descriptorSet": 0,
+      "descriptorBinding": 0
+    }
+  ],
+  "resources": [
+    {
+      "name": "input_image",
+      "kind": "resource",
+      "slot": 1,
+      "space": 0
+    },
+    {
+      "name": "input_sampler",
+      "kind": "samplerState",
+      "slot": 2,
+      "space": 0
+    },
+    {
+      "name": "output_image",
+      "kind": "resource",
+      "slot": 3,
+      "space": 0
+    }
+  ],
+  "schema": "goose.stage/1",
+  "shader": "default_postfx_bloom_prefilter",
+  "target": "spirv",
+  "format": "spv",
+  "artifact": "default_postfx_bloom_prefilter.compute.spv",
+  "entrySymbol": "main",
+  "layout": "native",
+  "numSamplers": 1,
+  "numUniformBuffers": 1,
+  "numReadonlyStorageTextures": 0,
+  "numReadonlyStorageBuffers": 0,
+  "numReadwriteStorageTextures": 1,
+  "numReadwriteStorageBuffers": 0,
+  "samplers": [
+    {
+      "slot": 0,
+      "texture": "input_image",
+      "sampler": "",
+      "combined": false,
+      "set": 0,
+      "binding": 1
+    }
+  ],
+  "storage": [
+    {
+      "name": "output_image",
+      "kind": "texture",
+      "access": "readwrite",
+      "slot": 0,
+      "set": 0,
+      "binding": 3
+    }
+  ]
+}
