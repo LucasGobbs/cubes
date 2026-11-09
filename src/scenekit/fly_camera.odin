@@ -1,10 +1,10 @@
-package main
+package scenekit
 
 import "core:fmt"
 import "core:math"
 import "core:math/linalg"
-import gbbfx "gbbfx"
-import glove "glove"
+import gbbfx "../gbbfx"
+import glove "../glove"
 
 BOOST_FACTOR :: 12 // shift multiplier on the base 5 units/s
 SMOOTH_RATE :: 3.0 // 1/s; higher = snappier ease

@@ -1,8 +1,9 @@
 // Postfx: the animated character with bloom, built on engine.World.
-package main
+package postfx
 
-import gbbfx "gbbfx"
-import engine "engine"
+import gbbfx "../../gbbfx"
+import engine "../../engine"
+import scenekit "../../scenekit"
 
 POSTFX_MODEL_PATH :: "static/models/rigged_cesiumman.glb"
 
@@ -10,11 +11,11 @@ Postfx_State :: struct {
 	world: engine.World,
 }
 
-postfx_demo_scene :: proc() -> Scene {
+postfx_scene :: proc() -> scenekit.Scene {
 	return {name = "Postfx", create = postfx_create, tick = postfx_tick, destroy = postfx_destroy}
 }
 
-postfx_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
+postfx_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Postfx_State)
 	demo.state = state
 	state.world = engine.world_create(gfx)
@@ -27,13 +28,13 @@ postfx_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	return true
 }
 
-postfx_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
+postfx_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	state := cast(^Postfx_State)demo.state
 	engine.world_update(&state.world, delta_time)
 	engine.world_render(&state.world)
 }
 
-postfx_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
+postfx_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
 	state := cast(^Postfx_State)demo.state
 	engine.world_destroy(&state.world)
 	free(state)

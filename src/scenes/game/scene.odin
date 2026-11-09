@@ -3,14 +3,15 @@
 // the scene keeps only the entity types it registered and writes player input.
 // Idle for 3 s and the player circles on its own, so a screenshot shows hits without
 // input. Per-entity logic lives in game_player.odin and game_enemy.odin.
-package main
+package game
 
 import "core:log"
 import "core:math"
 import "core:math/linalg"
-import engine "engine"
-import gbbfx "gbbfx"
-import glove "glove"
+import engine "../../engine"
+import gbbfx "../../gbbfx"
+import glove "../../glove"
+import scenekit "../../scenekit"
 
 GAME_ENEMY_MAX :: 5
 GAME_SPAWN_INTERVAL :: 2 // seconds
@@ -24,14 +25,14 @@ Game_State :: struct {
 	log_timer:   f32,
 }
 
-game_demo_scene :: proc() -> Scene {
+game_scene :: proc() -> scenekit.Scene {
 	return {name = "Game", create = game_create, tick = game_tick, destroy = game_destroy}
 }
 
-game_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
+game_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Game_State)
 	demo.state = state
-	camera_reset(gfx) // restores full-window targets after the editor shrinks them
+	scenekit.camera_reset(gfx) // restores full-window targets after the editor shrinks them
 
 	inputs := gbbfx.gfx_input(gfx)
 	state.keys = {
@@ -58,7 +59,7 @@ game_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	return true
 }
 
-game_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
+game_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	state := cast(^Game_State)demo.state
 	inputs := gbbfx.gfx_input(gfx)
 
@@ -95,7 +96,7 @@ game_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	engine.world_render(&state.world)
 }
 
-game_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
+game_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
 	state := cast(^Game_State)demo.state
 	engine.world_destroy(&state.world)
 	free(state)

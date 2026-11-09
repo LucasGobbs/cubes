@@ -1,10 +1,11 @@
 // Simple scene: one textured ship, one unlit ship, one animated raw quad.
-package main
+package simple
 
 import "core:math/linalg"
-import gbbfx "gbbfx"
-import defaults "gbbfx/defaults"
-import glove "glove"
+import gbbfx "../../gbbfx"
+import defaults "../../gbbfx/defaults"
+import glove "../../glove"
+import scenekit "../../scenekit"
 
 Simple_State :: struct {
 	textured_pipeline: gbbfx.Pipeline_Handle,
@@ -19,29 +20,29 @@ Simple_State :: struct {
 	skybox:            defaults.Skybox,
 	spinning:          int,
 	rotation:          f32,
-	fly_camera:        FlyCamera,
+	fly_camera:        scenekit.FlyCamera,
 	// move_action:       glove.Axis_2D_Action,
 	// boost_action:      glove.Button_Action,
 	// up_action:         glove.Button_Action,
 	// down_action:       glove.Button_Action,
 }
 
-simple_scene :: proc() -> Scene {
+simple_scene :: proc() -> scenekit.Scene {
 	return {name = "Simple", create = simple_create, tick = simple_tick, destroy = simple_destroy}
 }
 
-simple_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
+simple_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Simple_State)
 	demo.state = state
-	camera_reset(gfx)
+	scenekit.camera_reset(gfx)
 
-	state.fly_camera = fly_camera_create(gfx, "simple")
+	state.fly_camera = scenekit.fly_camera_create(gfx, "simple")
 
 	state.textured_pipeline = defaults.create_textured_pipeline(gfx)
 	state.unlit_pipeline = defaults.create_unlit_pipeline(gfx)
 	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
 
-	state.textured_model = load_textured_model(
+	state.textured_model = scenekit.load_textured_model(
 		gfx,
 		"static/models/sea/ship-large.glb",
 		state.textured_pipeline,
@@ -53,7 +54,7 @@ simple_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	)
 	defaults.set_unlit_color(&state.unlit_model.material, {0.2, 0.8, 0.9, 1})
 
-	state.skybox = defaults.skybox_create(gfx, SKYBOX_PATH)
+	state.skybox = defaults.skybox_create(gfx, scenekit.SKYBOX_PATH)
 	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
 
 	state.spinning = gbbfx.scene_add_model(
@@ -81,10 +82,10 @@ simple_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	return true
 }
 
-simple_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
+simple_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	state := cast(^Simple_State)demo.state
 
-	fly_camera_tick(&state.fly_camera, gfx, delta_time)
+	scenekit.fly_camera_tick(&state.fly_camera, gfx, delta_time)
 
 	state.rotation += linalg.to_radians(f32(60)) * delta_time
 	gbbfx.entity_set_rotation_euler(
@@ -106,7 +107,7 @@ simple_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	gbbfx.gfx_render(gfx, &state.scene)
 }
 
-simple_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
+simple_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
 	state := cast(^Simple_State)demo.state
 	gbbfx.scene_destroy(&state.scene)
 	defaults.skybox_destroy(gfx, &state.skybox)

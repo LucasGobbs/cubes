@@ -1,9 +1,10 @@
 // Skinned: one rigged glTF character playing its first animation clip.
-package main
+package skinned
 
-import gbbfx "gbbfx"
-import defaults "gbbfx/defaults"
-import loader "gbbfx/loader"
+import gbbfx "../../gbbfx"
+import defaults "../../gbbfx/defaults"
+import loader "../../gbbfx/loader"
+import scenekit "../../scenekit"
 
 SKINNED_MODEL_PATH :: "static/models/rigged_cesiumman.glb"
 SKINNED_CLIP :: "clip_0"
@@ -16,14 +17,14 @@ Skinned_State :: struct {
 	entity:   int,
 }
 
-skinned_demo_scene :: proc() -> Scene {
+skinned_scene :: proc() -> scenekit.Scene {
 	return {name = "Skinned", create = skinned_create, tick = skinned_tick, destroy = skinned_destroy}
 }
 
-skinned_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
+skinned_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Skinned_State)
 	demo.state = state
-	camera_reset(gfx, {0, 1.0, 1.9}, {0, 0.8, 0})
+	scenekit.camera_reset(gfx, {0, 1.0, 1.9}, {0, 0.8, 0})
 
 	state.pipeline = defaults.create_textured_skinned_pipeline(gfx)
 	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
@@ -51,13 +52,13 @@ skinned_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	return true
 }
 
-skinned_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
+skinned_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	state := cast(^Skinned_State)demo.state
 	gbbfx.scene_tick_animations(&state.scene, delta_time)
 	gbbfx.gfx_render(gfx, &state.scene)
 }
 
-skinned_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
+skinned_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
 	state := cast(^Skinned_State)demo.state
 	gbbfx.scene_destroy(&state.scene)
 	gbbfx.gfx_unload(gfx, &state.model)

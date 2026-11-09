@@ -1,10 +1,11 @@
 // Key 2 — Editor: the full setup. Viewport editor (TAB toggles), compute
 // blur post-processing, a 300-boat fleet, and an animated raw quad.
-package main
+package editor_scene
 
-import gbbfx "gbbfx"
-import defaults "gbbfx/defaults"
-import editor "editor"
+import gbbfx "../../gbbfx"
+import defaults "../../gbbfx/defaults"
+import editor "../../editor"
+import scenekit "../../scenekit"
 import "core:math/linalg"
 import "core:math/rand"
 import sdl "vendor:sdl3"
@@ -32,10 +33,10 @@ Editor_State :: struct {
 	rotation_speed:    f32,
 	rotation:          f32,
 
-	fly_camera:        FlyCamera,
+	fly_camera:        scenekit.FlyCamera,
 }
 
-editor_scene :: proc() -> Scene {
+editor_scene :: proc() -> scenekit.Scene {
 	return {name = "Editor", create = ed_create, tick = ed_tick, destroy = ed_destroy}
 }
 
@@ -43,18 +44,18 @@ ed_event_hook :: proc(event: ^sdl.Event, user_data: rawptr) {
 	editor.editor_handle_event(cast(^editor.Editor)user_data, event)
 }
 
-ed_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
+ed_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Editor_State)
 	demo.state = state
-	camera_reset(gfx)
+	scenekit.camera_reset(gfx)
 
-	state.fly_camera = fly_camera_create(gfx, "editor")
+	state.fly_camera = scenekit.fly_camera_create(gfx, "editor")
 
 	state.textured_pipeline = defaults.create_textured_pipeline(gfx)
 	state.unlit_pipeline = defaults.create_unlit_pipeline(gfx)
 	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
 
-	state.textured_model = load_textured_model(
+	state.textured_model = scenekit.load_textured_model(
 		gfx,
 		"static/models/sea/ship-large.glb",
 		state.textured_pipeline,
@@ -66,7 +67,7 @@ ed_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	)
 	defaults.set_unlit_color(&state.unlit_model.material, {0.15, 0.85, 0.3, 1})
 
-	state.skybox = defaults.skybox_create(gfx, SKYBOX_PATH)
+	state.skybox = defaults.skybox_create(gfx, scenekit.SKYBOX_PATH)
 	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
 
 	gbbfx.scene_add_model(&state.scene, &state.textured_model, {-5, -.5, -12}, {0.4, 0.4, 0.4})
@@ -143,7 +144,7 @@ ed_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	return true
 }
 
-ed_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
+ed_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	state := cast(^Editor_State)demo.state
 
 	// Mouse-look only when the cursor is over the viewport widget (always
@@ -152,7 +153,7 @@ ed_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	when gbbfx.EDITOR {
 		mouse_in_viewport = editor.editor_mouse_in_viewport(state.editor, state.ui.viewport)
 	}
-	fly_camera_tick(&state.fly_camera, gfx, delta_time, look = mouse_in_viewport)
+	scenekit.fly_camera_tick(&state.fly_camera, gfx, delta_time, look = mouse_in_viewport)
 
 	when gbbfx.EDITOR {
 		camera := gbbfx.gfx_camera(gfx)
@@ -206,7 +207,7 @@ ed_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	gbbfx.gfx_end_frame(gfx)
 }
 
-ed_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
+ed_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
 	state := cast(^Editor_State)demo.state
 	gbbfx.gfx_set_event_hook(gfx, nil, nil)
 	_ = sdl.SetWindowRelativeMouseMode(gfx.window, true)
