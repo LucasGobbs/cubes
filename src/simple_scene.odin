@@ -43,13 +43,13 @@ simple_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 
 	state.textured_model = load_textured_model(
 		gfx,
-		"static/models/ship-large.glb",
+		"static/models/sea/ship-large.glb",
 		state.textured_pipeline,
 		state.sampler,
 	)
 	state.unlit_model = gbbfx.gfx_load(
 		gfx,
-		{model_path = "static/models/ship-small-ghost.glb", pipeline = state.unlit_pipeline},
+		{model_path = "static/models/sea/ship-small-ghost.glb", pipeline = state.unlit_pipeline},
 	)
 	defaults.set_unlit_color(&state.unlit_model.material, {0.2, 0.8, 0.9, 1})
 

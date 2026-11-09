@@ -6,10 +6,10 @@ import gbbfx "gbbfx"
 import defaults "gbbfx/defaults"
 
 MODEL_PATHS :: [4]string {
-	"static/models/boat-tug-a.glb",
-	"static/models/ship-cargo-a.glb",
-	"static/models/ship-large.glb",
-	"static/models/ship-small-ghost.glb",
+	"static/models/sea/boat-tug-a.glb",
+	"static/models/sea/ship-cargo-a.glb",
+	"static/models/sea/ship-large.glb",
+	"static/models/sea/ship-small-ghost.glb",
 }
 
 Models_State :: struct {
