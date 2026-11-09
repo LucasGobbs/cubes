@@ -56,7 +56,7 @@ platform_scene :: proc() -> Scene {
 platform_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Platform_State)
 	demo.state = state
-	camera_reset(gfx, {16, 13, 22}, {2, 2, -1})
+	camera_reset(gfx, {24, 18, 34}, {2, 2, -1})
 
 	state.fly_camera = fly_camera_create(gfx, "platform")
 	state.pipeline = defaults.create_textured_pipeline(gfx)
@@ -70,10 +70,11 @@ platform_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state.skybox = defaults.skybox_create(gfx, SKYBOX_PATH)
 	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
 
-	// Ground: pit along x, plus a strip behind the start (z < 0).
-	proto_box(state, gfx, {-9, -1, 0}, {5, 1, 2}, .Ground)
-	proto_box(state, gfx, {7, -1, 0}, {7, 1, 2}, .Ground)
-	proto_box(state, gfx, {0, -1, -9}, {16, 1, 4}, .Ground)
+	// Ground covers the whole field (x -24..24, z -14..14) with a pit at x -4..0, z -2..2.
+	proto_box(state, gfx, {-14, -1, 0}, {10, 1, 14}, .Ground)
+	proto_box(state, gfx, {12, -1, 0}, {12, 1, 14}, .Ground)
+	proto_box(state, gfx, {-2, -1, 8}, {2, 1, 6}, .Ground)
+	proto_box(state, gfx, {-2, -1, -8}, {2, 1, 6}, .Ground)
 
 	// Ramp turned on Y so it climbs diagonally across the ground.
 	ramp := proto_piece(state, gfx, {{-6, 0}, {0, 0}, {0, 4}}, 4, {-8, 0, 0}, .Ramp)
@@ -209,7 +210,7 @@ proto_prism :: proc(solid: ^Proto_Solid, poly: [][2]f32, depth: f32) {
 // front side faces `normal`, and UVs are planar in world units / PROTO_TILE.
 proto_add_face :: proc(solid: ^Proto_Solid, normal: [3]f32, pts: [][3]f32) {
 	u := linalg.normalize(pts[1] - pts[0])
-	v := linalg.normalize(linalg.cross(normal, u))
+	v := linalg.normalize(linalg.cross(u, normal))
 	base := u32(len(solid.verts))
 	for p in pts {
 		d := p - pts[0]
