@@ -7,6 +7,8 @@ import "core:math/linalg"
 import gbbfx "gbbfx"
 import defaults "gbbfx/defaults"
 
+// Waypoints (centre of the player cube) on platform tops, spread across x, y and z.
+PLAYER_PATH := [?][3]f32{{-9, 1.5, 0}, {-6, 1.0, 1}, {-3, 2.8, -3}, {1, 3.8, 3}, {4.5, 5.8, -6}, {9, 7.3, 2}, {4, 1.5, -5}, {0, 0.5, -2}}
 PROTO_TILE :: 2.0 // world units per texture repeat
 
 Proto_Material :: enum {
@@ -54,7 +56,7 @@ platform_scene :: proc() -> Scene {
 platform_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Platform_State)
 	demo.state = state
-	camera_reset(gfx, {0, 3, 24}, {0, 2.5, 0})
+	camera_reset(gfx, {16, 13, 22}, {2, 2, -1})
 
 	state.fly_camera = fly_camera_create(gfx, "platform")
 	state.pipeline = defaults.create_textured_pipeline(gfx)
@@ -68,30 +70,32 @@ platform_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state.skybox = defaults.skybox_create(gfx, SKYBOX_PATH)
 	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
 
-	// Ground with a pit at x in [-4, 0].
+	// Ground: pit along x, plus a strip behind the start (z < 0).
 	proto_box(state, gfx, {-9, -1, 0}, {5, 1, 2}, .Ground)
 	proto_box(state, gfx, {7, -1, 0}, {7, 1, 2}, .Ground)
+	proto_box(state, gfx, {0, -1, -9}, {16, 1, 4}, .Ground)
 
-	// Ramp rising to the right on the left ground.
-	proto_piece(state, gfx, {{-6, 0}, {0, 0}, {0, 4}}, 4, {-8, 0, 0}, .Ramp)
+	// Ramp turned on Y so it climbs diagonally across the ground.
+	ramp := proto_piece(state, gfx, {{-6, 0}, {0, 0}, {0, 4}}, 4, {-8, 0, 0}, .Ramp)
+	gbbfx.entity_set_rotation_euler(gbbfx.scene_entity(&state.scene, ramp), 0, 0.6, 0)
 
-	// Trapezoid step rising out of the right ground.
-	proto_piece(state, gfx, {{-1.5, 0}, {1.5, 0}, {0.8, 3}, {-0.8, 3}}, 2, {4, 0, 0}, .Trapezoid)
+	// Trapezoid step set back in depth.
+	proto_piece(state, gfx, {{-1.5, 0}, {1.5, 0}, {0.8, 3}, {-0.8, 3}}, 2, {4, 0, -5}, .Trapezoid)
 
-	// Floating platforms and an inverted trapezoid overhang.
-	proto_box(state, gfx, {-3, 2, 0}, {1.5, 0.3, 1.5}, .Platform)
-	proto_box(state, gfx, {1, 3.5, 0}, {1.5, 0.3, 1.5}, .Platform)
-	proto_box(state, gfx, {4.5, 5, 0}, {1.5, 0.3, 1.5}, .Platform)
-	proto_piece(state, gfx, {{-2, 0.8}, {2, 0.8}, {1.2, -0.8}, {-1.2, -0.8}}, 2, {9, 6, 0}, .Trapezoid)
+	// Floating platforms at different depths, plus an overhang.
+	proto_box(state, gfx, {-3, 2, -3}, {1.5, 0.3, 1.5}, .Platform)
+	proto_box(state, gfx, {1, 3.5, 3}, {1.5, 0.3, 1.5}, .Platform)
+	proto_box(state, gfx, {4.5, 5, -6}, {1.5, 0.3, 1.5}, .Platform)
+	proto_piece(state, gfx, {{-2, 0.8}, {2, 0.8}, {1.2, -0.8}, {-1.2, -0.8}}, 2, {9, 6, 2}, .Trapezoid)
 
-	// Stairs up to the goal.
+	// Stairs zig-zagging in depth up to the goal.
 	for k in 0 ..< 3 {
 		h := f32(k + 1)
-		proto_box(state, gfx, {9 + 1.5 * f32(k), h / 2, 0}, {0.75, h / 2, 2}, .Ground)
+		proto_box(state, gfx, {9 + 1.5 * f32(k), h / 2, 2 * f32(k % 2) - 1}, {0.75, h / 2, 2}, .Ground)
 	}
-	proto_box(state, gfx, {13.8, 2, 0}, {0.4, 2, 1}, .Goal)
+	proto_box(state, gfx, {13.8, 2, -3}, {0.4, 2, 1}, .Goal)
 
-	state.player = proto_box(state, gfx, {0, 0, 0}, {0.5, 0.5, 0.5}, .Player)
+	state.player = proto_box(state, gfx, PLAYER_PATH[0], {0.5, 0.5, 0.5}, .Player)
 	return true
 }
 
@@ -99,12 +103,17 @@ platform_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	state := cast(^Platform_State)demo.state
 	fly_camera_tick(&state.fly_camera, gfx, delta_time)
 
-	// Player hops between the two left platforms (prototype motion, no physics).
+	// Player walks a looping 3D path through the platforms, hopping between waypoints.
 	state.time += delta_time
-	s := (math.sin(state.time * 1.2) + 1) / 2
-	x := -3 + 4 * s
-	y := (2.8 + (4.3 - 2.8) * s) + 1.2 * 4 * s * (1 - s)
-	gbbfx.entity_set_position(gbbfx.scene_entity(&state.scene, state.player), {x, y, 0})
+	n := len(PLAYER_PATH)
+	t := state.time * 0.35
+	t -= f32(n) * math.floor(t / f32(n))
+	i := int(t)
+	f := t - f32(i)
+	f = f * f * (3 - 2 * f)
+	pos := PLAYER_PATH[i] + (PLAYER_PATH[(i + 1) % n] - PLAYER_PATH[i]) * f
+	pos.y += 1.0 * math.sin(f * math.PI)
+	gbbfx.entity_set_position(gbbfx.scene_entity(&state.scene, state.player), pos)
 
 	gbbfx.gfx_render(gfx, &state.scene)
 }
