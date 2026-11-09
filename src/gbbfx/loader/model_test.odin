@@ -8,7 +8,7 @@ import "core:testing"
 
 @(test)
 gltf_import_bakes_node_transforms_and_external_texture :: proc(t: ^testing.T) {
-	model, ok := model_import_from_gltf("static/models/ship-large.glb")
+	model, ok := model_import_from_gltf("static/models/sea/ship-large.glb")
 	testing.expect(t, ok)
 	defer model_import_destroy(&model)
 
@@ -24,7 +24,7 @@ gltf_import_bakes_node_transforms_and_external_texture :: proc(t: ^testing.T) {
 
 @(test)
 gltf_import_decodes_embedded_image :: proc(t: ^testing.T) {
-	model, ok := model_import_from_gltf("static/models/stanford_dragon_pbr.glb")
+	model, ok := model_import_from_gltf("static/models/sea/stanford_dragon_pbr.glb")
 	testing.expect(t, ok)
 	defer model_import_destroy(&model)
 
@@ -45,7 +45,7 @@ gltf_import_without_texture_falls_back_to_white :: proc(t: ^testing.T) {
 gltf_import_outputs_unit_normals :: proc(t: ^testing.T) {
 	// ship-large has child nodes with translation and scale, so a wrong normal
 	// matrix would show up as non-unit or flipped normals.
-	model, ok := model_import_from_gltf("static/models/ship-large.glb")
+	model, ok := model_import_from_gltf("static/models/sea/ship-large.glb")
 	testing.expect(t, ok)
 	defer model_import_destroy(&model)
 
@@ -58,7 +58,7 @@ gltf_import_outputs_unit_normals :: proc(t: ^testing.T) {
 gltf_normals_point_outward_matching_triangle_winding :: proc(t: ^testing.T) {
 	// glTF winding is counter-clockwise outward, so the geometric face normal
 	// must agree with the stored vertex normals for nearly every triangle.
-	model, ok := model_import_from_gltf("static/models/boat-tug-a.glb")
+	model, ok := model_import_from_gltf("static/models/sea/boat-tug-a.glb")
 	testing.expect(t, ok)
 	defer model_import_destroy(&model)
 
@@ -111,5 +111,5 @@ skinned_import_keeps_non_joint_root_ancestors :: proc(t: ^testing.T) {
 @(test)
 gltf_has_skin_detects_rigged_models :: proc(t: ^testing.T) {
 	testing.expect(t, gltf_has_skin("static/models/rigged_cesiumman.glb"))
-	testing.expect(t, !gltf_has_skin("static/models/ship-large.glb"))
+	testing.expect(t, !gltf_has_skin("static/models/sea/ship-large.glb"))
 }

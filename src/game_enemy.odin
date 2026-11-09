@@ -9,7 +9,7 @@ import "core:math/rand"
 import engine "engine"
 import gbbfx "gbbfx"
 
-ENEMY_MODEL :: "static/models/ship-large.glb"
+ENEMY_MODEL :: "static/models/sea/ship-large.glb"
 ENEMY_SCALE :: 0.02
 ENEMY_SPEED :: 1.2
 ENEMY_RING :: 9 // spawn distance from the player
