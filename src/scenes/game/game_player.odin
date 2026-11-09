@@ -2,13 +2,13 @@
 // create/tick procs. Components (Transform, Model, Health, ...) live in engine.World,
 // never in the struct. Scenes only orchestrate.
 // Player is a CesiumMan steered on the XZ plane; enemy chases it. See game_enemy.odin.
-package main
+package game
 
 import "core:log"
 import "core:math"
 import "core:math/linalg"
-import engine "engine"
-import gbbfx "gbbfx"
+import engine "../../engine"
+import gbbfx "../../gbbfx"
 
 PLAYER_MODEL :: "static/models/rigged_cesiumman.glb"
 PLAYER_CLIP :: "clip_0"

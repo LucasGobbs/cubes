@@ -1,7 +1,7 @@
 // CPU mirror of shaders/sea.slang surface height. Boats read this so they sit
 // on the same waves the sea mesh is displaced by.
 // wave_height in shaders/sea.slang (vertex path, fine=false). Keep in sync.
-package main
+package benchmark
 
 import "core:math"
 import "core:math/linalg"

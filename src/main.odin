@@ -10,6 +10,7 @@ import "core:log"
 import "core:os"
 import "core:strconv"
 import gbbfx "gbbfx"
+import scenekit "scenekit"
 import glove "glove"
 import sdl "vendor:sdl3"
 
@@ -67,7 +68,7 @@ main :: proc() {
 }
 
 scene_create :: proc(gfx: ^gbbfx.Gfx, raw_scene: rawptr) -> bool {
-	scene := cast(^Scene)raw_scene
+	scene := cast(^scenekit.Scene)raw_scene
 	inputs := gbbfx.gfx_input(gfx)
 	quit_action = glove.add_button(inputs, "app.quit")
 	glove.bind_key(inputs, quit_action, .ESCAPE)
@@ -82,7 +83,7 @@ scene_create :: proc(gfx: ^gbbfx.Gfx, raw_scene: rawptr) -> bool {
 }
 
 scene_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, raw_scene: rawptr) {
-	scene := cast(^Scene)raw_scene
+	scene := cast(^scenekit.Scene)raw_scene
 	inputs := gbbfx.gfx_input(gfx)
 	if glove.pressed(inputs, quit_action) {
 		gbbfx.gfx_request_quit(gfx)
@@ -122,7 +123,7 @@ scene_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, raw_scene: rawptr) {
 
 // Tears the running scene down and starts another without restarting the
 // device. Runs at the top of a tick, so no frame or pass is open.
-scene_switch :: proc(gfx: ^gbbfx.Gfx, scene: ^Scene, index: int) {
+scene_switch :: proc(gfx: ^gbbfx.Gfx, scene: ^scenekit.Scene, index: int) {
 	log.infof("switching scene: %s -> %s", SCENES[current_scene].name, SCENES[index].name)
 	_ = sdl.WaitForGPUIdle(gfx.gpu) // the old scene's buffers may still be in flight
 	scene_destroy(gfx, rawptr(scene))
@@ -139,7 +140,7 @@ scene_switch :: proc(gfx: ^gbbfx.Gfx, scene: ^Scene, index: int) {
 }
 
 scene_destroy :: proc(gfx: ^gbbfx.Gfx, raw_scene: rawptr) {
-	scene := cast(^Scene)raw_scene
+	scene := cast(^scenekit.Scene)raw_scene
 	if scene.state != nil {
 		scene.destroy(scene, gfx)
 		scene.state = nil

@@ -1,13 +1,13 @@
 // Enemy ship: spawns on a ring around the player and chases it. Registered with
 // engine.entity_register; see game_player.odin for the per-entity convention.
-package main
+package game
 
 import "core:log"
 import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
-import engine "engine"
-import gbbfx "gbbfx"
+import engine "../../engine"
+import gbbfx "../../gbbfx"
 
 ENEMY_MODEL :: "static/models/sea/ship-large.glb"
 ENEMY_SCALE :: 0.02

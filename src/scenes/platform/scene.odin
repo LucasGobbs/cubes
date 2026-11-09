@@ -1,11 +1,12 @@
 // Platformer prototype: boxes, ramps and trapezoids built as extruded convex
 // polygons, textured with the Kenney prototype set in static/prototype_textures.
-package main
+package platform
 
 import "core:math"
 import "core:math/linalg"
-import gbbfx "gbbfx"
-import defaults "gbbfx/defaults"
+import gbbfx "../../gbbfx"
+import defaults "../../gbbfx/defaults"
+import scenekit "../../scenekit"
 
 // Waypoints (centre of the player cube) on platform tops, spread across x, y and z.
 PLAYER_PATH := [?][3]f32{{-9, 1.5, 0}, {-6, 1.0, 1}, {-3, 2.8, -3}, {1, 3.8, 3}, {4.5, 5.8, -6}, {9, 7.3, 2}, {4, 1.5, -5}, {0, 0.5, -2}}
@@ -39,7 +40,7 @@ Platform_State :: struct {
 	meshes:    [dynamic]^gbbfx.Mesh,
 	scene:     gbbfx.Scene,
 	skybox:    defaults.Skybox,
-	fly_camera: FlyCamera,
+	fly_camera: scenekit.FlyCamera,
 	player:    int,
 	time:      f32,
 }
@@ -49,16 +50,16 @@ Proto_Solid :: struct {
 	idx:   [dynamic]u16,
 }
 
-platform_scene :: proc() -> Scene {
+platform_scene :: proc() -> scenekit.Scene {
 	return {name = "Platform", create = platform_create, tick = platform_tick, destroy = platform_destroy}
 }
 
-platform_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
+platform_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Platform_State)
 	demo.state = state
-	camera_reset(gfx, {24, 18, 34}, {2, 2, -1})
+	scenekit.camera_reset(gfx, {24, 18, 34}, {2, 2, -1})
 
-	state.fly_camera = fly_camera_create(gfx, "platform")
+	state.fly_camera = scenekit.fly_camera_create(gfx, "platform")
 	state.pipeline = defaults.create_textured_pipeline(gfx)
 	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
 	for path, mat in PROTO_TEXTURES {
@@ -67,7 +68,7 @@ platform_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 		defaults.bind_textured_material(&state.materials[mat], state.textures[mat], state.sampler)
 	}
 
-	state.skybox = defaults.skybox_create(gfx, SKYBOX_PATH)
+	state.skybox = defaults.skybox_create(gfx, scenekit.SKYBOX_PATH)
 	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
 
 	// Ground covers the whole field (x -24..24, z -14..14) with a pit at x -4..0, z -2..2.
@@ -100,9 +101,9 @@ platform_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	return true
 }
 
-platform_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
+platform_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	state := cast(^Platform_State)demo.state
-	fly_camera_tick(&state.fly_camera, gfx, delta_time)
+	scenekit.fly_camera_tick(&state.fly_camera, gfx, delta_time)
 
 	// Player walks a looping 3D path through the platforms, hopping between waypoints.
 	state.time += delta_time
@@ -119,7 +120,7 @@ platform_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	gbbfx.gfx_render(gfx, &state.scene)
 }
 
-platform_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
+platform_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
 	state := cast(^Platform_State)demo.state
 	gbbfx.scene_destroy(&state.scene)
 	defaults.skybox_destroy(gfx, &state.skybox)

@@ -1,9 +1,10 @@
 // Key 3 — Models: every OBJ in static/ on a textured ground plane, each
 // rotating at its own speed.
-package main
+package models
 
-import gbbfx "gbbfx"
-import defaults "gbbfx/defaults"
+import gbbfx "../../gbbfx"
+import defaults "../../gbbfx/defaults"
+import scenekit "../../scenekit"
 
 MODEL_PATHS :: [4]string {
 	"static/models/sea/boat-tug-a.glb",
@@ -23,25 +24,25 @@ Models_State :: struct {
 	skybox:          defaults.Skybox,
 	entities:        [4]int,
 	rotation:        f32,
-	fly_camera:      FlyCamera,
+	fly_camera:      scenekit.FlyCamera,
 }
 
-models_scene :: proc() -> Scene {
+models_scene :: proc() -> scenekit.Scene {
 	return {name = "Models", create = models_create, tick = models_tick, destroy = models_destroy}
 }
 
-models_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
+models_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Models_State)
 	demo.state = state
-	camera_reset(gfx, {0, 2, 4})
+	scenekit.camera_reset(gfx, {0, 2, 4})
 
-	state.fly_camera = fly_camera_create(gfx, "models")
+	state.fly_camera = scenekit.fly_camera_create(gfx, "models")
 
 	state.pipeline = defaults.create_textured_pipeline(gfx)
 	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
 
 	for path, index in MODEL_PATHS {
-		state.models[index] = load_textured_model(
+		state.models[index] = scenekit.load_textured_model(
 			gfx,
 			path,
 			state.pipeline,
@@ -57,7 +58,7 @@ models_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	}
 
 	// Ground plane: raw quad, tiled mud texture.
-	state.skybox = defaults.skybox_create(gfx, SKYBOX_PATH)
+	state.skybox = defaults.skybox_create(gfx, scenekit.SKYBOX_PATH)
 	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
 
 	state.ground_texture = gbbfx.gfx_texture_load(gfx, "static/muddy_ground.jpg")
@@ -79,10 +80,10 @@ models_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	return true
 }
 
-models_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
+models_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	state := cast(^Models_State)demo.state
 
-	fly_camera_tick(&state.fly_camera, gfx, delta_time)
+	scenekit.fly_camera_tick(&state.fly_camera, gfx, delta_time)
 
 	state.rotation += delta_time
 	for entity, index in state.entities {
@@ -96,7 +97,7 @@ models_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	gbbfx.gfx_render(gfx, &state.scene)
 }
 
-models_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
+models_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
 	state := cast(^Models_State)demo.state
 	gbbfx.scene_destroy(&state.scene)
 	defaults.skybox_destroy(gfx, &state.skybox)

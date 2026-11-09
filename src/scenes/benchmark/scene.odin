@@ -1,16 +1,17 @@
 // Benchmark: N instances of each boat model plus a few huge Stanford dragons, with on-screen text
 // (FPS, object count, controls) drawn through the gbbfx font renderer.
 // = / - add and remove instances.
-package main
+package benchmark
 
 import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
-import gbbfx "gbbfx"
-import defaults "gbbfx/defaults"
-import glove "glove"
-import shader_parameters "shader_parameters"
+import gbbfx "../../gbbfx"
+import defaults "../../gbbfx/defaults"
+import glove "../../glove"
+import scenekit "../../scenekit"
+import shader_parameters "../../shader_parameters"
 import sdl "vendor:sdl3"
 
 BENCH_STEP :: 10 // per boat model, per keypress
@@ -92,7 +93,7 @@ Benchmark_State :: struct {
 	overlay_material: gbbfx.Material,
 	text_mesh:        gbbfx.Mesh,
 	text_vertices:    [dynamic]gbbfx.VertexData,
-	fly_camera:       FlyCamera,
+	fly_camera:       scenekit.FlyCamera,
 	add_action:       glove.Button_Action,
 	subtract_action:  glove.Button_Action,
 	fog_action:       glove.Button_Action,
@@ -103,7 +104,7 @@ Benchmark_State :: struct {
 	fog_on:           bool,
 }
 
-benchmark_scene :: proc() -> Scene {
+benchmark_scene :: proc() -> scenekit.Scene {
 	return {
 		name = "Benchmark",
 		create = benchmark_create,
@@ -112,16 +113,16 @@ benchmark_scene :: proc() -> Scene {
 	}
 }
 
-benchmark_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
+benchmark_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Benchmark_State)
 	state.fog_on = true // haze by default so boats and dragons share the sea's horizon blend
 	demo.state = state
-	camera_reset(gfx, {0, 8, 20})
+	scenekit.camera_reset(gfx, {0, 8, 20})
 	// Uncapped: the point of this scene is measuring real frame cost.
 	gbbfx.gfx_set_present_mode(gfx, .IMMEDIATE)
 
 	inputs := gbbfx.gfx_input(gfx)
-	state.fly_camera = fly_camera_create(gfx, "benchmark")
+	state.fly_camera = scenekit.fly_camera_create(gfx, "benchmark")
 	state.add_action = glove.add_button(inputs, "benchmark.add")
 	state.subtract_action = glove.add_button(inputs, "benchmark.subtract")
 	glove.bind_key(inputs, state.add_action, .EQUALS)
@@ -158,7 +159,7 @@ benchmark_create :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state.text_mesh = gbbfx.mesh_create_unindexed(gfx, dummy[:])
 	gbbfx.mesh_upload(&gfx.renderer, &state.text_mesh)
 
-	state.skybox = defaults.skybox_create(gfx, SKYBOX_PATH)
+	state.skybox = defaults.skybox_create(gfx, scenekit.SKYBOX_PATH)
 	state.sea_pipeline = sea_pipeline_create(gfx, state)
 	state.sea_material = gbbfx.material_create(state.sea_pipeline)
 	state.sea_mesh = sea_mesh_create(gfx)
@@ -316,7 +317,7 @@ sea_bind_draw :: proc(
 	gbbfx.draw_push_uniform(draw_context, shader_parameters.SEA_VERTEX_UNIFORM_BLOCK, &uniforms)
 }
 
-benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
+benchmark_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	state := cast(^Benchmark_State)demo.state
 
 	inputs := gbbfx.gfx_input(gfx)
@@ -332,7 +333,7 @@ benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	fog_rgb := gbbfx.color_srgb_to_linear({0.671, 0.757, 0.949, 1}) // skybox horizon; matches `sky` in sea.slang
 	gfx.renderer.fog = state.fog_on ? {fog_rgb.r, fog_rgb.g, fog_rgb.b, FOG_VIEW_DISTANCE} : [4]f32{}
 
-	fly_camera_tick(&state.fly_camera, gfx, delta_time)
+	scenekit.fly_camera_tick(&state.fly_camera, gfx, delta_time)
 	state.sea_time += delta_time
 	camera := gfx.renderer.camera.position
 	for boat in state.boats {
@@ -440,7 +441,7 @@ benchmark_tick :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	gbbfx.gfx_end_frame(gfx)
 }
 
-benchmark_destroy :: proc(demo: ^Scene, gfx: ^gbbfx.Gfx) {
+benchmark_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
 	state := cast(^Benchmark_State)demo.state
 	gbbfx.scene_destroy(&state.scene)
 	defaults.skybox_destroy(gfx, &state.skybox)

@@ -45,7 +45,7 @@ repo root (the `make` targets do this) or from inside `dist/`.
 
 Rigged glTF characters use the skinned path. `make run ARGS=skinned` (or
 `./main skinned`) plays clip 0 of `static/models/rigged_cesiumman.glb`.
-Source: `src/skinned_demo_scene.odin`.
+Source: `src/scenes/skinned/scene.odin`.
 
 ### Loading
 
@@ -106,9 +106,9 @@ gbbfx.gfx_render(gfx, &scene)
 
 ## Layout
 
-- `src/` - app and scenes (`main.odin`, `*_scene.odin`).
+- `src/` - app (`main.odin`, scene registry `scene.odin`), `scenekit/` (shared scene type and helpers), `scenes/<name>/scene.odin` (one folder per scene).
 - `src/gbbfx/` - renderer, render passes/postfx (`rgraph.odin`), loader (glTF), and default shaders in `defaults/`.
-- `src/engine/` - `World` of entities x components, with a per-type create/tick/destroy registry (`entity_register`) and `engine.run`. See `examples/hello_engine` and the `game` scene (`game_player.odin`, `game_enemy.odin`).
+- `src/engine/` - `World` of entities x components, with a per-type create/tick/destroy registry (`entity_register`) and `engine.run`. See `examples/hello_engine` and the `game` scene (`src/scenes/game/game_player.odin`, `game_enemy.odin`).
 - `src/glove/` - input system.
 - `static/` - models, textures, fonts, skybox.
 - `third_party/goose/` - shader build tool and Slang.
