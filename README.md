@@ -1,6 +1,6 @@
 # Cubes
 
-Demo of the `gbbfx` renderer (Odin + SDL3 GPU + Slang) with seven scenes, plus an
+Demo of the `gbbfx` renderer (Odin + SDL3 GPU + Slang) with eight scenes, plus an
 entity/component `engine` layer on top.
 
 ![Sea scene: animated waves, fog, thousands of instanced boats](media/sea.gif)
@@ -37,7 +37,7 @@ repo root (the `make` targets do this) or from inside `dist/`.
 
 ## Controls
 
-- `1`-`7`: switch scene at runtime (order of `SCENES` in `src/scene.odin`).
+- `1`-`8`: switch scene at runtime (order of `SCENES` in `src/scene.odin`).
 - `M`: toggle MSAA.
 - `Esc`: quit.
 

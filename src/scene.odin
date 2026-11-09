@@ -32,6 +32,7 @@ SCENES := [?]SceneEntry {
 	{"skinned", skinned_demo_scene},
 	{"postfx", postfx_demo_scene},
 	{"game", game_demo_scene},
+	{"platform", platform_scene},
 	{"benchmark", benchmark_scene},
 }
 
