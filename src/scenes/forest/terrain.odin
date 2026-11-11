@@ -4,9 +4,9 @@ import "core:math"
 import "core:math/linalg"
 import gbbfx "../../gbbfx"
 
-WORLD_HALF :: 128.0
+WORLD_HALF :: 256.0
 CHUNK_SIZE :: 16.0
-CHUNKS_PER_SIDE :: 16
+CHUNKS_PER_SIDE :: 32
 
 // 1 m grid: 17x17 verts, 16x16 cells, 289 verts / 1536 indices per chunk (< 65535, u16-safe).
 TERRAIN_VERTS_PER_SIDE :: 17
@@ -44,17 +44,22 @@ terrain_vnoise :: proc(x, z: f32) -> f32 {
 	return top + (bot - top) * tz
 }
 
+terrain_mix :: proc(a, b: [3]f32, t: f32) -> [3]f32 {
+	return a + (b - a) * t
+}
+
 terrain_height :: proc(x, z: f32) -> f32 {
-	// Three octaves, wavelengths ~40 m, ~20 m, ~10 m; sum of weights 1 keeps the result in [0,1].
+	// Hills: wavelengths ~80/40/18 m, amplitude ~+-7 m.
 	n := terrain_vnoise(x / 40, z / 40) * 0.5 +
 		terrain_vnoise(x / 20 + 17.3, z / 20 - 9.1) * 0.3 +
-		terrain_vnoise(x / 10 - 4.7, z / 10 + 31.9) * 0.2
-	h := (n - 0.5) * 10 // amplitude ~ +-5 m
-
-	// Flatten toward 1 m around the camera spawn (origin).
+		terrain_vnoise(x / 9 - 4.7, z / 9 + 31.9) * 0.2
 	d := math.sqrt(x * x + z * z)
-	w := terrain_smooth(4, 12, d)
-	return 1 + (h - 1) * w
+	// Spawn (radius < 14 m) stays at 1 m.
+	hills := (n - 0.5) * 14 * terrain_smooth(14, 22, d)
+
+	// Distant mountains: 0 at r=150, ~70 m at r=250, irregular skyline via low-freq noise.
+	ridge := terrain_smooth(150, 250, d) * (0.7 + 0.3 * terrain_vnoise(x / 60 + 201.5, z / 60 - 77.2)) * 70
+	return 1 + hills + ridge
 }
 
 terrain_normal :: proc(x, z: f32) -> [3]f32 {
@@ -64,18 +69,38 @@ terrain_normal :: proc(x, z: f32) -> [3]f32 {
 	return linalg.normalize([3]f32{-dx, 1, -dz})
 }
 
+// 0 = open meadow, 1 = dense forest. About 40% forest, 35% meadow; forced 0 within 20 m of origin.
+terrain_biome :: proc(x, z: f32) -> f32 {
+	n := terrain_vnoise(x / 45 + 311.7, z / 45 - 58.3)
+	d := math.sqrt(x * x + z * z)
+	return terrain_smooth(0.42, 0.56, n) * terrain_smooth(20, 26, d)
+}
+
+// 0..1 flower patchiness, only in meadow (biome < 0.5), ~20% coverage.
+terrain_flowers :: proc(x, z: f32) -> f32 {
+	n := terrain_vnoise(x / 12.5 - 90.4, z / 12.5 + 13.7)
+	meadow := 1 - terrain_smooth(0.45, 0.5, terrain_biome(x, z))
+	return terrain_smooth(0.66, 0.76, n) * meadow
+}
+
 terrain_color :: proc(x, z: f32) -> [3]f32 {
-	green := [3]f32{0.30, 0.55, 0.18}
-	yellow := [3]f32{0.55, 0.65, 0.20}
-	dirt := [3]f32{0.42, 0.33, 0.20}
+	meadow := [3]f32{0.42, 0.70, 0.22}
+	yellow := [3]f32{0.62, 0.78, 0.28}
+	forest := [3]f32{0.24, 0.50, 0.22}
+	dirt := [3]f32{0.50, 0.40, 0.26}
+	rock := [3]f32{0.55, 0.54, 0.52}
+	snow := [3]f32{0.80, 0.84, 0.88}
 
-	// Low-frequency patches of yellow-green meadow.
-	patch := terrain_smooth(0.55, 0.75, terrain_vnoise(x / 30 + 80, z / 30 - 40))
-	c := green + (yellow - green) * (patch * 0.6)
+	h := terrain_height(x, z)
+	n := terrain_normal(x, z)
 
-	// Dirt only where the slope is steep (normal.y small).
-	steep := 1 - terrain_smooth(0.6, 0.8, terrain_normal(x, z).y)
-	return c + (dirt - c) * steep
+	c := terrain_mix(meadow, yellow, terrain_smooth(0.55, 0.75, terrain_vnoise(x / 30 + 80, z / 30 - 40)))
+	c = terrain_mix(c, forest, terrain_smooth(0.3, 0.7, terrain_biome(x, z)))
+	// Dirt only on steep slopes (normal.y below ~0.75).
+	c = terrain_mix(c, dirt, terrain_smooth(0.78, 0.70, n.y))
+	c = terrain_mix(c, rock, terrain_smooth(40, 55, h))
+	c = terrain_mix(c, snow, terrain_smooth(62, 72, h))
+	return c
 }
 
 chunk_origin :: proc(cx, cz: int) -> (x, z: f32) {

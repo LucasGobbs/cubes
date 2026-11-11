@@ -61,7 +61,8 @@ VertexOutput vertexMain(VertexInput input) {
     output.normal = normalize(mul((float3x3)data.model, input.normal));
     output.to_camera = data.camera_position.xyz - world.xyz;
     float d = length(output.to_camera);
-    output.fog = float4(data.fog.rgb, data.fog.a > 0.0 ? saturate((d - 0.6 * data.fog.a) / (0.4 * data.fog.a)) : 0.0);
+    float fog_t = data.fog.a > 0.0 ? saturate((d - 0.15 * data.fog.a) / (0.85 * data.fog.a)) : 0.0;
+    output.fog = float4(data.fog.rgb, pow(fog_t, 1.6)); // gentle start, hazy far mountains
     output.kind = kind;
     output.height = input.uv.x;
     return output;
@@ -70,26 +71,23 @@ VertexOutput vertexMain(VertexInput input) {
 [shader("fragment")]
 float4 pixelMain(VertexOutput input, bool front : SV_IsFrontFace) : SV_Target0 {
     float3 n = normalize(input.normal);
-    if (!front && input.kind > 0.5 && input.kind < 1.5) n = -n; // two-sided blades
     float3 sun = normalize(float3(0.45, 0.8, 0.35));
-    float ndl = dot(n, sun);
-    // Soft two-step toon ramp.
-    float lit = smoothstep(-0.05, 0.12, ndl) * 0.6 + smoothstep(0.45, 0.6, ndl) * 0.4;
-    float3 sky = float3(0.55, 0.70, 0.95);
-    float3 ground = float3(0.35, 0.30, 0.20);
-    float3 ambient = lerp(ground, sky, n.y * 0.5 + 0.5) * 0.55;
+    // Half-lambert wrap + soft toon steps: shadows stay bright and tinted, never black.
+    float ndl = dot(n, sun) * 0.5 + 0.5;
+    float lit = smoothstep(0.30, 0.55, ndl) * 0.5 + smoothstep(0.55, 0.85, ndl) * 0.5;
+    float3 shade = float3(0.62, 0.74, 0.95); // cool sky-lit shadow colour
+    float3 sun_color = float3(1.0, 0.95, 0.80);
     float3 base = input.color;
     if (input.kind > 0.5 && input.kind < 1.5) {
-        // Blade gradient: dark root, bright warm tip.
-        base = lerp(base * 0.55, base * 1.35 + float3(0.05, 0.08, 0.0), input.height);
+        // Root matches the terrain underneath; tips go lighter and yellower.
+        base = lerp(base * 0.92, base * 1.08 + float3(0.02, 0.04, -0.02), input.height);
     } else if (input.kind > 1.5) {
-        // Canopy: lighter on top where height weight is high.
-        base = lerp(base * 0.8, base * 1.25, input.height);
+        // Crowns: darker underneath, sun-bleached on top.
+        base = base * lerp(0.78, 1.18, input.height);
     }
-    float3 sun_color = float3(1.0, 0.93, 0.78);
-    float3 color = base * (ambient + sun_color * lit * 0.85);
-    // Rim light on foliage/solids against the sky.
+    float3 color = base * lerp(shade * 0.85, sun_color * 0.92, lit);
+    // Soft backlit glow on foliage and a faint sky rim.
     float rim = pow(1.0 - saturate(dot(n, normalize(input.to_camera))), 3.0);
-    color += sky * rim * 0.12;
+    color += float3(0.55, 0.70, 0.95) * rim * 0.10 * (input.kind > 0.5 ? 1.0 : 0.4);
     return float4(lerp(color, input.fog.rgb, input.fog.a), 1.0);
 }

@@ -124,17 +124,14 @@ VertexOutput_0 vertexMain(VertexInput_0 input_0)
 #line 62
     output_0.to_camera_0 = _S2;
     float d_0 = length(_S2);
-    float3 _S3 = UniformBlock_0.data_0.fog_0.xyz;
 
-#line 64
-    float _S4;
-
-#line 64
+#line 63
+    float fog_t_0;
     if((UniformBlock_0.data_0.fog_0.w) > 0.0f)
     {
 
 #line 64
-        _S4 = saturate((d_0 - 0.60000002384185791f * UniformBlock_0.data_0.fog_0.w) / (0.40000000596046448f * UniformBlock_0.data_0.fog_0.w));
+        fog_t_0 = saturate((d_0 - 0.15000000596046448f * UniformBlock_0.data_0.fog_0.w) / (0.85000002384185791f * UniformBlock_0.data_0.fog_0.w));
 
 #line 64
     }
@@ -142,13 +139,11 @@ VertexOutput_0 vertexMain(VertexInput_0 input_0)
     {
 
 #line 64
-        _S4 = 0.0f;
+        fog_t_0 = 0.0f;
 
 #line 64
     }
-
-#line 64
-    output_0.fog_1 = float4(_S3, _S4);
+    output_0.fog_1 = float4(UniformBlock_0.data_0.fog_0.xyz, pow(fog_t_0, 1.60000002384185791f));
     output_0.kind_1 = kind_2;
     output_0.height_0 = input_0.uv_0.x;
     return output_0;

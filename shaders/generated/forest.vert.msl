@@ -143,17 +143,14 @@ struct VertexOutput_0
 #line 62
     (&output_0)->to_camera_1 = _S6;
     float d_0 = length(_S6);
-    float3 _S7 = (&UniformBlock_0->data_1)->fog_1.xyz;
 
-#line 64
-    float _S8;
-
-#line 64
+#line 63
+    float fog_t_0;
     if(((&UniformBlock_0->data_1)->fog_1.w) > 0.0f)
     {
 
 #line 64
-        _S8 = saturate((d_0 - 0.60000002384185791f * (&UniformBlock_0->data_1)->fog_1.w) / (0.40000000596046448f * (&UniformBlock_0->data_1)->fog_1.w));
+        fog_t_0 = saturate((d_0 - 0.15000000596046448f * (&UniformBlock_0->data_1)->fog_1.w) / (0.85000002384185791f * (&UniformBlock_0->data_1)->fog_1.w));
 
 #line 64
     }
@@ -161,42 +158,40 @@ struct VertexOutput_0
     {
 
 #line 64
-        _S8 = 0.0f;
+        fog_t_0 = 0.0f;
 
 #line 64
     }
-
-#line 64
-    (&output_0)->fog_2 = float4(_S7, _S8);
+    (&output_0)->fog_2 = float4((&UniformBlock_0->data_1)->fog_1.xyz, pow(fog_t_0, 1.60000002384185791f));
     (&output_0)->kind_2 = kind_3;
     (&output_0)->height_1 = _S3.uv_0.x;
-    VertexOutput_0 _S9 = output_0;
+    VertexOutput_0 _S7 = output_0;
 
-#line 67
-    thread vertexMain_Result_0 _S10;
+#line 68
+    thread vertexMain_Result_0 _S8;
 
-#line 67
-    (&_S10)->position_0 = _S9.position_2;
+#line 68
+    (&_S8)->position_0 = _S7.position_2;
 
-#line 67
-    (&_S10)->color_0 = _S9.color_2;
+#line 68
+    (&_S8)->color_0 = _S7.color_2;
 
-#line 67
-    (&_S10)->normal_0 = _S9.normal_2;
+#line 68
+    (&_S8)->normal_0 = _S7.normal_2;
 
-#line 67
-    (&_S10)->to_camera_0 = _S9.to_camera_1;
+#line 68
+    (&_S8)->to_camera_0 = _S7.to_camera_1;
 
-#line 67
-    (&_S10)->fog_0 = _S9.fog_2;
+#line 68
+    (&_S8)->fog_0 = _S7.fog_2;
 
-#line 67
-    (&_S10)->kind_1 = _S9.kind_2;
+#line 68
+    (&_S8)->kind_1 = _S7.kind_2;
 
-#line 67
-    (&_S10)->height_0 = _S9.height_1;
+#line 68
+    (&_S8)->height_0 = _S7.height_1;
 
-#line 67
-    return _S10;
+#line 68
+    return _S8;
 }
 

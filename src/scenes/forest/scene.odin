@@ -10,12 +10,14 @@ import defaults "../../gbbfx/defaults"
 import scenekit "../../scenekit"
 import shader_parameters "../../shader_parameters"
 
-FOG_DISTANCE :: 110.0 // also the renderer's view distance: farther chunks are culled
+FOG_DISTANCE :: 420.0 // also the renderer's view distance: farther chunks are culled
 BUILD_RADIUS :: FOG_DISTANCE + 12.0
-GRASS_NEAR :: 40.0 // dense grass inside; hysteresis keeps LOD from flickering
-GRASS_FAR :: 48.0
-BUILD_PER_FRAME :: 2 // chunk meshes baked per tick once streaming
-FOG_COLOR :: [3]f32{0.55, 0.72, 0.92}
+GRASS_NEAR :: 42.0 // dense grass inside; hysteresis keeps LOD from flickering
+GRASS_FAR :: 52.0
+GRASS_MAX :: 95.0 // no grass past this; the terrain colour carries the meadow
+BUILD_PER_FRAME :: 4 // chunk meshes baked per tick once streaming
+START_RADIUS :: 140.0 // baked before the first frame; the rest streams in under fog
+FOG_COLOR :: [3]f32{0.62, 0.78, 0.95}
 
 Mesh_Data :: struct {
 	verts: [dynamic]gbbfx.VertexData,
@@ -76,10 +78,10 @@ forest_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state.skybox = defaults.skybox_create(gfx, scenekit.SKYBOX_PATH)
 	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
 
-	state.bloom = defaults.bloom_create(gfx, 0.85, 0.3, 5)
+	state.bloom = defaults.bloom_create(gfx, 0.95, 0.2, 5)
 	gbbfx.renderer_set_passes(&gfx.renderer, .Post, []gbbfx.Render_Pass{defaults.bloom_pass(&state.bloom)})
 
-	forest_stream(state, gfx, 1 << 20) // everything in range before the first frame
+	forest_stream(state, gfx, 1 << 20, START_RADIUS)
 	return true
 }
 
@@ -109,7 +111,7 @@ forest_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	scenekit.fly_camera_tick(&state.fly_camera, gfx, delta_time)
 	state.time += delta_time
 	gfx.renderer.fog = {FOG_COLOR.r, FOG_COLOR.g, FOG_COLOR.b, FOG_DISTANCE}
-	forest_stream(state, gfx, BUILD_PER_FRAME)
+	forest_stream(state, gfx, BUILD_PER_FRAME, BUILD_RADIUS)
 	gbbfx.gfx_render(gfx, &state.scene)
 }
 
@@ -117,7 +119,7 @@ forest_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 // needed: the initial pass fills the whole radius) and picks each grass LOD.
 // shortcut: built chunks are never freed, so flying the whole world holds
 // ~400 MB of vertices; add eviction (with a GPU idle wait) if that matters.
-forest_stream :: proc(state: ^Forest_State, gfx: ^gbbfx.Gfx, budget: int) {
+forest_stream :: proc(state: ^Forest_State, gfx: ^gbbfx.Gfx, budget: int, radius: f32) {
 	budget := budget
 	camera := gbbfx.gfx_camera(gfx).position
 	for index in 0 ..< len(state.chunks) {
@@ -125,7 +127,7 @@ forest_stream :: proc(state: ^Forest_State, gfx: ^gbbfx.Gfx, budget: int) {
 		ox, oz := chunk_origin(cx, cz)
 		dx, dz := ox + CHUNK_SIZE / 2 - camera.x, oz + CHUNK_SIZE / 2 - camera.z
 		distance := math.sqrt(dx * dx + dz * dz)
-		if distance > BUILD_RADIUS do continue
+		if distance > radius do continue
 		chunk := &state.chunks[index]
 
 		if !chunk.static_built {
@@ -133,6 +135,13 @@ forest_stream :: proc(state: ^Forest_State, gfx: ^gbbfx.Gfx, budget: int) {
 			budget -= 1
 			forest_build_static(state, gfx, chunk, cx, cz)
 		}
+
+		if chunk.grass_entity >= 0 {
+			// Out of range: collapse the entity so it costs no fragments.
+			entity := gbbfx.scene_entity(&state.scene, chunk.grass_entity)
+			gbbfx.entity_set_scale(entity, distance > GRASS_MAX ? {0, 0, 0} : {1, 1, 1})
+		}
+		if distance > GRASS_MAX do continue
 
 		lod := chunk.grass_lod
 		if chunk.grass_entity < 0 do lod = 1

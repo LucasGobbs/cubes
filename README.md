@@ -43,10 +43,10 @@ repo root (the `make` targets do this) or from inside `dist/`.
 
 ## Forest scene
 
-`./main forest`: BotW-style toon meadow. The 256x256 m world is 16x16 chunks baked
+`./main forest`: BotW-style toon meadow. The 512x512 m world is 32x32 chunks baked
 once into world-space meshes (terrain + trees, grass at two LODs) and streamed as the
 camera moves; wind and shading live in `shaders/forest.slang`, so a frame is one draw
-per visible chunk mesh (about 125 draws, 120 FPS windowed in `--bench`). Source:
+per visible chunk mesh (about 350 draws, 120 FPS windowed in `--bench`). Source:
 `src/scenes/forest/` (`terrain.odin`, `grass.odin`, `trees.odin`, `scene.odin`).
 
 ## Skeletal animation
