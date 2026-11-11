@@ -23,6 +23,12 @@
       "fragment": "pixelMain"
     },
     {
+      "name": "forest",
+      "source": "shaders/forest.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
       "name": "compute_demo",
       "source": "shaders/compute.slang",
       "compute": "computeMain"

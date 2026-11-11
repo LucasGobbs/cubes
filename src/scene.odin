@@ -7,6 +7,7 @@ package main
 import scenekit "scenekit"
 import benchmark "scenes/benchmark"
 import editor "scenes/editor"
+import forest "scenes/forest"
 import game "scenes/game"
 import models "scenes/models"
 import platform "scenes/platform"
@@ -27,6 +28,7 @@ SCENES := [?]SceneEntry {
 	{"postfx", postfx.postfx_scene},
 	{"game", game.game_scene},
 	{"platform", platform.platform_scene},
+	{"forest", forest.forest_scene},
 	{"benchmark", benchmark.benchmark_scene},
 }
 
