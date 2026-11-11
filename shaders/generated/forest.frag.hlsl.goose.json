@@ -1,0 +1,37 @@
+{
+  "stage": "fragment",
+  "entryPoint": "pixelMain",
+  "threadGroupSize": [
+    0,
+    0,
+    0
+  ],
+  "vertexInputs": [
+
+  ],
+  "uniformBlocks": [
+
+  ],
+  "resources": [
+
+  ],
+  "schema": "goose.stage/1",
+  "shader": "forest",
+  "target": "hlsl",
+  "format": "hlsl",
+  "artifact": "forest.frag.hlsl",
+  "entrySymbol": "pixelMain",
+  "layout": "native",
+  "numSamplers": 0,
+  "numUniformBuffers": 0,
+  "numReadonlyStorageTextures": 0,
+  "numReadonlyStorageBuffers": 0,
+  "numReadwriteStorageTextures": 0,
+  "numReadwriteStorageBuffers": 0,
+  "samplers": [
+
+  ],
+  "storage": [
+
+  ]
+}

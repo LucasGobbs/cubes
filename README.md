@@ -1,6 +1,6 @@
 # Cubes
 
-Demo of the `gbbfx` renderer (Odin + SDL3 GPU + Slang) with eight scenes, plus an
+Demo of the `gbbfx` renderer (Odin + SDL3 GPU + Slang) with nine scenes, plus an
 entity/component `engine` layer on top.
 
 ![Sea scene: animated waves, fog, thousands of instanced boats](media/sea.gif)
@@ -24,7 +24,7 @@ capture above).
 
 ```
 make build                     # release binary ./main
-make run ARGS=models           # scenes: simple, editor, models, skinned, postfx, game, benchmark (default); fullscreen by default
+make run ARGS=models           # scenes: simple, editor, models, skinned, postfx, game, platform, forest, benchmark (default); fullscreen by default
 make run ARGS="benchmark --bench 10"  # run 10 s without input, print fps/draws/triangles/CPU stats, exit
 make run ARGS="models --WINDOWED"     # windowed (goes through the compositor)
 make editor                    # debug build with the microui editor overlay
@@ -37,9 +37,17 @@ repo root (the `make` targets do this) or from inside `dist/`.
 
 ## Controls
 
-- `1`-`8`: switch scene at runtime (order of `SCENES` in `src/scene.odin`).
+- `1`-`9`: switch scene at runtime (order of `SCENES` in `src/scene.odin`).
 - `M`: toggle MSAA.
 - `Esc`: quit.
+
+## Forest scene
+
+`./main forest`: BotW-style toon meadow. The 256x256 m world is 16x16 chunks baked
+once into world-space meshes (terrain + trees, grass at two LODs) and streamed as the
+camera moves; wind and shading live in `shaders/forest.slang`, so a frame is one draw
+per visible chunk mesh (about 125 draws, 120 FPS windowed in `--bench`). Source:
+`src/scenes/forest/` (`terrain.odin`, `grass.odin`, `trees.odin`, `scene.odin`).
 
 ## Skeletal animation
 

@@ -1,0 +1,138 @@
+{
+  "stage": "vertex",
+  "entryPoint": "vertexMain",
+  "threadGroupSize": [
+    0,
+    0,
+    0
+  ],
+  "vertexInputs": [
+    {
+      "name": "position",
+      "location": 0,
+      "format": "Float3"
+    },
+    {
+      "name": "color",
+      "location": 1,
+      "format": "Float4"
+    },
+    {
+      "name": "uv",
+      "location": 2,
+      "format": "Float2"
+    },
+    {
+      "name": "normal",
+      "location": 3,
+      "format": "Float3"
+    }
+  ],
+  "uniformBlocks": [
+    {
+      "name": "vertex_UniformBlock",
+      "typeName": "ForestVertexUniformBlock",
+      "slot": 0,
+      "space": 0,
+      "size": 176,
+      "type": {
+        "kind": "struct",
+        "size": 176,
+        "typeName": "ForestVertexUniformBlock",
+        "fields": [
+          {
+            "name": "data",
+            "offset": 0,
+            "type": {
+              "kind": "struct",
+              "size": 176,
+              "typeName": "ForestVertexUniforms",
+              "fields": [
+                {
+                  "name": "view_projection",
+                  "offset": 0,
+                  "type": {
+                    "kind": "matrix",
+                    "scalar": "float32",
+                    "rows": 4,
+                    "columns": 4,
+                    "stride": 16,
+                    "size": 64
+                  }
+                },
+                {
+                  "name": "model",
+                  "offset": 64,
+                  "type": {
+                    "kind": "matrix",
+                    "scalar": "float32",
+                    "rows": 4,
+                    "columns": 4,
+                    "stride": 16,
+                    "size": 64
+                  }
+                },
+                {
+                  "name": "camera_position",
+                  "offset": 128,
+                  "type": {
+                    "kind": "vector",
+                    "scalar": "float32",
+                    "count": 4,
+                    "size": 16
+                  }
+                },
+                {
+                  "name": "time",
+                  "offset": 144,
+                  "type": {
+                    "kind": "vector",
+                    "scalar": "float32",
+                    "count": 4,
+                    "size": 16
+                  }
+                },
+                {
+                  "name": "fog",
+                  "offset": 160,
+                  "type": {
+                    "kind": "vector",
+                    "scalar": "float32",
+                    "count": 4,
+                    "size": 16
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "blockName": "UniformBlock",
+      "sdlSlot": 0,
+      "descriptorSet": 0,
+      "descriptorBinding": 0
+    }
+  ],
+  "resources": [
+
+  ],
+  "schema": "goose.stage/1",
+  "shader": "forest",
+  "target": "hlsl",
+  "format": "hlsl",
+  "artifact": "forest.vert.hlsl",
+  "entrySymbol": "vertexMain",
+  "layout": "native",
+  "numSamplers": 0,
+  "numUniformBuffers": 1,
+  "numReadonlyStorageTextures": 0,
+  "numReadonlyStorageBuffers": 0,
+  "numReadwriteStorageTextures": 0,
+  "numReadwriteStorageBuffers": 0,
+  "samplers": [
+
+  ],
+  "storage": [
+
+  ]
+}
