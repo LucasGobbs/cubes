@@ -12,7 +12,6 @@ Skinned_State :: struct {
 	pipeline: gfx.Pipeline_Handle,
 	sampler:  gfx.Sampler_Handle,
 	model:    gfx.Model,
-	draws:    [dynamic]gfx.Draw,
 	playback: gfx.Playback,
 }
 
@@ -52,7 +51,7 @@ skinned_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	draw := gfx.draw_make(&state.model.mesh, &state.model.material)
 	draw.cull = false
 	draw.pose = state.playback.pose
-	append(&state.draws, draw)
+	gfx.draw_add(gfx_ctx, draw)
 	return true
 }
 
@@ -60,13 +59,12 @@ skinned_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32)
 	gfx_ctx := &ctx.gfx
 	state := cast(^Skinned_State)demo.state
 	gfx.playback_tick(&state.playback, delta_time)
-	gfx.render(gfx_ctx, state.draws[:])
+	gfx.render(gfx_ctx)
 }
 
 skinned_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Skinned_State)demo.state
-	delete(state.draws)
 	gfx.playback_destroy(&state.playback)
 	gfx.model_unload(gfx_ctx, &state.model)
 	free(state)

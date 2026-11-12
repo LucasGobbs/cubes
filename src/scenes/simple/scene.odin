@@ -18,8 +18,6 @@ Simple_State :: struct {
 	quad_mesh:         gfx.Mesh,
 	quad_vertices:     [4]gfx.VertexData,
 	quad_indices:      [6]u16,
-	draws:             [dynamic]gfx.Draw,
-	skybox:            gfx.Skybox,
 	spinning:          int,
 	rotation:          f32,
 	fly_camera:        gfx.Fly_Camera,
@@ -59,12 +57,10 @@ simple_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	)
 	gfx.set_unlit_color(&state.unlit_model.material, {0.2, 0.8, 0.9, 1})
 
-	state.skybox = gfx.skybox_create(gfx_ctx, default.SKYBOX_PATH)
-	append(&state.draws, gfx.skybox_draw(&state.skybox))
+	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
 
-	append(&state.draws, gfx.draw_model(&state.textured_model, SPIN_SHIP_POSITION, SHIP_SCALE))
-	state.spinning = len(state.draws) - 1
-	append(&state.draws, gfx.draw_model(&state.unlit_model, {2.5, -0.5, -10}, SHIP_SCALE))
+	state.spinning = gfx.draw_add(gfx_ctx, gfx.draw_model(&state.textured_model, SPIN_SHIP_POSITION, SHIP_SCALE))
+	gfx.draw_add(gfx_ctx, gfx.draw_model(&state.unlit_model, {2.5, -0.5, -10}, SHIP_SCALE))
 
 	// Raw geometry: animated quad through the unlit pipeline.
 	state.quad_vertices = {
@@ -76,8 +72,8 @@ simple_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.quad_indices = {0, 1, 2, 2, 3, 0}
 	state.quad_mesh = gfx.mesh_create(gfx_ctx, state.quad_vertices[:], state.quad_indices[:])
 	gfx.mesh_upload(&gfx_ctx.renderer, &state.quad_mesh)
-	append(
-		&state.draws,
+	gfx.draw_add(
+		gfx_ctx,
 		gfx.draw_make(&state.quad_mesh, &state.unlit_model.material, {0, 1.2, -8}, layer = .UI),
 	)
 	return true
@@ -92,7 +88,7 @@ simple_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 
 	state.rotation += linalg.to_radians(f32(60)) * delta_time
 	gfx.draw_set_transform(
-		&state.draws[state.spinning],
+		gfx.draw_get(gfx_ctx, state.spinning),
 		SPIN_SHIP_POSITION,
 		linalg.quaternion_from_euler_angles_f32(0, state.rotation, 0, .XYZ),
 		SHIP_SCALE,
@@ -107,14 +103,12 @@ simple_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 		state.quad_indices[:],
 	)
 
-	gfx.render(gfx_ctx, state.draws[:])
+	gfx.render(gfx_ctx)
 }
 
 simple_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Simple_State)demo.state
-	delete(state.draws)
-	gfx.material_destroy(&state.skybox.material)
 	gfx.model_unload(gfx_ctx, &state.textured_model)
 	gfx.model_unload(gfx_ctx, &state.unlit_model)
 	free(state)

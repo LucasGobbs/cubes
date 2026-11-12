@@ -120,18 +120,22 @@ renderer_render_draws :: proc(renderer: ^Renderer, draws: []Draw) {
 	renderer_draw_submitted(renderer)
 }
 
-// Simple frame: draws -> offscreen -> post passes -> blit to screen.
-render :: proc(gfx_ctx: ^Device, draws: []Draw) {
-	frame := Draw_Frame{draws}
-	renderer_render_frame(&gfx_ctx.renderer, draws_extract_proc, &frame)
+// Adds to gfx_ctx.draws; returns its index. Draws added in a scope are truncated at scope_end.
+draw_add :: proc(gfx_ctx: ^Device, d: Draw) -> int {
+	append(&gfx_ctx.draws, d)
+	return len(gfx_ctx.draws) - 1
 }
 
-@(private = "file")
-Draw_Frame :: struct {
-	draws: []Draw,
+draw_get :: proc(gfx_ctx: ^Device, index: int) -> ^Draw {
+	return &gfx_ctx.draws[index]
+}
+
+// Simple frame: gfx_ctx.draws -> offscreen -> post passes -> blit to screen.
+render :: proc(gfx_ctx: ^Device) {
+	renderer_render_frame(&gfx_ctx.renderer, draws_extract_proc, gfx_ctx)
 }
 
 @(private = "file")
 draws_extract_proc :: proc(renderer: ^Renderer, user: rawptr) {
-	renderer_extract_draws(renderer, (^Draw_Frame)(user).draws)
+	renderer_extract_draws(renderer, (^Device)(user).draws[:])
 }

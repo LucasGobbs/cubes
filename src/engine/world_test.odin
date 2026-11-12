@@ -16,7 +16,7 @@ stale_id_is_invalid_after_slot_reuse :: proc(t: ^testing.T) {
 	testing.expect_value(t, b.index, a.index)
 	testing.expect(t, b.generation != a.generation)
 	testing.expect(t, !world_valid(&world, a))
-	testing.expect(t, get(&world, a, Transform) == nil)
+	testing.expect(t, entity_get_component(&world, a, Transform) == nil)
 	testing.expect(t, world_valid(&world, b))
 }
 
@@ -26,8 +26,21 @@ spawn_normalizes_transform :: proc(t: ^testing.T) {
 	defer world_destroy(&world)
 
 	id := spawn(&world, Transform{position = {1, 2, 3}})
-	transform := get(&world, id, Transform)
+	transform := entity_get_component(&world, id, Transform)
 	testing.expect(t, transform != nil)
+	testing.expect_value(t, transform.position, Vec3{1, 2, 3})
+	testing.expect_value(t, transform.scale, Vec3{1, 1, 1})
+	testing.expect_value(t, transform.rotation, linalg.QUATERNIONF32_IDENTITY)
+}
+
+@(test)
+set_transform_replaces_and_normalizes :: proc(t: ^testing.T) {
+	world := World{}
+	defer world_destroy(&world)
+
+	id := spawn(&world)
+	entity_set_transform(&world, id, position = {1, 2, 3}, scale = {})
+	transform := entity_transform(&world, id)
 	testing.expect_value(t, transform.position, Vec3{1, 2, 3})
 	testing.expect_value(t, transform.scale, Vec3{1, 1, 1})
 	testing.expect_value(t, transform.rotation, linalg.QUATERNIONF32_IDENTITY)
@@ -42,10 +55,10 @@ add_replaces_component_of_same_type :: proc(t: ^testing.T) {
 	slot := &world.slots[id.index]
 	before := len(slot.components)
 
-	world_add(&world, id, Transform{position = {4, 5, 6}})
+	entity_add_component(&world, id, Transform{position = {4, 5, 6}})
 
 	testing.expect_value(t, len(slot.components), before)
-	transform := get(&world, id, Transform)
+	transform := entity_get_component(&world, id, Transform)
 	testing.expect_value(t, transform.position, Vec3{4, 5, 6})
 }
 
@@ -55,17 +68,17 @@ health_get_and_replace :: proc(t: ^testing.T) {
 	defer world_destroy(&world)
 
 	id := spawn(&world, Health{current = 100, max = 100})
-	health := get(&world, id, Health)
+	health := entity_get_component(&world, id, Health)
 	testing.expect(t, health != nil)
 	if health == nil do return
 	testing.expect_value(t, health.current, 100)
 
 	slot := &world.slots[id.index]
 	before := len(slot.components)
-	world_add(&world, id, Health{current = 40, max = 100})
+	entity_add_component(&world, id, Health{current = 40, max = 100})
 
 	testing.expect_value(t, len(slot.components), before)
-	health = get(&world, id, Health)
+	health = entity_get_component(&world, id, Health)
 	testing.expect_value(t, health.current, 40)
 	testing.expect_value(t, health.max, 100)
 }

@@ -84,7 +84,7 @@ game_fixed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f
 	state.log_timer += delta_time
 	if state.log_timer >= 1 {
 		state.log_timer = 0
-		health := engine.get(&state.world, player_id, engine.Health)
+		health := engine.entity_get_component(&state.world, player_id, engine.Health)
 		log.infof(
 			"game: health %.0f/%.0f, enemies %d",
 			health.current,

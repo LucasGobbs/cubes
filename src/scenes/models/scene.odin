@@ -23,8 +23,6 @@ Models_State :: struct {
 	ground_texture:  gfx.Texture_Handle,
 	ground_material: gfx.Material,
 	ground_mesh:     gfx.Mesh,
-	draws:           [dynamic]gfx.Draw,
-	skybox:          gfx.Skybox,
 	model_draws:     [4]int,
 	rotation:        f32,
 	fly_camera:      gfx.Fly_Camera,
@@ -59,16 +57,14 @@ models_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 			state.pipeline,
 			state.sampler,
 		)
-		append(
-			&state.draws,
+		state.model_draws[index] = gfx.draw_add(
+			gfx_ctx,
 			gfx.draw_model(&state.models[index], models_position(index), MODEL_SCALE),
 		)
-		state.model_draws[index] = len(state.draws) - 1
 	}
 
 	// Ground plane: raw quad, tiled mud texture.
-	state.skybox = gfx.skybox_create(gfx_ctx, default.SKYBOX_PATH)
-	append(&state.draws, gfx.skybox_draw(&state.skybox))
+	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
 
 	state.ground_texture = gfx.texture_load(gfx_ctx, "static/muddy_ground.jpg")
 	state.ground_material = gfx.material_create(state.pipeline)
@@ -83,7 +79,7 @@ models_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	ground_indices := [6]u16{0, 2, 1, 0, 3, 2}
 	state.ground_mesh = gfx.mesh_create(gfx_ctx, ground_vertices[:], ground_indices[:])
 	gfx.mesh_upload(&gfx_ctx.renderer, &state.ground_mesh)
-	append(&state.draws, gfx.draw_make(&state.ground_mesh, &state.ground_material))
+	gfx.draw_add(gfx_ctx, gfx.draw_make(&state.ground_mesh, &state.ground_material))
 	return true
 }
 
@@ -97,7 +93,7 @@ models_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 	state.rotation += delta_time
 	for draw, index in state.model_draws {
 		gfx.draw_set_transform(
-			&state.draws[draw],
+			gfx.draw_get(gfx_ctx, draw),
 			models_position(index),
 			linalg.quaternion_from_euler_angles_f32(
 				0,
@@ -108,14 +104,12 @@ models_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 			MODEL_SCALE,
 		)
 	}
-	gfx.render(gfx_ctx, state.draws[:])
+	gfx.render(gfx_ctx)
 }
 
 models_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Models_State)demo.state
-	delete(state.draws)
-	gfx.material_destroy(&state.skybox.material)
 	gfx.material_destroy(&state.ground_material)
 	for &model in state.models do gfx.model_unload(gfx_ctx, &model)
 	free(state)

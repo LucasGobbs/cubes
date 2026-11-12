@@ -81,8 +81,7 @@ Benchmark_State :: struct {
 	sampler:          gfx.Sampler_Handle,
 	models:           [BOAT_COUNT]gfx.Model,
 	dragon:           gfx.Model,
-	draws:            [dynamic]gfx.Draw,
-	skybox:           gfx.Skybox,
+	base_draws:       int,
 	sea_pipeline:     gfx.Pipeline_Handle,
 	sea_material:     gfx.Material,
 	sea_mesh:         gfx.Mesh,
@@ -160,24 +159,25 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.text_mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
 	gfx.mesh_upload(&gfx_ctx.renderer, &state.text_mesh)
 
-	state.skybox = gfx.skybox_create(gfx_ctx, default.SKYBOX_PATH)
+	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
 	state.sea_pipeline = sea_pipeline_create(gfx_ctx, state)
 	state.sea_material = gfx.material_create(state.sea_pipeline)
 	state.sea_mesh = sea_mesh_create(gfx_ctx)
+	gfx.draw_add(gfx_ctx, gfx.draw_make(&state.sea_mesh, &state.sea_material, layer = .WORLD))
+	state.base_draws = len(gfx_ctx.draws)
 
 	rand.reset(1) // fixed layout: every run draws the same fleet, so results compare
-	benchmark_populate(state, 150)
+	benchmark_populate(state, gfx_ctx, 150)
 	return true
 }
 
 // Rebuilds the draw list at a new per-model instance count. Models stay
 // loaded; only the draws are recreated.
-benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
+benchmark_populate :: proc(state: ^Benchmark_State, gfx_ctx: ^gfx.Device, per_model: int) {
 	state.per_model = per_model
-	clear(&state.draws)
+	resize(&gfx_ctx.draws, state.base_draws)
 	clear(&state.boats)
-	append(&state.draws, gfx.skybox_draw(&state.skybox))
-	append(&state.draws, gfx.draw_make(&state.sea_mesh, &state.sea_material, layer = .WORLD))
+	// (skybox and sea are added once in create, below base_draws)
 	for &model in state.models {
 		for _ in 0 ..< per_model {
 			position := gfx.Vec3 {
@@ -193,16 +193,16 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 			)
 			scale := 0.25 + rand.float32_range(0, 0.2)
 			if rand.float32() < 0.12 do scale *= rand.float32_range(2, 4) // a few big ships among the small boats
-			append(&state.draws, gfx.draw_model(&model, position, {scale, scale, scale}, yaw))
-			append(&state.boats, Boat_Slot{draw = len(state.draws) - 1, x = position.x, z = position.z, yaw = yaw, scale = scale})
+			draw := gfx.draw_add(gfx_ctx, gfx.draw_model(&model, position, {scale, scale, scale}, yaw))
+			append(&state.boats, Boat_Slot{draw = draw, x = position.x, z = position.z, yaw = yaw, scale = scale})
 		}
 	}
 	// Dragons ring the fleet, facing its centre, independent of the per-model count.
 	for index in 0 ..< DRAGON_COUNT {
 		angle := f32(index) / DRAGON_COUNT * linalg.TAU
 		scale := f32(DRAGON_SCALE)
-		append(
-			&state.draws,
+		gfx.draw_add(
+			gfx_ctx,
 			gfx.draw_model(
 				&state.dragon,
 				{math.cos(angle) * DRAGON_RING_RADIUS, 0, FLEET_CENTER_Z + math.sin(angle) * DRAGON_RING_RADIUS},
@@ -319,10 +319,10 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 
 	inputs := &ctx.input
 	if input.pressed(inputs, state.add_action) {
-		benchmark_populate(state, state.per_model + BENCH_STEP)
+		benchmark_populate(state, gfx_ctx, state.per_model + BENCH_STEP)
 	}
 	if input.pressed(inputs, state.subtract_action) && state.per_model >= BENCH_STEP {
-		benchmark_populate(state, state.per_model - BENCH_STEP)
+		benchmark_populate(state, gfx_ctx, state.per_model - BENCH_STEP)
 	}
 	if input.pressed(inputs, state.fog_action) {
 		state.fog_on = !state.fog_on
@@ -343,7 +343,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 			linalg.normalize0(linalg.cross(gfx.Vec3{0, 1, 0}, normal)),
 		)
 		gfx.draw_set_transform(
-			&state.draws[boat.draw],
+			gfx.draw_get(gfx_ctx, boat.draw),
 			{boat.x, SEA_Y + h + BOAT_DRAFT, boat.z},
 			tilt * boat.yaw,
 			{boat.scale, boat.scale, boat.scale},
@@ -408,7 +408,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 
 	// Frame flow: scene -> offscreen, text into the offscreen, blit out.
 	gfx.renderer_begin_frame(&gfx_ctx.renderer)
-	gfx.renderer_render_draws(&gfx_ctx.renderer, state.draws[:])
+	gfx.renderer_render_draws(&gfx_ctx.renderer, gfx_ctx.draws[:])
 	if gfx_ctx.swapchain != nil {
 		renderer := &gfx_ctx.renderer
 		gfx.renderer_begin_overlay_pass(renderer, renderer.scene_color)
@@ -443,8 +443,6 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 benchmark_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Benchmark_State)demo.state
-	delete(state.draws)
-	gfx.material_destroy(&state.skybox.material)
 	gfx.material_destroy(&state.sea_material)
 	delete(state.text_vertices)
 	gfx.material_destroy(&state.overlay_material)

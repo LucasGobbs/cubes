@@ -14,6 +14,7 @@ Skybox :: struct {
 }
 
 // path: equirectangular (2:1) PNG/JPEG panorama, e.g. static/skybox/skybox-day.png.
+@(private = "file")
 skybox_create :: proc(gfx_ctx: ^Device, path: string) -> Skybox {
 	skybox: Skybox
 	attributes := default_skybox_vertex_attributes(VertexData)
@@ -62,10 +63,12 @@ skybox_create :: proc(gfx_ctx: ^Device, path: string) -> Skybox {
 }
 
 // Submit each frame (e.g. in a Draw list). The transform is ignored by the shader.
+@(private = "file")
 skybox_draw :: proc(skybox: ^Skybox) -> Draw {
 	return Draw{mesh = &skybox.mesh, material = &skybox.material, layer = .SKYBOX}
 }
 
+@(private = "file")
 skybox_destroy :: proc(gfx_ctx: ^Device, skybox: ^Skybox) {
 	mesh_destroy(gfx_ctx, &skybox.mesh)
 	material_destroy(&skybox.material)
@@ -73,6 +76,22 @@ skybox_destroy :: proc(gfx_ctx: ^Device, skybox: ^Skybox) {
 	sampler_destroy(gfx_ctx, skybox.sampler)
 	pipeline_destroy(gfx_ctx, skybox.pipeline)
 	skybox^ = {}
+}
+
+// Loads a panorama skybox owned by the open scope; draws it behind everything.
+// path: equirectangular (2:1) PNG/JPEG, e.g. static/skybox/skybox-day.png.
+skybox_add :: proc(gfx_ctx: ^Device, path: string) -> int {
+	skybox := new(Skybox)
+	skybox^ = skybox_create(gfx_ctx, path)
+	scope_defer(gfx_ctx, skybox_release, skybox)
+	return draw_add(gfx_ctx, skybox_draw(skybox))
+}
+
+@(private = "file")
+skybox_release :: proc(gfx_ctx: ^Device, user: rawptr) {
+	skybox := (^Skybox)(user)
+	skybox_destroy(gfx_ctx, skybox)
+	free(skybox)
 }
 
 bind_skybox_draw :: proc(

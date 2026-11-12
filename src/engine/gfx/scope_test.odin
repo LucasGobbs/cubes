@@ -13,6 +13,9 @@ scope_test_free :: proc(dev: ^Device) {
 	delete(dev.buffers)
 	handle_pool_destroy(&dev.buffer_handles)
 	delete(dev.scopes)
+	delete(dev.scope_draw_marks)
+	delete(dev.draws)
+	delete(dev.unscoped_entries)
 }
 
 @(test)

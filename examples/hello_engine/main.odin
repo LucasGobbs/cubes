@@ -26,6 +26,6 @@ start :: proc(app: ^App, world: ^engine.World) {
 }
 
 update :: proc(app: ^App, world: ^engine.World, dt: f32) {
-	transform := engine.get(world, app.hero, engine.Transform)
+	transform := engine.entity_get_component(world, app.hero, engine.Transform)
 	transform.rotation = linalg.quaternion_angle_axis_f32(dt, {0, 1, 0}) * transform.rotation
 }

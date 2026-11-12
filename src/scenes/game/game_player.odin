@@ -25,9 +25,9 @@ Player :: struct {
 }
 
 player_create :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Player) {
-	engine.world_add(world, id, engine.Model{path = PLAYER_MODEL})
-	engine.world_add(world, id, engine.Animator{clip = PLAYER_CLIP})
-	engine.world_add(world, id, engine.Health{current = PLAYER_HEALTH, max = PLAYER_HEALTH})
+	engine.entity_add_component(world, id, engine.Model{path = PLAYER_MODEL})
+	engine.entity_add_component(world, id, engine.Animator{clip = PLAYER_CLIP})
+	engine.entity_add_component(world, id, engine.Health{current = PLAYER_HEALTH, max = PLAYER_HEALTH})
 }
 
 player_tick :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Player, dt: f32) {
@@ -43,16 +43,16 @@ player_tick :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Player, d
 	}
 	if move != {} {
 		direction := linalg.normalize(move)
-		transform := engine.get(world, id, engine.Transform)
+		transform := engine.entity_get_component(world, id, engine.Transform)
 		transform.position += direction * PLAYER_SPEED * dt
 		transform.rotation = game_facing(direction)
 	}
 
-	health := engine.get(world, id, engine.Health)
+	health := engine.entity_get_component(world, id, engine.Health)
 	if health.current > 0 do return
 	log.infof("game: player down, respawning at origin")
 	engine.world_destroy_type(world, self.enemy)
-	transform := engine.get(world, id, engine.Transform)
+	transform := engine.entity_get_component(world, id, engine.Transform)
 	transform.position = {}
 	transform.rotation = linalg.QUATERNIONF32_IDENTITY
 	health.current = health.max

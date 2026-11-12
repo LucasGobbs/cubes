@@ -57,8 +57,6 @@ Grass_Cluster :: struct {
 Forest_State :: struct {
 	pipeline:         gfx.Pipeline_Handle,
 	material:         gfx.Material,
-	draws:            [dynamic]gfx.Draw,
-	skybox:           gfx.Skybox,
 	bloom:            gfx.Bloom,
 	fly_camera:       gfx.Fly_Camera,
 	fly_controls:     engine.Fly_Controls,
@@ -115,8 +113,7 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		gfx.mesh_upload(&gfx_ctx.renderer, &state.tuft_mesh[index])
 	}
 
-	state.skybox = gfx.skybox_create(gfx_ctx, default.SKYBOX_PATH)
-	append(&state.draws, gfx.skybox_draw(&state.skybox))
+	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
 
 	state.bloom = gfx.bloom_create(gfx_ctx, 0.95, 0.2, 5)
 	gfx.renderer_set_passes(&gfx_ctx.renderer, .Post, []gfx.Render_Pass{gfx.bloom_pass(&state.bloom)})
@@ -155,7 +152,7 @@ forest_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 	gfx_ctx.renderer.fog = {fog.r, fog.g, fog.b, FOG_DISTANCE}
 	forest_stream(state, gfx_ctx, BUILD_BUDGET, BUILD_RADIUS)
 	naive.flare_update(gfx_ctx, &state.flare, naive.SUN_DIRECTION)
-	gfx.render(gfx_ctx, state.draws[:])
+	gfx.render(gfx_ctx)
 }
 
 // Distance from the camera to a cluster centre; span in chunks, (i, j) cluster index.
@@ -197,9 +194,9 @@ forest_stream :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, budget: int, r
 		if !cluster.built {
 			if budget <= 0 do continue
 			budget -= 1
-			forest_build_grass(state, cluster, i, j)
+			forest_build_grass(state, gfx_ctx, cluster, i, j)
 		}
-		grass_apply_lod(state, cluster, want)
+		grass_apply_lod(state, gfx_ctx, cluster, want)
 	}
 }
 
@@ -215,19 +212,19 @@ forest_build_terrain :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster
 	cluster.mesh = forest_upload(gfx_ctx, &cluster.data, ox, oz)
 	cluster.built = true
 
-	append(&state.draws, gfx.draw_make(&cluster.mesh, &state.material, {ox, 0, oz}))
+	gfx.draw_add(gfx_ctx, gfx.draw_make(&cluster.mesh, &state.material, {ox, 0, oz}))
 
 	// One draw per tree/rock/bush, sharing the variant meshes.
 	for instance in state.placements {
 		rotation := linalg.quaternion_angle_axis_f32(instance.yaw, {0, 1, 0})
 		scale := instance.scale
-		append(&state.draws, gfx.draw_make(&state.variant_mesh[instance.variant], &state.material, instance.position, rotation, {scale, scale, scale}))
+		gfx.draw_add(gfx_ctx, gfx.draw_make(&state.variant_mesh[instance.variant], &state.material, instance.position, rotation, {scale, scale, scale}))
 	}
 }
 
 // One draw per grass clump/flower, sharing the tuft meshes. Created hidden;
 // grass_apply_lod shows them.
-forest_build_grass :: proc(state: ^Forest_State, cluster: ^Grass_Cluster, i, j: int) {
+forest_build_grass :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster: ^Grass_Cluster, i, j: int) {
 	clear(&state.grass_scratch)
 	for dz in 0 ..< GRASS_SPAN {
 		for dx in 0 ..< GRASS_SPAN {
@@ -239,16 +236,15 @@ forest_build_grass :: proc(state: ^Forest_State, cluster: ^Grass_Cluster, i, j: 
 		scale := instance.scale
 		draw := gfx.draw_make(&state.tuft_mesh[instance.lod1], &state.material, instance.position, rotation, {scale, scale, scale})
 		draw.hidden = true
-		append(&state.draws, draw)
-		append(&cluster.items, Grass_Item{len(state.draws) - 1, instance})
+		append(&cluster.items, Grass_Item{gfx.draw_add(gfx_ctx, draw), instance})
 	}
 	cluster.built = true
 }
 
 // want: 0 hidden (skipped on submit), 1 near LOD, 2 far LOD.
-grass_apply_lod :: proc(state: ^Forest_State, cluster: ^Grass_Cluster, want: int) {
+grass_apply_lod :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster: ^Grass_Cluster, want: int) {
 	for item in cluster.items {
-		draw := &state.draws[item.draw]
+		draw := gfx.draw_get(gfx_ctx, item.draw)
 		draw.hidden = want == 0
 		if want == 0 do continue
 		variant := item.instance.lod0 if want == 1 else item.instance.lod1
@@ -279,8 +275,6 @@ forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	state := cast(^Forest_State)demo.state
 	gfx.renderer_clear_passes(&gfx_ctx.renderer, .Post)
 	naive.flare_destroy(gfx_ctx, &state.flare)
-	delete(state.draws)
-	gfx.material_destroy(&state.skybox.material)
 	for &cluster in state.terrain {
 		delete(cluster.data.verts)
 		delete(cluster.data.idx)

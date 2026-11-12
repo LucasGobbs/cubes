@@ -116,11 +116,11 @@ world_spawn_scene :: proc(world: ^World, def: ^Scene_Def) -> []Entity_Id {
 			transform.rotation = linalg.quaternion_from_euler_angles_f32(r.x, r.y, r.z, .XYZ)
 		}
 		id := spawn(world, transform)
-		if entity.model != "" do world_add(world, id, Model{path = entity.model})
-		if entity.clip != "" do world_add(world, id, Animator{clip = entity.clip})
+		if entity.model != "" do entity_add_component(world, id, Model{path = entity.model})
+		if entity.clip != "" do entity_add_component(world, id, Animator{clip = entity.clip})
 		if entity.sprite != "" {
-			world_add(world, id, Sprite{texture = entity.sprite, grid = entity.grid, frame = entity.frame, color = entity.color, layer = entity.layer, flip_x = entity.flip_x, flip_y = entity.flip_y})
-			if anim, has := entity.anim.?; has do world_add(world, id, Sprite_Anim{first = anim.first, last = anim.last, fps = anim.fps, loop = anim.loop})
+			entity_add_component(world, id, Sprite{texture = entity.sprite, grid = entity.grid, frame = entity.frame, color = entity.color, layer = entity.layer, flip_x = entity.flip_x, flip_y = entity.flip_y})
+			if anim, has := entity.anim.?; has do entity_add_component(world, id, Sprite_Anim{first = anim.first, last = anim.last, fps = anim.fps, loop = anim.loop})
 		}
 		ids[index] = id
 	}

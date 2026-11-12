@@ -38,8 +38,6 @@ Platform_State :: struct {
 	// CPU vertex data must outlive mesh upload; kept until destroy.
 	solids:    [dynamic]Proto_Solid,
 	meshes:    [dynamic]^gfx.Mesh,
-	draws:     [dynamic]gfx.Draw,
-	skybox:    gfx.Skybox,
 	fly_camera: gfx.Fly_Camera,
 	fly_controls: engine.Fly_Controls,
 	player:    int,
@@ -71,8 +69,7 @@ platform_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		gfx.bind_textured_material(&state.materials[mat], state.textures[mat], state.sampler)
 	}
 
-	state.skybox = gfx.skybox_create(gfx_ctx, default.SKYBOX_PATH)
-	append(&state.draws, gfx.skybox_draw(&state.skybox))
+	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
 
 	// Ground covers the whole field (x -24..24, z -14..14) with a pit at x -4..0, z -2..2.
 	proto_box(state, gfx_ctx, {-14, -1, 0}, {10, 1, 14}, .Ground)
@@ -82,7 +79,7 @@ platform_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 
 	// Ramp turned on Y so it climbs diagonally across the ground.
 	ramp := proto_piece(state, gfx_ctx, {{-6, 0}, {0, 0}, {0, 4}}, 4, {-8, 0, 0}, .Ramp)
-	gfx.draw_set_transform(&state.draws[ramp], {-8, 0, 0}, linalg.quaternion_from_euler_angles_f32(0, 0.6, 0, .XYZ), {1, 1, 1})
+	gfx.draw_set_transform(gfx.draw_get(gfx_ctx, ramp), {-8, 0, 0}, linalg.quaternion_from_euler_angles_f32(0, 0.6, 0, .XYZ), {1, 1, 1})
 
 	// Trapezoid step set back in depth.
 	proto_piece(state, gfx_ctx, {{-1.5, 0}, {1.5, 0}, {0.8, 3}, {-0.8, 3}}, 2, {4, 0, -5}, .Trapezoid)
@@ -120,15 +117,13 @@ platform_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32
 	f = f * f * (3 - 2 * f)
 	pos := PLAYER_PATH[i] + (PLAYER_PATH[(i + 1) % n] - PLAYER_PATH[i]) * f
 	pos.y += 1.0 * math.sin(f * math.PI)
-	gfx.draw_set_transform(&state.draws[state.player], pos, linalg.QUATERNIONF32_IDENTITY, {1, 1, 1})
+	gfx.draw_set_transform(gfx.draw_get(gfx_ctx, state.player), pos, linalg.QUATERNIONF32_IDENTITY, {1, 1, 1})
 
-	gfx.render(gfx_ctx, state.draws[:])
+	gfx.render(gfx_ctx)
 }
 
 platform_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	state := cast(^Platform_State)demo.state
-	delete(state.draws)
-	gfx.material_destroy(&state.skybox.material)
 	for mesh in state.meshes do free(mesh)
 	for &solid in state.solids {
 		delete(solid.verts)
@@ -170,8 +165,7 @@ proto_piece :: proc(
 	gfx.mesh_upload(&gfx_ctx.renderer, mesh)
 	append(&state.meshes, mesh)
 
-	append(&state.draws, gfx.draw_make(mesh, &state.materials[material], at))
-	return len(state.draws) - 1
+	return gfx.draw_add(gfx_ctx, gfx.draw_make(mesh, &state.materials[material], at))
 }
 
 // Extrudes a convex polygon along Z: two caps and one quad per edge.

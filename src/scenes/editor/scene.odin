@@ -19,7 +19,6 @@ Editor_State :: struct {
 	sampler:           gfx.Sampler_Handle,
 	textured_model:    gfx.Model,
 	unlit_model:       gfx.Model,
-	skybox:            gfx.Skybox,
 	shared_material:   gfx.Material,
 	quad_vertices:     [4]gfx.VertexData,
 	quad_indices:      [6]u16,
@@ -28,7 +27,6 @@ Editor_State :: struct {
 	ui:                editor.Ui_State,
 	editor:            ^editor.Editor,
 	tint:              [4]f32,
-	draws:             [dynamic]gfx.Draw,
 	center_entity:     int,
 	rotation_speed:    f32,
 	rotation:          f32,
@@ -70,13 +68,10 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	)
 	gfx.set_unlit_color(&state.unlit_model.material, {0.15, 0.85, 0.3, 1})
 
-	state.skybox = gfx.skybox_create(gfx_ctx, default.SKYBOX_PATH)
-	append(&state.draws, gfx.skybox_draw(&state.skybox))
-
-	append(&state.draws, gfx.draw_model(&state.textured_model, {-5, -.5, -12}, {0.4, 0.4, 0.4}))
-	state.center_entity = len(state.draws)
-	append(&state.draws, gfx.draw_model(&state.textured_model, {0, -.5, -12}, {0.4, 0.4, 0.4}))
-	append(&state.draws, gfx.draw_model(&state.unlit_model, {5, -.5, -12}, {0.4, 0.4, 0.4}))
+	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
+	gfx.draw_add(gfx_ctx, gfx.draw_model(&state.textured_model, {-5, -.5, -12}, {0.4, 0.4, 0.4}))
+	state.center_entity = gfx.draw_add(gfx_ctx, gfx.draw_model(&state.textured_model, {0, -.5, -12}, {0.4, 0.4, 0.4}))
+	gfx.draw_add(gfx_ctx, gfx.draw_model(&state.unlit_model, {5, -.5, -12}, {0.4, 0.4, 0.4}))
 
 	// One material shared by any number of entities; the editor edits
 	// state.tint live.
@@ -84,8 +79,8 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.tint = {0.95, 0.85, 0.2, 1}
 	gfx.set_unlit_color(&state.shared_material, state.tint)
 
-	append(
-		&state.draws,
+	gfx.draw_add(
+		gfx_ctx,
 		gfx.draw_make(&state.unlit_model.mesh, &state.shared_material, {0, 1.2, -12}, scale = {0.4, 0.4, 0.4}),
 	)
 
@@ -98,7 +93,7 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.quad_indices = {0, 1, 2, 2, 3, 0}
 	state.quad_mesh = gfx.mesh_create(gfx_ctx, state.quad_vertices[:], state.quad_indices[:])
 	gfx.mesh_upload(&gfx_ctx.renderer, &state.quad_mesh)
-	append(&state.draws, gfx.draw_make(&state.quad_mesh, &state.shared_material, {0, 1.2, -8}, layer = .UI))
+	gfx.draw_add(gfx_ctx, gfx.draw_make(&state.quad_mesh, &state.shared_material, {0, 1.2, -8}, layer = .UI))
 
 	// Post-processing: separable gaussian blur over scene_color, run by the
 	// renderer after the scene (renderer_run_post).
@@ -130,7 +125,7 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 			.XYZ,
 		)
 		scale := 0.25 + rand.float32_range(0, 0.2)
-		append(&state.draws, gfx.draw_model(&state.textured_model, position, {scale, scale, scale}, yaw))
+		gfx.draw_add(gfx_ctx, gfx.draw_model(&state.textured_model, position, {scale, scale, scale}, yaw))
 	}
 
 	state.rotation_speed = linalg.to_radians(f32(90))
@@ -179,7 +174,7 @@ ed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 
 	state.rotation += state.rotation_speed * delta_time
 	gfx.draw_set_transform(
-		&state.draws[state.center_entity],
+		gfx.draw_get(gfx_ctx, state.center_entity),
 		{0, -.5, -12},
 		linalg.quaternion_from_euler_angles_f32(0, state.rotation, 0, .XYZ),
 		{0.4, 0.4, 0.4},
@@ -188,7 +183,7 @@ ed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	// Frame flow: scene -> offscreen, post passes -> final, editor overlay
 	// (or plain present) -> swapchain.
 	gfx.renderer_begin_frame(&gfx_ctx.renderer)
-	gfx.renderer_render_draws(&gfx_ctx.renderer, state.draws[:])
+	gfx.renderer_render_draws(&gfx_ctx.renderer, gfx_ctx.draws[:])
 	if gfx_ctx.swapchain != nil {
 		final := gfx.renderer_run_post(&gfx_ctx.renderer)
 		when gfx.EDITOR {
@@ -209,8 +204,6 @@ ed_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	state := cast(^Editor_State)demo.state
 	engine.set_event_hook(ctx, nil, nil)
 	_ = sdl.SetWindowRelativeMouseMode(gfx_ctx.window, true)
-	delete(state.draws)
-	gfx.material_destroy(&state.skybox.material)
 	when gfx.EDITOR {
 		editor.editor_destroy(state.editor)
 		free(state.editor)

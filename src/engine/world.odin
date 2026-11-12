@@ -13,12 +13,12 @@
 //           engine.Animator{clip = "clip_0"})
 //   }
 //   update :: proc(app: ^App, world: ^engine.World, dt: f32) {
-//       // edit any Transform here: engine.get(world, app.hero, engine.Transform)
+//       // edit any Transform here: engine.entity_get_component(world, app.hero, engine.Transform)
 //   }
 //
 // Per-entity logic (registry): a state struct plus create/tick/destroy procs.
 //   Ship :: struct { target: engine.Entity_Type }
-//   ship_create :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Ship) { /* world_add components */ }
+//   ship_create :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Ship) { /* entity_add_component */ }
 //   ship_tick :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Ship, dt: f32) { /* ... */ }
 //   // start:  ship := engine.register_type(world, Ship, ship_create, ship_tick, nil)
 //   // spawn:  engine.spawn_typed(world, ship, Ship{target = player_type})
@@ -114,7 +114,7 @@ Camera_2D :: struct {
 	integer_scale: bool,
 }
 
-// Plain data: game code reads and writes current through get.
+// Plain data: game code reads and writes current through entity_get_component.
 Health :: struct {
 	current, max: f32,
 }
@@ -221,8 +221,8 @@ world_valid :: proc(world: ^World, id: Entity_Id) -> bool {
 	return slot.alive && slot.generation == id.generation
 }
 
-// Pointer into the component storage: valid until the next world_add or spawn.
-get :: proc(world: ^World, id: Entity_Id, $T: typeid) -> ^T {
+// Pointer into the component storage: valid until the next entity_add_component or spawn.
+entity_get_component :: proc(world: ^World, id: Entity_Id, $T: typeid) -> ^T {
 	if !world_valid(world, id) do return nil
 	return slot_component(&world.slots[id.index], T)
 }
@@ -252,12 +252,22 @@ world_count :: proc(world: ^World, type: Entity_Type) -> int {
 	return count
 }
 
-world_add :: proc(world: ^World, id: Entity_Id, component: Component) {
-	assert(world_valid(world, id), "engine: world_add on invalid entity")
+entity_add_component :: proc(world: ^World, id: Entity_Id, component: Component) {
+	assert(world_valid(world, id), "engine: entity_add_component on invalid entity")
 	slot := &world.slots[id.index]
 	set_component(slot, component)
 	sync_transform(slot)
 	slot_resolve(world, slot)
+}
+
+// Transform of a live entity, nil if the id is invalid. Every entity has one from spawn.
+entity_transform :: proc(world: ^World, id: Entity_Id) -> ^Transform {
+	return entity_get_component(world, id, Transform)
+}
+
+// Replaces the entity's Transform. Zero rotation or scale mean defaults, as in spawn.
+entity_set_transform :: proc(world: ^World, id: Entity_Id, position := Vec3{}, rotation := linalg.QUATERNIONF32_IDENTITY, scale := Vec3{1, 1, 1}) {
+	entity_add_component(world, id, Transform{position = position, rotation = rotation, scale = scale})
 }
 
 // Runs the entity's destroy proc while its components are still alive, then frees
