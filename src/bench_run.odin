@@ -5,6 +5,7 @@ package main
 import "core:fmt"
 import "core:slice"
 import "core:time"
+import engine "engine"
 import gfx "engine/gfx"
 
 // Frames before this are loading and GPU warm-up; they are not sampled.
@@ -111,4 +112,16 @@ bench_report :: proc(bench: ^Bench_Run, dev: ^gfx.Device, scene_name: string) {
 		prepare.max,
 	)
 	fmt.printf("  cpu flush    avg %.3f   p95 %.3f   max %.3f ms\n", flush.avg, flush.p95, flush.max)
+}
+
+// Config.after_frame: records one frame and stops the run once the duration is met.
+bench_after_frame :: proc(ctx: ^engine.Context, scene_name: string, delta_time: f32, user: rawptr) {
+	if bench.seconds <= 0 do return
+	bench_record(&bench, &ctx.gfx, delta_time)
+	if bench_done(&bench) do engine.request_quit(ctx)
+}
+
+// Config.before_exit: prints the report after the loop, before the scene is torn down.
+bench_before_exit :: proc(ctx: ^engine.Context, scene_name: string, user: rawptr) {
+	if bench.seconds > 0 do bench_report(&bench, &ctx.gfx, scene_name)
 }

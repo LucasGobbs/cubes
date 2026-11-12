@@ -4,7 +4,6 @@ package simple
 import "core:math/linalg"
 import gfx "../../engine/gfx"
 import default "../../engine/default"
-import input "../../engine/input"
 import engine "../../engine"
 
 SPIN_SHIP_POSITION :: [3]f32{-2.5, -0.5, -10}
@@ -34,12 +33,13 @@ simple_scene :: proc() -> engine.Scene {
 	return {name = "Simple", create = simple_create, tick = simple_tick, destroy = simple_destroy}
 }
 
-simple_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
+simple_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
+	dev := &ctx.gfx
 	state := new(Simple_State)
 	demo.state = state
 	engine.scene_camera_reset(demo, dev)
 
-	state.fly_camera = default.fly_camera_create(dev, "simple")
+	state.fly_camera = default.fly_camera_create(dev, &ctx.input, "simple")
 
 	state.textured_pipeline = default.create_textured_pipeline(dev)
 	state.unlit_pipeline = default.create_unlit_pipeline(dev)
@@ -81,10 +81,11 @@ simple_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	return true
 }
 
-simple_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
+simple_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
+	dev := &ctx.gfx
 	state := cast(^Simple_State)demo.state
 
-	default.fly_camera_tick(&state.fly_camera, dev, delta_time)
+	default.fly_camera_tick(&state.fly_camera, dev, &ctx.input, delta_time)
 
 	state.rotation += linalg.to_radians(f32(60)) * delta_time
 	gfx.draw_set_transform(
@@ -94,8 +95,8 @@ simple_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 		SHIP_SCALE,
 	)
 
-	state.quad_vertices[2].position.y = 1 + 0.5 * linalg.sin(dev.time * 2)
-	state.quad_vertices[3].position.y = 1 - 0.5 * linalg.sin(dev.time * 2)
+	state.quad_vertices[2].position.y = 1 + 0.5 * linalg.sin(ctx.time * 2)
+	state.quad_vertices[3].position.y = 1 - 0.5 * linalg.sin(ctx.time * 2)
 	gfx.mesh_update(
 		&dev.renderer,
 		&state.quad_mesh,
@@ -106,7 +107,8 @@ simple_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	gfx.render(dev, state.draws[:])
 }
 
-simple_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
+simple_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
+	dev := &ctx.gfx
 	state := cast(^Simple_State)demo.state
 	delete(state.draws)
 	default.skybox_destroy(dev, &state.skybox)

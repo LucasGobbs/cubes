@@ -13,7 +13,7 @@ App :: struct {
 
 main :: proc() {
 	app: App
-	engine.run(&app, start, update, title = "hello_engine")
+	engine.run_app(&app, start, update, title = "hello_engine")
 }
 
 start :: proc(app: ^App, world: ^engine.World) {

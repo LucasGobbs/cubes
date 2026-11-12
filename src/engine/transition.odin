@@ -2,13 +2,12 @@
 // is covered by a full-screen overlay (After_Post pass, drawn under the F1
 // stats), the scene swaps when fully covered, then the overlay clears.
 // The overlay reuses the stats font's white texel, pipelines and sampler.
-package main
+package engine
 
 import "core:log"
 import "core:math"
 import "core:math/linalg"
-import engine "engine"
-import gfx "engine/gfx"
+import gfx "gfx"
 import sdl "vendor:sdl3"
 
 Transition_Phase :: enum {
@@ -19,8 +18,8 @@ Transition_Phase :: enum {
 
 Transition :: struct {
 	phase:    Transition_Phase,
-	request:  engine.Scene_Request,
-	target:   int, // SCENES index
+	request:  Scene_Request,
+	target:   int, // index into host_config.scenes
 	elapsed:  f32,
 	mesh:     gfx.Mesh,
 	vertices: [dynamic]gfx.VertexData,
@@ -44,25 +43,26 @@ transition_destroy :: proc(dev: ^gfx.Device) {
 
 // Runs at the top of a tick. Returns true when it swapped the scene (the caller
 // must skip ticking the old one).
-transition_tick :: proc(dev: ^gfx.Device, scene: ^engine.Scene, delta_time: f32) -> bool {
+transition_tick :: proc(ctx: ^Context, scene: ^Scene, delta_time: f32) -> bool {
+	dev := &ctx.gfx
 	transition.draw = false
 	if transition.phase == .None {
-		request, ok := engine.take_scene_request()
+		request, ok := take_scene_request()
 		if !ok do return false
 		index := -1
-		for entry, i in SCENES do if entry.name == request.name do index = i
+		for entry, i in host_config.scenes do if entry.name == request.name do index = i
 		if index < 0 {
 			log.errorf("change_scene: unknown scene %q", request.name)
 			return false
 		}
 		if index == current_scene do return false
 		if request.transition == .Cut {
-			scene_switch(dev, scene, index)
+			host_scene_switch(ctx, scene, index)
 			return true
 		}
 		if request.transition == .Flash || request.transition == .Blink {
 			// Swap now; only the overlay lingers. The In phase lasts duration/2.
-			scene_switch(dev, scene, index)
+			host_scene_switch(ctx, scene, index)
 			request.duration = 0.5 if request.transition == .Flash else 0.2
 			transition.request, transition.target, transition.elapsed, transition.phase = request, index, 0, .In
 			transition_build(dev, 0)
@@ -77,7 +77,7 @@ transition_tick :: proc(dev: ^gfx.Device, scene: ^engine.Scene, delta_time: f32)
 	progress := min(transition.elapsed / half, 1)
 	swapped := false
 	if transition.phase == .Out && progress >= 1 {
-		scene_switch(dev, scene, transition.target)
+		host_scene_switch(ctx, scene, transition.target)
 		transition.phase, transition.elapsed, progress, swapped = .In, 0, 0, true
 	} else if transition.phase == .In && progress >= 1 {
 		transition.phase = .None

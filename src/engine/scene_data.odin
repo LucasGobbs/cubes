@@ -14,7 +14,7 @@ data_scene :: proc(definition: string) -> Scene {
 	return {name = definition, definition = definition, create = data_create, tick = data_tick, destroy = data_destroy}
 }
 
-data_create :: proc(scene: ^Scene, dev: ^gfx.Device) -> bool {
+data_create :: proc(scene: ^Scene, ctx: ^Context) -> bool {
 	state := new(Data_State)
 	if !scene_file_load(&state.file, scene.definition) {
 		free(state)
@@ -22,18 +22,18 @@ data_create :: proc(scene: ^Scene, dev: ^gfx.Device) -> bool {
 	}
 	scene.state = state
 	if state.file.def.name != "" do scene.name = state.file.def.name
-	state.world = world_create(dev)
+	state.world = world_create(&ctx.gfx)
 	world_spawn_scene(&state.world, &state.file.def)
 	return true
 }
 
-data_tick :: proc(scene: ^Scene, dev: ^gfx.Device, delta_time: f32) {
+data_tick :: proc(scene: ^Scene, ctx: ^Context, delta_time: f32) {
 	state := cast(^Data_State)scene.state
 	world_update(&state.world, delta_time)
 	world_render(&state.world)
 }
 
-data_destroy :: proc(scene: ^Scene, dev: ^gfx.Device) {
+data_destroy :: proc(scene: ^Scene, ctx: ^Context) {
 	state := cast(^Data_State)scene.state
 	world_destroy(&state.world)
 	scene_file_destroy(&state.file)

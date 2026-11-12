@@ -53,12 +53,13 @@ forest_naive_scene :: proc() -> engine.Scene {
 	return {name = "Forest (naive)", create = forest_create, tick = forest_tick, destroy = forest_destroy}
 }
 
-forest_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
+forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
+	dev := &ctx.gfx
 	state := new(Forest_State)
 	demo.state = state
 	for &chunk in state.chunks do chunk.grass_entity = -1
 	engine.scene_camera_reset(demo, dev, {0, terrain_height(0, 0) + 2.5, 0}, {0, terrain_height(0, -10) + 2, -10})
-	state.fly_camera = default.fly_camera_create(dev, "forest")
+	state.fly_camera = default.fly_camera_create(dev, &ctx.input, "forest")
 
 	attributes := shader_parameters.forest_vertex_attributes(gfx.VertexData)
 	state.pipeline = gfx.pipeline_create(
@@ -109,9 +110,10 @@ forest_bind_draw :: proc(
 	gfx.draw_push_uniform(draw_context, shader_parameters.FOREST_VERTEX_UNIFORM_BLOCK, &uniforms)
 }
 
-forest_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
+forest_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
+	dev := &ctx.gfx
 	state := cast(^Forest_State)demo.state
-	default.fly_camera_tick(&state.fly_camera, dev, delta_time)
+	default.fly_camera_tick(&state.fly_camera, dev, &ctx.input, delta_time)
 	state.time += delta_time
 	dev.renderer.fog = {FOG_COLOR.r, FOG_COLOR.g, FOG_COLOR.b, FOG_DISTANCE}
 	forest_stream(state, dev, BUILD_PER_FRAME, BUILD_RADIUS)
@@ -205,7 +207,8 @@ forest_upload :: proc(dev: ^gfx.Device, data: ^Mesh_Data, indices: []u32, ox, oz
 	return mesh
 }
 
-forest_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
+forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
+	dev := &ctx.gfx
 	state := cast(^Forest_State)demo.state
 	gfx.renderer_clear_passes(&dev.renderer, .Post)
 	flare_destroy(dev, &state.flare)

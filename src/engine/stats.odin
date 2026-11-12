@@ -1,17 +1,17 @@
 // F1 stats overlay: dark panel with debug numbers at the bottom-left, available
 // in every scene. It is an After_Post render pass, so any scene that runs
-// renderer_run_post (gfx_render, renderer_render_frame) shows it; scenes never
+// renderer_run_post (gfx.render, renderer_render_frame) shows it; scenes never
 // touch it. Text is laid out in the tick (mesh uploads must happen outside a
 // frame) and the pass only draws.
-package main
+package engine
 
 import "core:fmt"
 import "core:log"
 import "core:math/linalg"
 import "core:time"
-import gfx "engine/gfx"
-import default "engine/default"
-import input "engine/input"
+import gfx "gfx"
+import default "default"
+import input "input"
 import sdl "vendor:sdl3"
 STATS_BUDGET_MS :: 1000.0 / 60.0 // frame quota at 60 fps
 
@@ -46,8 +46,9 @@ stats: Stats
 
 // Registers F1 and the draw pass. Call before the input mark is taken so scene
 // switches keep the binding.
-stats_create :: proc(dev: ^gfx.Device) {
-	inputs := gfx.gfx_input(dev)
+stats_create :: proc(ctx: ^Context) {
+	dev := &ctx.gfx
+	inputs := &ctx.input
 	stats.action = input.button(inputs, "app.stats")
 	input.bind_key(inputs, stats.action, .F1)
 	stats.dump_action = input.button(inputs, "app.stats_dump")
@@ -82,8 +83,10 @@ stats_destroy :: proc(dev: ^gfx.Device) {
 	delete(stats.vertices)
 }
 
-stats_tick :: proc(dev: ^gfx.Device, delta_time: f32, scene_name: string) {
-	if input.pressed(gfx.gfx_input(dev), stats.action) do stats.visible = !stats.visible
+stats_tick :: proc(ctx: ^Context, delta_time: f32, scene_name: string) {
+	dev := &ctx.gfx
+	inputs := &ctx.input
+	if input.pressed(inputs, stats.action) do stats.visible = !stats.visible
 	ms := delta_time * 1000
 	stats.frame_ms = ms if stats.frame_ms == 0 else stats.frame_ms * 0.95 + ms * 0.05
 	render_ms := f32(time.duration_microseconds(dev.renderer.prepare_time + dev.renderer.flush_time)) / 1000
@@ -126,7 +129,7 @@ stats_tick :: proc(dev: ^gfx.Device, delta_time: f32, scene_name: string) {
 		fmt.tprintf("window  %dx%d  msaa %s", dev.window_size.x, dev.window_size.y, renderer.msaa_enabled ? "4x" : "off"),
 		fmt.tprintf("camera  %.1f %.1f %.1f", camera.x, camera.y, camera.z),
 	}
-	if input.pressed(gfx.gfx_input(dev), stats.dump_action) {
+	if input.pressed(inputs, stats.dump_action) {
 		for line in lines do log.infof("stats| %s", line)
 	}
 

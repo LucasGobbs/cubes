@@ -28,12 +28,13 @@ game_scene :: proc() -> engine.Scene {
 	return {name = "Game", create = game_create, tick = game_tick, destroy = game_destroy}
 }
 
-game_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
+game_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
+	dev := &ctx.gfx
 	state := new(Game_State)
 	demo.state = state
 	engine.scene_camera_reset(demo, dev) // restores full-window targets after the editor shrinks them
 
-	inputs := gfx.gfx_input(dev)
+	inputs := &ctx.input
 	state.keys = {
 		input.button(inputs, "game.up"),
 		input.button(inputs, "game.down"),
@@ -64,9 +65,9 @@ game_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	return true
 }
 
-game_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
+game_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	state := cast(^Game_State)demo.state
-	inputs := gfx.gfx_input(dev)
+	inputs := &ctx.input
 
 	move: gfx.Vec3
 	if input.down(inputs, state.keys[0]) do move.z -= 1
@@ -104,7 +105,7 @@ game_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	engine.world_render(&state.world)
 }
 
-game_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
+game_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	state := cast(^Game_State)demo.state
 	engine.world_destroy(&state.world)
 	free(state)

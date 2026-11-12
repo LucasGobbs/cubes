@@ -39,12 +39,13 @@ models_position :: proc(index: int) -> [3]f32 {
 	return {(f32(index) - 1.5) * 8, 0, -16}
 }
 
-models_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
+models_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
+	dev := &ctx.gfx
 	state := new(Models_State)
 	demo.state = state
 	engine.scene_camera_reset(demo, dev, {0, 2, 4})
 
-	state.fly_camera = default.fly_camera_create(dev, "models")
+	state.fly_camera = default.fly_camera_create(dev, &ctx.input, "models")
 
 	state.pipeline = default.create_textured_pipeline(dev)
 	state.sampler = gfx.sampler_create(dev, gfx.SAMPLER_TRILINEAR)
@@ -84,10 +85,11 @@ models_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	return true
 }
 
-models_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
+models_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
+	dev := &ctx.gfx
 	state := cast(^Models_State)demo.state
 
-	default.fly_camera_tick(&state.fly_camera, dev, delta_time)
+	default.fly_camera_tick(&state.fly_camera, dev, &ctx.input, delta_time)
 
 	state.rotation += delta_time
 	for draw, index in state.model_draws {
@@ -106,7 +108,8 @@ models_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	gfx.render(dev, state.draws[:])
 }
 
-models_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
+models_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
+	dev := &ctx.gfx
 	state := cast(^Models_State)demo.state
 	delete(state.draws)
 	default.skybox_destroy(dev, &state.skybox)

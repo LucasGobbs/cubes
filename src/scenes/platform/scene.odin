@@ -54,12 +54,13 @@ platform_scene :: proc() -> engine.Scene {
 	return {name = "Platform", create = platform_create, tick = platform_tick, destroy = platform_destroy}
 }
 
-platform_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
+platform_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
+	dev := &ctx.gfx
 	state := new(Platform_State)
 	demo.state = state
 	engine.scene_camera_reset(demo, dev, {24, 18, 34}, {2, 2, -1})
 
-	state.fly_camera = default.fly_camera_create(dev, "platform")
+	state.fly_camera = default.fly_camera_create(dev, &ctx.input, "platform")
 	state.pipeline = default.create_textured_pipeline(dev)
 	state.sampler = gfx.sampler_create(dev, gfx.SAMPLER_TRILINEAR)
 	for path, mat in PROTO_TEXTURES {
@@ -101,9 +102,10 @@ platform_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	return true
 }
 
-platform_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
+platform_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
+	dev := &ctx.gfx
 	state := cast(^Platform_State)demo.state
-	default.fly_camera_tick(&state.fly_camera, dev, delta_time)
+	default.fly_camera_tick(&state.fly_camera, dev, &ctx.input, delta_time)
 
 	// Player walks a looping 3D path through the platforms, hopping between waypoints.
 	state.time += delta_time
@@ -120,7 +122,8 @@ platform_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	gfx.render(dev, state.draws[:])
 }
 
-platform_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
+platform_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
+	dev := &ctx.gfx
 	state := cast(^Platform_State)demo.state
 	delete(state.draws)
 	default.skybox_destroy(dev, &state.skybox)

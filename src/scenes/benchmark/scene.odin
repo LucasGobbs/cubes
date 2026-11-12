@@ -114,7 +114,8 @@ benchmark_scene :: proc() -> engine.Scene {
 	}
 }
 
-benchmark_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
+benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
+	dev := &ctx.gfx
 	state := new(Benchmark_State)
 	state.fog_on = true // haze by default so boats and dragons share the sea's horizon blend
 	demo.state = state
@@ -122,8 +123,8 @@ benchmark_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	// Uncapped: the point of this scene is measuring real frame cost.
 	gfx.set_present_mode(dev, .IMMEDIATE)
 
-	inputs := gfx.gfx_input(dev)
-	state.fly_camera = default.fly_camera_create(dev, "benchmark")
+	inputs := &ctx.input
+	state.fly_camera = default.fly_camera_create(dev, &ctx.input, "benchmark")
 	state.add_action = input.button(inputs, "benchmark.add")
 	state.subtract_action = input.button(inputs, "benchmark.subtract")
 	input.bind_key(inputs, state.add_action, .EQUALS)
@@ -313,10 +314,11 @@ sea_bind_draw :: proc(
 	gfx.draw_push_uniform(draw_context, shader_parameters.SEA_VERTEX_UNIFORM_BLOCK, &uniforms)
 }
 
-benchmark_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
+benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
+	dev := &ctx.gfx
 	state := cast(^Benchmark_State)demo.state
 
-	inputs := gfx.gfx_input(dev)
+	inputs := &ctx.input
 	if input.pressed(inputs, state.add_action) {
 		benchmark_populate(state, state.per_model + BENCH_STEP)
 	}
@@ -329,7 +331,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	fog_rgb := gfx.color_srgb_to_linear({0.671, 0.757, 0.949, 1}) // skybox horizon; matches `sky` in sea.slang
 	dev.renderer.fog = state.fog_on ? {fog_rgb.r, fog_rgb.g, fog_rgb.b, FOG_VIEW_DISTANCE} : [4]f32{}
 
-	default.fly_camera_tick(&state.fly_camera, dev, delta_time)
+	default.fly_camera_tick(&state.fly_camera, dev, &ctx.input, delta_time)
 	state.sea_time += delta_time
 	camera := dev.renderer.camera.position
 	for boat in state.boats {
@@ -438,7 +440,8 @@ benchmark_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	gfx.end_frame(dev)
 }
 
-benchmark_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
+benchmark_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
+	dev := &ctx.gfx
 	state := cast(^Benchmark_State)demo.state
 	delete(state.draws)
 	default.skybox_destroy(dev, &state.skybox)

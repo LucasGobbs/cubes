@@ -1,4 +1,4 @@
-package gfx
+package engine
 import sdl "vendor:sdl3"
 Clock :: struct {
 	last_ticks: u64,

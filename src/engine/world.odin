@@ -3,7 +3,7 @@
 //
 // Recipe (examples/hello_engine/main.odin):
 //   App :: struct { hero: engine.Entity_Id }
-//   main :: proc() { app: App; engine.run(&app, start, update, title = "app") }
+//   main :: proc() { app: App; engine.run_app(&app, start, update, title = "app") }
 //   start :: proc(app: ^App, world: ^engine.World) {
 //       engine.spawn(world,
 //           engine.Camera{look_at = engine.Vec3{0, 0.8, 0}, bloom = engine.Bloom{}},

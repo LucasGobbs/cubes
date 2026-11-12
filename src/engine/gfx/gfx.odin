@@ -1,6 +1,4 @@
 package gfx
-import input "../input"
-import input_sdl "../input/adapters/sdl"
 import "core:c"
 import "core:log"
 import "core:strings"
@@ -9,20 +7,12 @@ Device :: struct {
 	window:                   ^sdl.Window,
 	gpu:                      ^sdl.GPUDevice,
 	window_size:              [2]i32,
-	using clock:              Clock,
 
 	// Received via sdl.AcquireGPUCommandBuffer and released after sdl.SubmitGPUCommandBuffer (Short lived)
 	command_buffer:           ^sdl.GPUCommandBuffer,
 	swapchain:                ^sdl.GPUTexture,
 	frame_open:               bool,
-	inputs:           input.System,
-	renderer:         Renderer,
-	running:          bool,
-
-	// Called for every SDL event after input processing; used by overlays
-	// (editor UI) that need raw events without owning the event loop.
-	event_hook:       Gfx_Event_Hook,
-	event_hook_data:  rawptr,
+	renderer:                 Renderer,
 
 	// Native GPU resources are owned here. Public code carries generation-checked handles.
 	buffers:                  [dynamic]Buffer,
@@ -37,30 +27,26 @@ Device :: struct {
 	compute_pipeline_handles: Handle_Pool,
 }
 
-Gfx_Game_Create_Proc :: #type proc(dev: ^Device, game_state: rawptr) -> bool
-
 create :: proc(
 	dev: ^Device,
-	game_state: rawptr,
-	game_create_callback: Gfx_Game_Create_Proc,
-	window_title: string = "Game Window Title",
-	window_width: int = 1280,
-	window_height: int = 780,
+	title: string = "cubes",
+	width: int = 1280,
+	height: int = 780,
 	fullscreen: bool = false, // sized from the desktop mode; window_size is read once, here
 ) -> bool {
 	ok := sdl.Init({.VIDEO}); assert(ok)
 	flags := sdl.WindowFlags{.ALWAYS_ON_TOP, .MOUSE_GRABBED}
-	width, height := c.int(window_width), c.int(window_height)
+	w, h := c.int(width), c.int(height)
 	if fullscreen {
 		mode := sdl.GetDesktopDisplayMode(sdl.GetPrimaryDisplay())
 		assert(mode != nil)
-		width, height = mode.w, mode.h
+		w, h = mode.w, mode.h
 		flags += {.FULLSCREEN}
 	}
 	window := sdl.CreateWindow(
-		strings.clone_to_cstring(window_title, context.temp_allocator),
-		width,
-		height,
+		strings.clone_to_cstring(title, context.temp_allocator),
+		w,
+		h,
 		flags,
 	); assert(window != nil)
 	gpu := sdl.CreateGPUDevice({.MSL, .SPIRV}, true, nil); assert(gpu != nil)
@@ -81,12 +67,9 @@ create :: proc(
 	dev.window = window
 	dev.gpu = gpu
 	dev.window_size = window_size
-	dev.inputs = input.system_create(input_sdl.create())
 	dev.renderer = renderer_create(dev)
 	_ = renderer_set_msaa(&dev.renderer, true) // on by default where supported
-
-	dev.running = true
-	return game_create_callback(dev, game_state)
+	return true
 }
 
 begin_frame :: proc(dev: ^Device) -> bool {
@@ -122,17 +105,6 @@ set_present_mode :: proc(dev: ^Device, mode: sdl.GPUPresentMode) {
 	}
 }
 
-gfx_input :: proc(dev: ^Device) -> ^input.System {
-	return &dev.inputs
-}
-
-Gfx_Event_Hook :: #type proc(event: ^sdl.Event, user_data: rawptr)
-
-gfx_set_event_hook :: proc(dev: ^Device, hook: Gfx_Event_Hook, user_data: rawptr) {
-	dev.event_hook = hook
-	dev.event_hook_data = user_data
-}
-
 camera :: proc(dev: ^Device) -> ^Camera {
 	return &dev.renderer.camera
 }
@@ -145,43 +117,16 @@ model_unload :: proc(dev: ^Device, model: ^Model) {
 	renderer_unload(&dev.renderer, model)
 }
 
-Gfx_Game_Tick_Proc :: #type proc(dev: ^Device, delta_time: f32, game_state: rawptr)
-
-gfx_update :: proc(dev: ^Device, game_state: rawptr, game_tick_callback: Gfx_Game_Tick_Proc) {
-	for dev.running {
-		clock_update(dev)
-		event: sdl.Event
-		for sdl.PollEvent(&event) {
-			if !input.register_event(&dev.inputs, &event) && event.type == .QUIT {
-				dev.running = false
-			}
-			if dev.event_hook != nil do dev.event_hook(&event, dev.event_hook_data)
-		}
-		input.update(&dev.inputs)
-		if !dev.running do break
-		game_tick_callback(dev, dev.delta, game_state)
-		free_all(context.temp_allocator)
-	}
-}
-
-gfx_request_quit :: proc(dev: ^Device) {
-	dev.running = false
-}
-
 end_frame :: proc(dev: ^Device) {
 	assert(dev.frame_open && dev.command_buffer != nil)
 	ok := sdl.SubmitGPUCommandBuffer(dev.command_buffer); assert(ok)
 	dev.command_buffer, dev.swapchain, dev.frame_open = nil, nil, false
 }
 
-Gfx_Game_Destroy_Proc :: #type proc(dev: ^Device, game_state: rawptr)
-
-destroy :: proc(dev: ^Device, game_state: rawptr, game_destroy_callback: Gfx_Game_Destroy_Proc) {
+destroy :: proc(dev: ^Device) {
 	assert(dev.command_buffer == nil)
 	assert(!dev.frame_open)
-	game_destroy_callback(dev, game_state)
 	renderer_destroy(&dev.renderer)
-	input.system_destroy(&dev.inputs)
 	for slot, index in dev.pipeline_handles.slots {
 		if slot.alive do pipeline_destroy(dev, Pipeline_Handle(Resource_Handle{u32(index), slot.generation}))
 	}

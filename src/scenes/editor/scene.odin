@@ -44,12 +44,13 @@ ed_event_hook :: proc(event: ^sdl.Event, user_data: rawptr) {
 	editor.editor_handle_event(cast(^editor.Editor)user_data, event)
 }
 
-ed_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
+ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
+	dev := &ctx.gfx
 	state := new(Editor_State)
 	demo.state = state
 	engine.scene_camera_reset(demo, dev)
 
-	state.fly_camera = default.fly_camera_create(dev, "editor")
+	state.fly_camera = default.fly_camera_create(dev, &ctx.input, "editor")
 
 	state.textured_pipeline = default.create_textured_pipeline(dev)
 	state.unlit_pipeline = default.create_unlit_pipeline(dev)
@@ -106,7 +107,7 @@ ed_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 		state.editor = new(editor.Editor)
 		ok := editor.editor_init(dev, state.editor)
 		assert(ok)
-		gfx.gfx_set_event_hook(dev, ed_event_hook, state.editor)
+		engine.set_event_hook(ctx, ed_event_hook, state.editor)
 		_ = sdl.SetWindowRelativeMouseMode(dev.window, false)
 	}
 
@@ -136,7 +137,8 @@ ed_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	return true
 }
 
-ed_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
+ed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
+	dev := &ctx.gfx
 	state := cast(^Editor_State)demo.state
 
 	// Mouse-look only when the cursor is over the viewport widget (always
@@ -145,7 +147,7 @@ ed_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	when gfx.EDITOR {
 		mouse_in_viewport = editor.editor_mouse_in_viewport(state.editor, state.ui.viewport)
 	}
-	default.fly_camera_tick(&state.fly_camera, dev, delta_time, look = mouse_in_viewport)
+	default.fly_camera_tick(&state.fly_camera, dev, &ctx.input, delta_time, look = mouse_in_viewport)
 
 	when gfx.EDITOR {
 		camera := gfx.camera(dev)
@@ -168,8 +170,8 @@ ed_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	}
 
 	// Rebuild the quad's geometry every frame and re-upload it.
-	state.quad_vertices[2].position.y = 1 + 0.5 * linalg.sin(dev.time * 2)
-	state.quad_vertices[3].position.y = 1 - 0.5 * linalg.sin(dev.time * 2)
+	state.quad_vertices[2].position.y = 1 + 0.5 * linalg.sin(ctx.time * 2)
+	state.quad_vertices[3].position.y = 1 - 0.5 * linalg.sin(ctx.time * 2)
 	gfx.mesh_update(&dev.renderer, &state.quad_mesh, state.quad_vertices[:], state.quad_indices[:])
 
 	state.rotation += state.rotation_speed * delta_time
@@ -199,9 +201,10 @@ ed_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	gfx.end_frame(dev)
 }
 
-ed_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
+ed_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
+	dev := &ctx.gfx
 	state := cast(^Editor_State)demo.state
-	gfx.gfx_set_event_hook(dev, nil, nil)
+	engine.set_event_hook(ctx, nil, nil)
 	_ = sdl.SetWindowRelativeMouseMode(dev.window, true)
 	delete(state.draws)
 	default.skybox_destroy(dev, &state.skybox)

@@ -21,7 +21,8 @@ skinned_scene :: proc() -> engine.Scene {
 	return {name = "Skinned", create = skinned_create, tick = skinned_tick, destroy = skinned_destroy}
 }
 
-skinned_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
+skinned_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
+	dev := &ctx.gfx
 	state := new(Skinned_State)
 	demo.state = state
 	engine.scene_camera_reset(demo, dev, {0, 1.0, 1.9}, {0, 0.8, 0})
@@ -51,13 +52,15 @@ skinned_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	return true
 }
 
-skinned_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
+skinned_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
+	dev := &ctx.gfx
 	state := cast(^Skinned_State)demo.state
 	gfx.playback_tick(&state.playback, delta_time)
 	gfx.render(dev, state.draws[:])
 }
 
-skinned_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
+skinned_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
+	dev := &ctx.gfx
 	state := cast(^Skinned_State)demo.state
 	delete(state.draws)
 	gfx.playback_destroy(&state.playback)

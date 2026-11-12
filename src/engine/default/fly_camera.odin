@@ -20,25 +20,24 @@ Fly_Camera :: struct {
 	look_velocity: [2]f32,
 }
 
-fly_camera_create :: proc(dev: ^gfx.Device, prefix: string) -> Fly_Camera {
-	inputs := gfx.gfx_input(dev)
+fly_camera_create :: proc(dev: ^gfx.Device, inp: ^input.System, prefix: string) -> Fly_Camera {
 	fly_camera := Fly_Camera {
-		move_action  = input.add_axis_2d(inputs, fmt.tprintf("{}.move", prefix)),
-		boost_action = input.button(inputs, fmt.tprintf("{}.boost", prefix)),
-		up_action    = input.button(inputs, fmt.tprintf("{}.up", prefix)),
-		down_action  = input.button(inputs, fmt.tprintf("{}.down", prefix)),
-		smooth_action = input.button(inputs, fmt.tprintf("{}.smooth", prefix)),
+		move_action  = input.add_axis_2d(inp, fmt.tprintf("{}.move", prefix)),
+		boost_action = input.button(inp, fmt.tprintf("{}.boost", prefix)),
+		up_action    = input.button(inp, fmt.tprintf("{}.up", prefix)),
+		down_action  = input.button(inp, fmt.tprintf("{}.down", prefix)),
+		smooth_action = input.button(inp, fmt.tprintf("{}.smooth", prefix)),
 	}
 
 	input.bind_button_axis_2d(
-		inputs,
+		inp,
 		fly_camera.move_action,
 		{up = .W, down = .S, left = .A, right = .D, normalize = true},
 	)
-	input.bind_key(inputs, fly_camera.boost_action, .LSHIFT)
-	input.bind_key(inputs, fly_camera.up_action, .SPACE)
-	input.bind_key(inputs, fly_camera.down_action, .LCTRL)
-	input.bind_key(inputs, fly_camera.smooth_action, .C)
+	input.bind_key(inp, fly_camera.boost_action, .LSHIFT)
+	input.bind_key(inp, fly_camera.up_action, .SPACE)
+	input.bind_key(inp, fly_camera.down_action, .LCTRL)
+	input.bind_key(inp, fly_camera.smooth_action, .C)
 
 
 	return fly_camera
@@ -49,11 +48,11 @@ fly_camera_create :: proc(dev: ^gfx.Device, prefix: string) -> Fly_Camera {
 fly_camera_tick :: proc(
 	fly_camera: ^Fly_Camera,
 	dev: ^gfx.Device,
+	inp: ^input.System,
 	delta_time: f32,
 	look := true,
 ) {
-	inputs := gfx.gfx_input(dev)
-	if input.pressed(inputs, fly_camera.smooth_action) do fly_camera.smooth = !fly_camera.smooth
+	if input.pressed(inp, fly_camera.smooth_action) do fly_camera.smooth = !fly_camera.smooth
 
 	// Exponential ease toward the target; 1 when not smooth (instant response).
 	ease: f32 = 1
@@ -61,17 +60,17 @@ fly_camera_tick :: proc(
 
 	camera := gfx.camera(dev)
 	look_target: [2]f32
-	if look do look_target = input.mouse_delta(inputs)
+	if look do look_target = input.mouse_delta(inp)
 	fly_camera.look_velocity += (look_target - fly_camera.look_velocity) * ease
 	look_delta := fly_camera.look_velocity
 	gfx.camera_rotate(camera, look_delta.x * 0.1 * linalg.PI / 180, -look_delta.y * 0.1 * linalg.PI / 180)
 
-	move := input.axis_2d(inputs, fly_camera.move_action)
+	move := input.axis_2d(inp, fly_camera.move_action)
 	vertical: f32
-	if input.down(inputs, fly_camera.up_action) do vertical += 1
-	if input.down(inputs, fly_camera.down_action) do vertical -= 1
+	if input.down(inp, fly_camera.up_action) do vertical += 1
+	if input.down(inp, fly_camera.down_action) do vertical -= 1
 	boost: f32 = 1
-	if input.down(inputs, fly_camera.boost_action) do boost = BOOST_FACTOR
+	if input.down(inp, fly_camera.boost_action) do boost = BOOST_FACTOR
 	direction := camera.direction * move.y + camera.right * move.x + gfx.Vec3{0, vertical, 0}
 	fly_camera.velocity += (direction * f32(5) * boost - fly_camera.velocity) * ease
 	camera.position += fly_camera.velocity * delta_time
