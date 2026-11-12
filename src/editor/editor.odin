@@ -56,7 +56,7 @@ editor_init :: proc(dev: ^gfx.Device, ed: ^Editor, font_path := "static/fonts/an
 	}
 
 	ed.pipeline = default.create_textured_overlay_pipeline(dev)
-	ed.sampler = gfx.gfx_sampler_create(dev)
+	ed.sampler = gfx.sampler_create(dev)
 	ed.material = gfx.material_create(ed.pipeline)
 	default.bind_textured_material(&ed.material, ed.font.texture, ed.sampler)
 
@@ -70,8 +70,8 @@ editor_destroy :: proc(dev: ^gfx.Device, ed: ^Editor) {
 	gfx.font_destroy(dev, &ed.font)
 	gfx.mesh_destroy(dev, &ed.mesh)
 	gfx.material_destroy(&ed.material)
-	gfx.gfx_sampler_destroy(dev, ed.sampler)
-	gfx.gfx_pipeline_destroy(dev, ed.pipeline)
+	gfx.sampler_destroy(dev, ed.sampler)
+	gfx.pipeline_destroy(dev, ed.pipeline)
 	delete(ed.vertices)
 	delete(ed.spans)
 	ed^ = {}
@@ -337,10 +337,10 @@ editor_draw :: proc(
 
 	gfx.renderer_begin_present_pass(renderer)
 	pass := renderer.pass
-	pipeline := gfx.gfx_pipeline_get(dev, ed.pipeline)
+	pipeline := gfx.pipeline_get(dev, ed.pipeline)
 	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-	gfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &ed.material)
-	gfx.gfx_pipeline_bind_draw(
+	gfx.pipeline_bind_material(dev, pass, dev.command_buffer, &ed.material)
+	gfx.pipeline_bind_draw(
 		dev,
 		ed.pipeline,
 		dev.command_buffer,
@@ -351,9 +351,9 @@ editor_draw :: proc(
 		},
 	)
 	bound := Span_Texture.ATLAS
-	viewport_texture_resource := gfx.gfx_texture_get(dev, viewport_texture)
-	sampler := gfx.gfx_sampler_get(dev, ed.sampler)
-	vertex_buffer := gfx.gfx_buffer_get(dev, ed.mesh.vertex_buffer)
+	viewport_texture_resource := gfx.texture_get(dev, viewport_texture)
+	sampler := gfx.sampler_get(dev, ed.sampler)
+	vertex_buffer := gfx.buffer_get(dev, ed.mesh.vertex_buffer)
 	for span in ed.spans {
 		if span.texture != bound {
 			if span.texture == .VIEWPORT {
@@ -365,7 +365,7 @@ editor_draw :: proc(
 					sampler.handle,
 				)
 			} else {
-				gfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &ed.material)
+				gfx.pipeline_bind_material(dev, pass, dev.command_buffer, &ed.material)
 			}
 			bound = span.texture
 		}

@@ -18,7 +18,7 @@ Skybox :: struct {
 skybox_create :: proc(dev: ^gfx.Device, path: string) -> Skybox {
 	skybox: Skybox
 	attributes := default_skybox_vertex_attributes(gfx.VertexData)
-	skybox.pipeline = gfx.gfx_pipeline_create(
+	skybox.pipeline = gfx.pipeline_create(
 		dev,
 		{
 			vertex = default_skybox_vertex(),
@@ -31,8 +31,8 @@ skybox_create :: proc(dev: ^gfx.Device, path: string) -> Skybox {
 			bind_draw = bind_skybox_draw,
 		},
 	)
-	skybox.texture = gfx.gfx_texture_load(dev, path, mipmaps = false) // shader samples level 0
-	skybox.sampler = gfx.gfx_sampler_create(
+	skybox.texture = gfx.texture_load(dev, path, mipmaps = false) // shader samples level 0
+	skybox.sampler = gfx.sampler_create(
 		dev,
 		{
 			min_filter = .LINEAR,
@@ -77,9 +77,9 @@ skybox_add_to_scene :: proc(scene: ^gfx.Scene, skybox: ^Skybox) -> int {
 skybox_destroy :: proc(dev: ^gfx.Device, skybox: ^Skybox) {
 	gfx.mesh_destroy(dev, &skybox.mesh)
 	gfx.material_destroy(&skybox.material)
-	gfx.gfx_texture_destroy(dev, skybox.texture)
-	gfx.gfx_sampler_destroy(dev, skybox.sampler)
-	gfx.gfx_pipeline_destroy(dev, skybox.pipeline)
+	gfx.texture_destroy(dev, skybox.texture)
+	gfx.sampler_destroy(dev, skybox.sampler)
+	gfx.pipeline_destroy(dev, skybox.pipeline)
 	skybox^ = {}
 }
 

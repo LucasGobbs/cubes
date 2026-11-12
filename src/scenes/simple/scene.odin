@@ -40,7 +40,7 @@ simple_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 
 	state.textured_pipeline = default.create_textured_pipeline(dev)
 	state.unlit_pipeline = default.create_unlit_pipeline(dev)
-	state.sampler = gfx.gfx_sampler_create(dev, gfx.SAMPLER_TRILINEAR)
+	state.sampler = gfx.sampler_create(dev, gfx.SAMPLER_TRILINEAR)
 
 	state.textured_model = default.load_textured_model(
 		dev,
@@ -48,7 +48,7 @@ simple_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 		state.textured_pipeline,
 		state.sampler,
 	)
-	state.unlit_model = gfx.gfx_load(
+	state.unlit_model = gfx.model_load(
 		dev,
 		{model_path = "static/models/sea/ship-small-ghost.glb", pipeline = state.unlit_pipeline},
 	)
@@ -112,10 +112,10 @@ simple_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	gfx.scene_destroy(&state.scene)
 	default.skybox_destroy(dev, &state.skybox)
 	gfx.mesh_destroy(dev, &state.quad_mesh)
-	gfx.gfx_unload(dev, &state.textured_model)
-	gfx.gfx_unload(dev, &state.unlit_model)
-	gfx.gfx_sampler_destroy(dev, state.sampler)
-	gfx.gfx_pipeline_destroy(dev, state.textured_pipeline)
-	gfx.gfx_pipeline_destroy(dev, state.unlit_pipeline)
+	gfx.model_unload(dev, &state.textured_model)
+	gfx.model_unload(dev, &state.unlit_model)
+	gfx.sampler_destroy(dev, state.sampler)
+	gfx.pipeline_destroy(dev, state.textured_pipeline)
+	gfx.pipeline_destroy(dev, state.unlit_pipeline)
 	free(state)
 }

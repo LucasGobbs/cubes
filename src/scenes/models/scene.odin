@@ -39,7 +39,7 @@ models_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	state.fly_camera = default.fly_camera_create(dev, "models")
 
 	state.pipeline = default.create_textured_pipeline(dev)
-	state.sampler = gfx.gfx_sampler_create(dev, gfx.SAMPLER_TRILINEAR)
+	state.sampler = gfx.sampler_create(dev, gfx.SAMPLER_TRILINEAR)
 
 	for path, index in MODEL_PATHS {
 		state.models[index] = default.load_textured_model(
@@ -61,7 +61,7 @@ models_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	state.skybox = default.skybox_create(dev, default.SKYBOX_PATH)
 	default.skybox_add_to_scene(&state.scene, &state.skybox)
 
-	state.ground_texture = gfx.gfx_texture_load(dev, "static/muddy_ground.jpg")
+	state.ground_texture = gfx.texture_load(dev, "static/muddy_ground.jpg")
 	state.ground_material = gfx.material_create(state.pipeline)
 	default.bind_textured_material(&state.ground_material, state.ground_texture, state.sampler)
 	tiling :: f32(40)
@@ -103,9 +103,9 @@ models_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	default.skybox_destroy(dev, &state.skybox)
 	gfx.mesh_destroy(dev, &state.ground_mesh)
 	gfx.material_destroy(&state.ground_material)
-	gfx.gfx_texture_destroy(dev, state.ground_texture)
-	for &model in state.models do gfx.gfx_unload(dev, &model)
-	gfx.gfx_sampler_destroy(dev, state.sampler)
-	gfx.gfx_pipeline_destroy(dev, state.pipeline)
+	gfx.texture_destroy(dev, state.ground_texture)
+	for &model in state.models do gfx.model_unload(dev, &model)
+	gfx.sampler_destroy(dev, state.sampler)
+	gfx.pipeline_destroy(dev, state.pipeline)
 	free(state)
 }

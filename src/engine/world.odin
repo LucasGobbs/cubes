@@ -5,23 +5,23 @@
 //   App :: struct { hero: engine.Entity_Id }
 //   main :: proc() { app: App; engine.run(&app, start, update, title = "app") }
 //   start :: proc(app: ^App, world: ^engine.World) {
-//       engine.world_spawn(world,
+//       engine.spawn(world,
 //           engine.Camera{look_at = engine.Vec3{0, 0.8, 0}, bloom = engine.Bloom{}},
 //           engine.Transform{position = {0, 1, 1.9}})
-//       app.hero = engine.world_spawn(world,
+//       app.hero = engine.spawn(world,
 //           engine.Model{path = "static/models/rigged_cesiumman.glb"},
 //           engine.Animator{clip = "clip_0"})
 //   }
 //   update :: proc(app: ^App, world: ^engine.World, dt: f32) {
-//       // edit any Transform here: engine.world_get(world, app.hero, engine.Transform)
+//       // edit any Transform here: engine.get(world, app.hero, engine.Transform)
 //   }
 //
 // Per-entity logic (registry): a state struct plus create/tick/destroy procs.
 //   Ship :: struct { target: engine.Entity_Type }
 //   ship_create :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Ship) { /* world_add components */ }
 //   ship_tick :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Ship, dt: f32) { /* ... */ }
-//   // start:  ship := engine.entity_register(world, Ship, ship_create, ship_tick, nil)
-//   // spawn:  engine.entity_spawn(world, ship, Ship{target = player_type})
+//   // start:  ship := engine.register_type(world, Ship, ship_create, ship_tick, nil)
+//   // spawn:  engine.spawn_typed(world, ship, Ship{target = player_type})
 // Ticks run in slot order (spawn order, reused slots included), once per world_update.
 // Entities spawned during world_update first tick on the next one.
 package engine
@@ -41,7 +41,7 @@ Entity_Id :: struct {
 	index, generation: u32,
 }
 
-// Handle from entity_register. Zero is invalid; handles are 1-based indices into World.types.
+// Handle from register_type. Zero is invalid; handles are 1-based indices into World.types.
 Entity_Type :: distinct u32
 
 // Procs are stored type-erased. The state is a heap block owned by the slot.
@@ -85,7 +85,7 @@ Camera :: struct {
 	blur:    Maybe(i32),
 }
 
-// Plain data: game code reads and writes current through world_get.
+// Plain data: game code reads and writes current through get.
 Health :: struct {
 	current, max: f32,
 }
@@ -127,7 +127,7 @@ world_create :: proc(dev: ^gfx.Device) -> World {
 
 // Registers a per-entity state type. create runs after spawn, tick once per
 // world_update, destroy before the entity's components are freed. Any proc may be nil.
-entity_register :: proc(
+register_type :: proc(
 	world: ^World,
 	$T: typeid,
 	create: proc(world: ^World, id: Entity_Id, self: ^T),
@@ -147,12 +147,12 @@ entity_register :: proc(
 // The returned pointer is stable until the entity is destroyed; if create destroys
 // the entity, the pointer dangles. Components of one type replace the existing one.
 // Every entity gets a Transform (a default one when none is given).
-entity_spawn :: proc(world: ^World, type: Entity_Type, init: $T, components: ..Component) -> (Entity_Id, ^T) {
+spawn_typed :: proc(world: ^World, type: Entity_Type, init: $T, components: ..Component) -> (Entity_Id, ^T) {
 	info := entity_type_info(world, type, T)
 	state, err := mem.alloc(info.state_size, info.state_align)
 	assert(err == nil, "engine: out of memory for entity state")
 	(^T)(state)^ = init
-	id := world_spawn(world, ..components)
+	id := spawn(world, ..components)
 	slot := &world.slots[id.index]
 	slot.type = type
 	slot.state = state
@@ -162,7 +162,7 @@ entity_spawn :: proc(world: ^World, type: Entity_Type, init: $T, components: ..C
 
 // Components of one type replace the existing one. Every entity gets a
 // Transform (a default one when none is given).
-world_spawn :: proc(world: ^World, components: ..Component) -> Entity_Id {
+spawn :: proc(world: ^World, components: ..Component) -> Entity_Id {
 	index := claim_slot(world)
 	slot := &world.slots[index]
 	for component in components do set_component(slot, component)
@@ -178,13 +178,13 @@ world_valid :: proc(world: ^World, id: Entity_Id) -> bool {
 	return slot.alive && slot.generation == id.generation
 }
 
-// Pointer into the component storage: valid until the next world_add or world_spawn.
-world_get :: proc(world: ^World, id: Entity_Id, $T: typeid) -> ^T {
+// Pointer into the component storage: valid until the next world_add or spawn.
+get :: proc(world: ^World, id: Entity_Id, $T: typeid) -> ^T {
 	if !world_valid(world, id) do return nil
 	return slot_component(&world.slots[id.index], T)
 }
 
-// State of an entity spawned with entity_spawn. Nil for invalid ids.
+// State of an entity spawned with spawn_typed. Nil for invalid ids.
 world_get_state :: proc(world: ^World, id: Entity_Id, $T: typeid) -> ^T {
 	if !world_valid(world, id) do return nil
 	slot := &world.slots[id.index]
@@ -299,7 +299,7 @@ update_camera :: proc(world: ^World) {
 		camera := slot_component(&slot, Camera)
 		if camera == nil do continue
 		transform := slot_component(&slot, Transform)
-		cam := gfx.gfx_camera(world.dev)
+		cam := gfx.camera(world.dev)
 		cam.position = transform.position
 		if target, ok := camera.look_at.?; ok {
 			cam.yaw, cam.pitch = direction_angles(target - transform.position)
@@ -309,7 +309,7 @@ update_camera :: proc(world: ^World) {
 		}
 		gfx.camera_rotate(cam, 0, 0) // rebuilds direction, right and up from yaw/pitch
 		fov := camera.fov_y if camera.fov_y > 0 else gfx.CAMERA_FOV_Y
-		cam.projection = gfx.camera_perspective(gfx.gfx_aspect_ratio(world.dev), fov)
+		cam.projection = gfx.camera_perspective(gfx.aspect_ratio(world.dev), fov)
 		set_effect_passes(world, camera)
 		return
 	}
@@ -360,7 +360,7 @@ set_effect_passes :: proc(world: ^World, camera: ^Camera) {
 entity_type_info :: proc(world: ^World, type: Entity_Type, $T: typeid) -> Entity_Type_Info {
 	assert(type != 0 && int(type) <= len(world.types), "engine: unknown Entity_Type")
 	info := world.types[int(type) - 1]
-	assert(info.state_size == size_of(T), "engine: state type does not match entity_register")
+	assert(info.state_size == size_of(T), "engine: state type does not match register_type")
 	return info
 }
 

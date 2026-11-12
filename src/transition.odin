@@ -164,10 +164,10 @@ transition_draw :: proc(ctx: ^gfx.Pass_Ctx, _: rawptr) {
 	gfx.renderer_begin_overlay_pass(ctx.renderer, ctx.color)
 	pass := ctx.renderer.pass
 	target := 0 if ctx.color == ctx.renderer.scene_color else 1 // pipeline format must match the target
-	pipeline := gfx.gfx_pipeline_get(dev, stats.pipelines[target])
+	pipeline := gfx.pipeline_get(dev, stats.pipelines[target])
 	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-	gfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &stats.materials[target])
-	gfx.gfx_pipeline_bind_draw(
+	gfx.pipeline_bind_material(dev, pass, dev.command_buffer, &stats.materials[target])
+	gfx.pipeline_bind_draw(
 		dev,
 		stats.pipelines[target],
 		dev.command_buffer,
@@ -177,7 +177,7 @@ transition_draw :: proc(ctx: ^gfx.Pass_Ctx, _: rawptr) {
 			material = &stats.materials[target],
 		},
 	)
-	vertex_buffer := gfx.gfx_buffer_get(dev, transition.mesh.vertex_buffer)
+	vertex_buffer := gfx.buffer_get(dev, transition.mesh.vertex_buffer)
 	sdl.BindGPUVertexBuffers(pass, 0, &(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}), 1)
 	sdl.DrawGPUPrimitives(pass, u32(len(transition.vertices)), 1, 0, 0)
 	gfx.renderer_end_pass(ctx.renderer)

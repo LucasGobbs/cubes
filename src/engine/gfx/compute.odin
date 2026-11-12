@@ -8,7 +8,7 @@ Compute_Pipeline :: struct {
 	handle: ^sdl.GPUComputePipeline,
 }
 
-gfx_compute_pipeline_create :: proc(
+compute_pipeline_create :: proc(
 	dev: ^Device,
 	parameters: goose.ComputeParameters,
 ) -> Compute_Pipeline_Handle {
@@ -26,13 +26,13 @@ gfx_compute_pipeline_create :: proc(
 	return handle
 }
 
-gfx_compute_pipeline_get :: proc(dev: ^Device, handle: Compute_Pipeline_Handle) -> ^Compute_Pipeline {
+compute_pipeline_get :: proc(dev: ^Device, handle: Compute_Pipeline_Handle) -> ^Compute_Pipeline {
 	raw := Resource_Handle(handle)
 	assert(handle_pool_contains(&dev.compute_pipeline_handles, raw), "stale compute pipeline handle")
 	return &dev.compute_pipelines[raw.index]
 }
 
-gfx_compute_pipeline_destroy :: proc(dev: ^Device, handle: Compute_Pipeline_Handle) {
+compute_pipeline_destroy :: proc(dev: ^Device, handle: Compute_Pipeline_Handle) {
 	raw := Resource_Handle(handle)
 	if !handle_pool_contains(&dev.compute_pipeline_handles, raw) do return
 	resource := &dev.compute_pipelines[raw.index]
@@ -45,7 +45,7 @@ gfx_compute_pipeline_destroy :: proc(dev: ^Device, handle: Compute_Pipeline_Hand
 // and end_frame, outside any render pass). SDL rule: read-write storage
 // textures are bound when the pass begins; sampled textures bind with a
 // sampler after the pipeline.
-gfx_compute_dispatch :: proc(
+compute_dispatch :: proc(
 	dev: ^Device,
 	pipeline: Compute_Pipeline_Handle,
 	write_textures: []Texture_Handle,
@@ -62,7 +62,7 @@ gfx_compute_dispatch :: proc(
 		context.temp_allocator,
 	)
 	for handle, index in write_textures {
-		rw_bindings[index] = {texture = gfx_texture_get(dev, handle).handle}
+		rw_bindings[index] = {texture = texture_get(dev, handle).handle}
 	}
 	pass := sdl.BeginGPUComputePass(
 		dev.command_buffer,
@@ -73,7 +73,7 @@ gfx_compute_dispatch :: proc(
 	)
 	assert(pass != nil)
 
-	sdl.BindGPUComputePipeline(pass, gfx_compute_pipeline_get(dev, pipeline).handle)
+	sdl.BindGPUComputePipeline(pass, compute_pipeline_get(dev, pipeline).handle)
 	if len(uniform_data) > 0 {
 		sdl.PushGPUComputeUniformData(dev.command_buffer, 0, raw_data(uniform_data), u32(len(uniform_data)))
 	}
@@ -86,8 +86,8 @@ gfx_compute_dispatch :: proc(
 		)
 		for handle, index in sampled_textures {
 			bindings[index] = {
-				texture = gfx_texture_get(dev, handle).handle,
-				sampler = gfx_sampler_get(dev, sampler).handle,
+				texture = texture_get(dev, handle).handle,
+				sampler = sampler_get(dev, sampler).handle,
 			}
 		}
 		sdl.BindGPUComputeSamplers(pass, 0, raw_data(bindings), u32(len(bindings)))

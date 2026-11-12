@@ -37,7 +37,7 @@ uploader_begin :: proc(uploader: ^Uploader) {
 }
 
 uploader_upload_buffer :: proc(uploader: ^Uploader, handle: Buffer_Handle) {
-	destination := gfx_buffer_get(uploader.dev, handle)
+	destination := buffer_get(uploader.dev, handle)
 	data := destination._temporary_raw_data
 	staging := uploader_acquire_staging(uploader, u32(len(data)))
 
@@ -65,7 +65,7 @@ uploader_upload_buffer :: proc(uploader: ^Uploader, handle: Buffer_Handle) {
 
 
 uploader_upload_texture :: proc(uploader: ^Uploader, handle: Texture_Handle) {
-	destination := gfx_texture_get(uploader.dev, handle)
+	destination := texture_get(uploader.dev, handle)
 	data := destination._temporary_raw_data
 	staging := uploader_acquire_staging(uploader, u32(len(data)))
 

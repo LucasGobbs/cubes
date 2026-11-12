@@ -88,7 +88,7 @@ forest_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	state.fly_camera = default.fly_camera_create(dev, "forest_instanced")
 
 	attributes := shader_parameters.forest_instanced_vertex_attributes(gfx.VertexData)
-	state.pipeline = gfx.gfx_pipeline_create(
+	state.pipeline = gfx.pipeline_create(
 		dev,
 		{
 			vertex = shader_parameters.forest_instanced_vertex(),
@@ -173,7 +173,7 @@ cluster_distance :: proc(camera: [3]f32, i, j, span: int) -> (distance, ox, oz: 
 // eviction with a GPU idle wait if memory matters.
 forest_stream :: proc(state: ^Forest_State, dev: ^gfx.Device, budget: int, radius: f32) {
 	budget := budget
-	camera := gfx.gfx_camera(dev).position
+	camera := gfx.camera(dev).position
 	extra := f32(TERRAIN_SPAN) * CHUNK_SIZE * 0.7 // cluster centre -> far corner
 	for index in 0 ..< len(state.terrain) {
 		i, j := index % TERRAIN_SIDE, index / TERRAIN_SIDE
@@ -313,6 +313,6 @@ forest_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	}
 	gfx.material_destroy(&state.material)
 	for &material in state.variant_material do gfx.material_destroy(&material)
-	gfx.gfx_pipeline_destroy(dev, state.pipeline)
+	gfx.pipeline_destroy(dev, state.pipeline)
 	free(state)
 }

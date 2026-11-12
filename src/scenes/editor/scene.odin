@@ -53,7 +53,7 @@ ed_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 
 	state.textured_pipeline = default.create_textured_pipeline(dev)
 	state.unlit_pipeline = default.create_unlit_pipeline(dev)
-	state.sampler = gfx.gfx_sampler_create(dev, gfx.SAMPLER_TRILINEAR)
+	state.sampler = gfx.sampler_create(dev, gfx.SAMPLER_TRILINEAR)
 
 	state.textured_model = default.load_textured_model(
 		dev,
@@ -61,7 +61,7 @@ ed_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 		state.textured_pipeline,
 		state.sampler,
 	)
-	state.unlit_model = gfx.gfx_load(
+	state.unlit_model = gfx.model_load(
 		dev,
 		{model_path = "static/models/sea/ship-large.glb", pipeline = state.unlit_pipeline},
 	)
@@ -156,7 +156,7 @@ ed_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	default.fly_camera_tick(&state.fly_camera, dev, delta_time, look = mouse_in_viewport)
 
 	when gfx.EDITOR {
-		camera := gfx.gfx_camera(dev)
+		camera := gfx.camera(dev)
 		state.ui.fps = 1 / delta_time
 		editor.editor_build_ui(state.editor, &state.ui)
 		default.set_unlit_color(&state.shared_material, state.tint)
@@ -171,7 +171,7 @@ ed_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 			}
 		} else {
 			gfx.renderer_resize_targets(&dev.renderer, u32(dev.window_size.x), u32(dev.window_size.y))
-			gfx.camera_set_aspect(camera, gfx.gfx_aspect_ratio(dev))
+			gfx.camera_set_aspect(camera, gfx.aspect_ratio(dev))
 		}
 	}
 
@@ -204,7 +204,7 @@ ed_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 			gfx.renderer_present(&dev.renderer, final)
 		}
 	}
-	gfx.gfx_end_frame(dev)
+	gfx.end_frame(dev)
 }
 
 ed_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
@@ -220,10 +220,10 @@ ed_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	gfx.renderer_clear_passes(&dev.renderer, .Post) // passes point into state
 	gfx.mesh_destroy(dev, &state.quad_mesh)
 	gfx.material_destroy(&state.shared_material)
-	gfx.gfx_unload(dev, &state.textured_model)
-	gfx.gfx_unload(dev, &state.unlit_model)
-	gfx.gfx_sampler_destroy(dev, state.sampler)
-	gfx.gfx_pipeline_destroy(dev, state.textured_pipeline)
-	gfx.gfx_pipeline_destroy(dev, state.unlit_pipeline)
+	gfx.model_unload(dev, &state.textured_model)
+	gfx.model_unload(dev, &state.unlit_model)
+	gfx.sampler_destroy(dev, state.sampler)
+	gfx.pipeline_destroy(dev, state.textured_pipeline)
+	gfx.pipeline_destroy(dev, state.unlit_pipeline)
 	free(state)
 }

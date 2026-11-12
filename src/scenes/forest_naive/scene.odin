@@ -61,7 +61,7 @@ forest_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	state.fly_camera = default.fly_camera_create(dev, "forest")
 
 	attributes := shader_parameters.forest_vertex_attributes(gfx.VertexData)
-	state.pipeline = gfx.gfx_pipeline_create(
+	state.pipeline = gfx.pipeline_create(
 		dev,
 		{
 			vertex = shader_parameters.forest_vertex(),
@@ -125,7 +125,7 @@ forest_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 // ~400 MB of vertices; add eviction (with a GPU idle wait) if that matters.
 forest_stream :: proc(state: ^Forest_State, dev: ^gfx.Device, budget: int, radius: f32) {
 	budget := budget
-	camera := gfx.gfx_camera(dev).position
+	camera := gfx.camera(dev).position
 	for index in 0 ..< len(state.chunks) {
 		cx, cz := index % CHUNKS_PER_SIDE, index / CHUNKS_PER_SIDE
 		ox, oz := chunk_origin(cx, cz)
@@ -227,6 +227,6 @@ forest_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 		}
 	}
 	gfx.material_destroy(&state.material)
-	gfx.gfx_pipeline_destroy(dev, state.pipeline)
+	gfx.pipeline_destroy(dev, state.pipeline)
 	free(state)
 }

@@ -119,29 +119,29 @@ benchmark_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	demo.state = state
 	engine.scene_camera_reset(demo, dev, {0, 8, 20})
 	// Uncapped: the point of this scene is measuring real frame cost.
-	gfx.gfx_set_present_mode(dev, .IMMEDIATE)
+	gfx.set_present_mode(dev, .IMMEDIATE)
 
 	inputs := gfx.gfx_input(dev)
 	state.fly_camera = default.fly_camera_create(dev, "benchmark")
-	state.add_action = input.add_button(inputs, "benchmark.add")
-	state.subtract_action = input.add_button(inputs, "benchmark.subtract")
+	state.add_action = input.button(inputs, "benchmark.add")
+	state.subtract_action = input.button(inputs, "benchmark.subtract")
 	input.bind_key(inputs, state.add_action, .EQUALS)
 	input.bind_key(inputs, state.subtract_action, .MINUS)
-	state.fog_action = input.add_button(inputs, "benchmark.fog")
+	state.fog_action = input.button(inputs, "benchmark.fog")
 	input.bind_key(inputs, state.fog_action, .V)
 
 	state.pipeline = default.create_textured_instanced_pipeline(dev)
-	state.sampler = gfx.gfx_sampler_create(dev, gfx.SAMPLER_TRILINEAR)
+	state.sampler = gfx.sampler_create(dev, gfx.SAMPLER_TRILINEAR)
 	boat_paths := BOAT_PATHS
 	for path, index in boat_paths {
-		state.models[index] = gfx.gfx_load(dev, {model_path = path, pipeline = state.pipeline})
+		state.models[index] = gfx.model_load(dev, {model_path = path, pipeline = state.pipeline})
 		default.bind_textured_instanced_material(
 			&state.models[index].material,
 			gfx.model_texture(&state.models[index]),
 			state.sampler,
 		)
 	}
-	state.dragon = gfx.gfx_load(dev, {model_path = DRAGON_PATH, pipeline = state.pipeline})
+	state.dragon = gfx.model_load(dev, {model_path = DRAGON_PATH, pipeline = state.pipeline})
 	default.bind_textured_instanced_material(
 		&state.dragon.material,
 		gfx.model_texture(&state.dragon),
@@ -281,7 +281,7 @@ sea_mesh_create :: proc(dev: ^gfx.Device) -> gfx.Mesh {
 
 sea_pipeline_create :: proc(dev: ^gfx.Device, state: ^Benchmark_State) -> gfx.Pipeline_Handle {
 	attributes := shader_parameters.sea_vertex_attributes(gfx.VertexData)
-	return gfx.gfx_pipeline_create(
+	return gfx.pipeline_create(
 		dev,
 		{
 			vertex = shader_parameters.sea_vertex(),
@@ -414,10 +414,10 @@ benchmark_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 		renderer := &dev.renderer
 		gfx.renderer_begin_overlay_pass(renderer, renderer.scene_color)
 		pass := renderer.pass
-		pipeline := gfx.gfx_pipeline_get(dev, state.overlay_pipeline)
+		pipeline := gfx.pipeline_get(dev, state.overlay_pipeline)
 		sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-		gfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &state.overlay_material)
-		gfx.gfx_pipeline_bind_draw(
+		gfx.pipeline_bind_material(dev, pass, dev.command_buffer, &state.overlay_material)
+		gfx.pipeline_bind_draw(
 			dev,
 			state.overlay_pipeline,
 			dev.command_buffer,
@@ -427,7 +427,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 				material = &state.overlay_material,
 			},
 		)
-		vertex_buffer := gfx.gfx_buffer_get(dev, state.text_mesh.vertex_buffer)
+		vertex_buffer := gfx.buffer_get(dev, state.text_mesh.vertex_buffer)
 		sdl.BindGPUVertexBuffers(
 			pass,
 			0,
@@ -438,7 +438,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 		gfx.renderer_end_pass(renderer)
 		gfx.renderer_present(renderer, gfx.renderer_run_post(renderer)) // run_post: global overlays (F1 stats)
 	}
-	gfx.gfx_end_frame(dev)
+	gfx.end_frame(dev)
 }
 
 benchmark_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
@@ -447,15 +447,15 @@ benchmark_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	default.skybox_destroy(dev, &state.skybox)
 	gfx.mesh_destroy(dev, &state.sea_mesh)
 	gfx.material_destroy(&state.sea_material)
-	gfx.gfx_pipeline_destroy(dev, state.sea_pipeline)
+	gfx.pipeline_destroy(dev, state.sea_pipeline)
 	delete(state.text_vertices)
 	gfx.mesh_destroy(dev, &state.text_mesh)
 	gfx.material_destroy(&state.overlay_material)
-	gfx.gfx_pipeline_destroy(dev, state.overlay_pipeline)
+	gfx.pipeline_destroy(dev, state.overlay_pipeline)
 	gfx.font_destroy(dev, &state.font)
-	for &model in state.models do gfx.gfx_unload(dev, &model)
-	gfx.gfx_unload(dev, &state.dragon)
-	gfx.gfx_sampler_destroy(dev, state.sampler)
-	gfx.gfx_pipeline_destroy(dev, state.pipeline)
+	for &model in state.models do gfx.model_unload(dev, &model)
+	gfx.model_unload(dev, &state.dragon)
+	gfx.sampler_destroy(dev, state.sampler)
+	gfx.pipeline_destroy(dev, state.pipeline)
 	free(state)
 }

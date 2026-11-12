@@ -24,10 +24,10 @@ fly_camera_create :: proc(dev: ^gfx.Device, prefix: string) -> Fly_Camera {
 	inputs := gfx.gfx_input(dev)
 	fly_camera := Fly_Camera {
 		move_action  = input.add_axis_2d(inputs, fmt.tprintf("{}.move", prefix)),
-		boost_action = input.add_button(inputs, fmt.tprintf("{}.boost", prefix)),
-		up_action    = input.add_button(inputs, fmt.tprintf("{}.up", prefix)),
-		down_action  = input.add_button(inputs, fmt.tprintf("{}.down", prefix)),
-		smooth_action = input.add_button(inputs, fmt.tprintf("{}.smooth", prefix)),
+		boost_action = input.button(inputs, fmt.tprintf("{}.boost", prefix)),
+		up_action    = input.button(inputs, fmt.tprintf("{}.up", prefix)),
+		down_action  = input.button(inputs, fmt.tprintf("{}.down", prefix)),
+		smooth_action = input.button(inputs, fmt.tprintf("{}.smooth", prefix)),
 	}
 
 	input.bind_button_axis_2d(
@@ -59,7 +59,7 @@ fly_camera_tick :: proc(
 	ease: f32 = 1
 	if fly_camera.smooth do ease = 1 - math.exp(-SMOOTH_RATE * delta_time)
 
-	camera := gfx.gfx_camera(dev)
+	camera := gfx.camera(dev)
 	look_target: [2]f32
 	if look do look_target = input.mouse_delta(inputs)
 	fly_camera.look_velocity += (look_target - fly_camera.look_velocity) * ease

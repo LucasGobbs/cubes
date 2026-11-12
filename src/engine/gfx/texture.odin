@@ -13,16 +13,16 @@ Texture :: struct {
 	_temporary_raw_data: []byte,
 }
 
-gfx_texture_create :: proc(
+texture_create :: proc(
 	dev: ^Device,
 	width, height: u32,
 	format: sdl.GPUTextureFormat,
 	usage: sdl.GPUTextureUsageFlag,
 ) -> Texture_Handle {
-	return gfx_texture_create_with_usage(dev, width, height, format, {usage})
+	return texture_create_with_usage(dev, width, height, format, {usage})
 }
 
-gfx_texture_create_with_usage :: proc(
+texture_create_with_usage :: proc(
 	dev: ^Device,
 	width, height: u32,
 	format: sdl.GPUTextureFormat,
@@ -65,7 +65,7 @@ gfx_texture_create_with_usage :: proc(
 	return handle
 }
 
-gfx_texture_get :: proc(dev: ^Device, handle: Texture_Handle) -> ^Texture {
+texture_get :: proc(dev: ^Device, handle: Texture_Handle) -> ^Texture {
 	raw := Resource_Handle(handle)
 	assert(handle_pool_contains(&dev.texture_handles, raw), "stale texture handle")
 	return &dev.textures[raw.index]
@@ -74,21 +74,21 @@ gfx_texture_get :: proc(dev: ^Device, handle: Texture_Handle) -> ^Texture {
 // Reallocates a texture at a new size, preserving format and usage. Waits
 // for GPU idle so the old texture can be released safely mid-session; call
 // between frames, not inside a pass. Returns true when it recreated.
-gfx_texture_resize :: proc(dev: ^Device, handle: ^Texture_Handle, width, height: u32) -> bool {
+texture_resize :: proc(dev: ^Device, handle: ^Texture_Handle, width, height: u32) -> bool {
 	if width == 0 || height == 0 do return false
-	texture := gfx_texture_get(dev, handle^)
+	texture := texture_get(dev, handle^)
 	if texture.width == width && texture.height == height do return false
 	format := texture.format
 	usage := texture.usage
 	sample_count := texture.sample_count
 	mip_levels := mip_level_count(width, height) if texture.mip_levels > 1 else 1
 	_ = sdl.WaitForGPUIdle(dev.gpu)
-	gfx_texture_destroy(dev, handle^)
-	handle^ = gfx_texture_create_with_usage(dev, width, height, format, usage, sample_count, mip_levels)
+	texture_destroy(dev, handle^)
+	handle^ = texture_create_with_usage(dev, width, height, format, usage, sample_count, mip_levels)
 	return true
 }
 
-gfx_texture_destroy :: proc(dev: ^Device, handle: Texture_Handle) {
+texture_destroy :: proc(dev: ^Device, handle: Texture_Handle) {
 	raw := Resource_Handle(handle)
 	if !handle_pool_contains(&dev.texture_handles, raw) do return
 	resource := &dev.textures[raw.index]
@@ -102,11 +102,11 @@ gfx_texture_destroy :: proc(dev: ^Device, handle: Texture_Handle) {
 // srgb: true for color art (albedo), false for data (normal/roughness maps),
 // whose bytes are math and must not be gamma-decoded. mipmaps: build the full
 // chain (pair with a sampler whose mipmap_mode is .LINEAR, see SAMPLER_TRILINEAR).
-gfx_texture_load :: proc(dev: ^Device, path: string, srgb := true, mipmaps := true) -> Texture_Handle {
+texture_load :: proc(dev: ^Device, path: string, srgb := true, mipmaps := true) -> Texture_Handle {
 	image := loader.image_load(path)
 	defer loader.image_destroy(&image)
-	handle := gfx_texture_create_rgba8(dev, image.width, image.height, srgb, mipmaps)
-	texture := gfx_texture_get(dev, handle)
+	handle := texture_create_rgba8(dev, image.width, image.height, srgb, mipmaps)
+	texture := texture_get(dev, handle)
 	texture._temporary_raw_data = image.pixels
 	uploader_begin(&dev.renderer.uploader)
 	uploader_upload_texture(&dev.renderer.uploader, handle)
@@ -117,10 +117,10 @@ gfx_texture_load :: proc(dev: ^Device, path: string, srgb := true, mipmaps := tr
 
 // Sampled RGBA8 texture, optionally with a full mip chain. Fill
 // _temporary_raw_data with level 0 and upload through the Uploader.
-gfx_texture_create_rgba8 :: proc(dev: ^Device, width, height: u32, srgb: bool, mipmaps: bool) -> Texture_Handle {
+texture_create_rgba8 :: proc(dev: ^Device, width, height: u32, srgb: bool, mipmaps: bool) -> Texture_Handle {
 	format := sdl.GPUTextureFormat.R8G8B8A8_UNORM_SRGB if srgb else .R8G8B8A8_UNORM
 	levels := mip_level_count(width, height) if mipmaps else 1
 	usage := sdl.GPUTextureUsageFlags{.SAMPLER}
 	if levels > 1 do usage += {.COLOR_TARGET}
-	return gfx_texture_create_with_usage(dev, width, height, format, usage, ._1, levels)
+	return texture_create_with_usage(dev, width, height, format, usage, ._1, levels)
 }

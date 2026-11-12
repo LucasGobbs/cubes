@@ -90,7 +90,7 @@ draw_push_uniform :: proc(draw_context: ^Draw_Context, binding: goose.UniformBlo
 	goose_sdl.push_uniform(command_buffer, binding, data)
 }
 
-gfx_pipeline_create :: proc(dev: ^Device, desc: Graphics_Pipeline_Desc) -> Pipeline_Handle {
+pipeline_create :: proc(dev: ^Device, desc: Graphics_Pipeline_Desc) -> Pipeline_Handle {
 	assert(desc.vertex.stage == .Vertex)
 	assert(desc.fragment.stage == .Fragment)
 	assert(len(desc.vertex_attributes) > 0 && desc.vertex_stride > 0)
@@ -188,13 +188,13 @@ pipeline_native :: proc(pipeline: ^Pipeline, msaa_pass: bool) -> ^sdl.GPUGraphic
 	return pipeline.handle
 }
 
-gfx_pipeline_get :: proc(dev: ^Device, handle: Pipeline_Handle) -> ^Pipeline {
+pipeline_get :: proc(dev: ^Device, handle: Pipeline_Handle) -> ^Pipeline {
 	raw := Resource_Handle(handle)
 	assert(handle_pool_contains(&dev.pipeline_handles, raw), "stale pipeline handle")
 	return &dev.pipelines[raw.index]
 }
 
-gfx_pipeline_destroy :: proc(dev: ^Device, handle: Pipeline_Handle) {
+pipeline_destroy :: proc(dev: ^Device, handle: Pipeline_Handle) {
 	raw := Resource_Handle(handle)
 	if !handle_pool_contains(&dev.pipeline_handles, raw) do return
 	resource := &dev.pipelines[raw.index]
@@ -204,15 +204,15 @@ gfx_pipeline_destroy :: proc(dev: ^Device, handle: Pipeline_Handle) {
 	assert(handle_pool_release(&dev.pipeline_handles, raw))
 }
 
-gfx_pipeline_bind_material :: proc(
+pipeline_bind_material :: proc(
 	dev: ^Device,
 	pass: ^sdl.GPURenderPass,
 	command_buffer: ^sdl.GPUCommandBuffer,
 	material: ^Material,
 ) {
 	for &binding in material.textures {
-		texture := gfx_texture_get(dev, binding.texture)
-		sampler := gfx_sampler_get(dev, binding.sampler)
+		texture := texture_get(dev, binding.texture)
+		sampler := sampler_get(dev, binding.sampler)
 		goose_sdl.bind_sampler(
 			pass,
 			binding.texture_parameter,
@@ -231,13 +231,13 @@ gfx_pipeline_bind_material :: proc(
 	}
 }
 
-gfx_pipeline_bind_draw :: proc(
+pipeline_bind_draw :: proc(
 	dev: ^Device,
 	handle: Pipeline_Handle,
 	command_buffer: ^sdl.GPUCommandBuffer,
 	parameters: Draw_Parameters,
 ) {
-	pipeline := gfx_pipeline_get(dev, handle)
+	pipeline := pipeline_get(dev, handle)
 	if pipeline.bind_draw == nil do return
 	draw_context := Draw_Context {
 		_backend_command_buffer = rawptr(command_buffer),

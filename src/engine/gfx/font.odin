@@ -82,23 +82,23 @@ font_create :: proc(dev: ^Device, path: string, pixel_height: f32 = 16) -> (Font
 		rgba[index * 4 + 2] = 0xFF
 		rgba[index * 4 + 3] = alpha
 	}
-	font.texture = gfx_texture_create(
+	font.texture = texture_create(
 		dev,
 		FONT_ATLAS_SIZE,
 		FONT_ATLAS_SIZE,
 		.R8G8B8A8_UNORM,
 		.SAMPLER,
 	)
-	gfx_texture_get(dev, font.texture)._temporary_raw_data = rgba
+	texture_get(dev, font.texture)._temporary_raw_data = rgba
 	uploader_begin(&dev.renderer.uploader)
 	uploader_upload_texture(&dev.renderer.uploader, font.texture)
 	uploader_flush_blocking(&dev.renderer.uploader)
-	gfx_texture_get(dev, font.texture)._temporary_raw_data = nil
+	texture_get(dev, font.texture)._temporary_raw_data = nil
 	return font, true
 }
 
 font_destroy :: proc(dev: ^Device, font: ^Font) {
-	gfx_texture_destroy(dev, font.texture)
+	texture_destroy(dev, font.texture)
 	font^ = {}
 }
 

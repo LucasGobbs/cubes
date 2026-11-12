@@ -89,7 +89,7 @@ create :: proc(
 	return game_create_callback(dev, game_state)
 }
 
-gfx_begin_frame :: proc(dev: ^Device) -> bool {
+begin_frame :: proc(dev: ^Device) -> bool {
 	dev.command_buffer = sdl.AcquireGPUCommandBuffer(dev.gpu)
 	assert(dev.command_buffer != nil)
 	dev.frame_open = true
@@ -103,7 +103,7 @@ gfx_begin_frame :: proc(dev: ^Device) -> bool {
 	return dev.swapchain != nil
 }
 
-gfx_aspect_ratio :: proc(dev: ^Device) -> f32 {
+aspect_ratio :: proc(dev: ^Device) -> f32 {
 	return f32(dev.window_size.x) / f32(dev.window_size.y)
 }
 
@@ -111,14 +111,14 @@ gfx_aspect_ratio :: proc(dev: ^Device) -> f32 {
 // .IMMEDIATE (uncapped, may tear), .MAILBOX (uncapped without tearing where
 // supported). Falls back to vsync when the driver rejects the mode.
 // Keeps whatever composition create() managed to set (SDR_LINEAR when supported).
-gfx_swapchain_composition :: proc(dev: ^Device) -> sdl.GPUSwapchainComposition {
+swapchain_composition :: proc(dev: ^Device) -> sdl.GPUSwapchainComposition {
 	if sdl.WindowSupportsGPUSwapchainComposition(dev.gpu, dev.window, .SDR_LINEAR) do return .SDR_LINEAR
 	return .SDR
 }
 
-gfx_set_present_mode :: proc(dev: ^Device, mode: sdl.GPUPresentMode) {
+set_present_mode :: proc(dev: ^Device, mode: sdl.GPUPresentMode) {
 	if sdl.WindowSupportsGPUPresentMode(dev.gpu, dev.window, mode) {
-		_ = sdl.SetGPUSwapchainParameters(dev.gpu, dev.window, gfx_swapchain_composition(dev), mode)
+		_ = sdl.SetGPUSwapchainParameters(dev.gpu, dev.window, swapchain_composition(dev), mode)
 	}
 }
 
@@ -133,15 +133,15 @@ gfx_set_event_hook :: proc(dev: ^Device, hook: Gfx_Event_Hook, user_data: rawptr
 	dev.event_hook_data = user_data
 }
 
-gfx_camera :: proc(dev: ^Device) -> ^Camera {
+camera :: proc(dev: ^Device) -> ^Camera {
 	return &dev.renderer.camera
 }
 
-gfx_load :: proc(dev: ^Device, desc: Renderer_Load_Desc) -> Model {
+model_load :: proc(dev: ^Device, desc: Renderer_Load_Desc) -> Model {
 	return renderer_load(&dev.renderer, desc)
 }
 
-gfx_unload :: proc(dev: ^Device, model: ^Model) {
+model_unload :: proc(dev: ^Device, model: ^Model) {
 	renderer_unload(&dev.renderer, model)
 }
 
@@ -178,7 +178,7 @@ scene_extract_proc :: proc(r: ^Renderer, user: rawptr) {
 gfx_render :: proc(dev: ^Device, scene: ^Scene) {
 	renderer_render_frame(&dev.renderer, scene_extract_proc, scene)
 }
-gfx_end_frame :: proc(dev: ^Device) {
+end_frame :: proc(dev: ^Device) {
 	assert(dev.frame_open && dev.command_buffer != nil)
 	ok := sdl.SubmitGPUCommandBuffer(dev.command_buffer); assert(ok)
 	dev.command_buffer, dev.swapchain, dev.frame_open = nil, nil, false
@@ -186,26 +186,26 @@ gfx_end_frame :: proc(dev: ^Device) {
 
 Gfx_Game_Destroy_Proc :: #type proc(dev: ^Device, game_state: rawptr)
 
-gfx_destroy :: proc(dev: ^Device, game_state: rawptr, game_destroy_callback: Gfx_Game_Destroy_Proc) {
+destroy :: proc(dev: ^Device, game_state: rawptr, game_destroy_callback: Gfx_Game_Destroy_Proc) {
 	assert(dev.command_buffer == nil)
 	assert(!dev.frame_open)
 	game_destroy_callback(dev, game_state)
 	renderer_destroy(&dev.renderer)
 	input.system_destroy(&dev.inputs)
 	for slot, index in dev.pipeline_handles.slots {
-		if slot.alive do gfx_pipeline_destroy(dev, Pipeline_Handle(Resource_Handle{u32(index), slot.generation}))
+		if slot.alive do pipeline_destroy(dev, Pipeline_Handle(Resource_Handle{u32(index), slot.generation}))
 	}
 	for slot, index in dev.compute_pipeline_handles.slots {
-		if slot.alive do gfx_compute_pipeline_destroy(dev, Compute_Pipeline_Handle(Resource_Handle{u32(index), slot.generation}))
+		if slot.alive do compute_pipeline_destroy(dev, Compute_Pipeline_Handle(Resource_Handle{u32(index), slot.generation}))
 	}
 	for slot, index in dev.sampler_handles.slots {
-		if slot.alive do gfx_sampler_destroy(dev, Sampler_Handle(Resource_Handle{u32(index), slot.generation}))
+		if slot.alive do sampler_destroy(dev, Sampler_Handle(Resource_Handle{u32(index), slot.generation}))
 	}
 	for slot, index in dev.texture_handles.slots {
-		if slot.alive do gfx_texture_destroy(dev, Texture_Handle(Resource_Handle{u32(index), slot.generation}))
+		if slot.alive do texture_destroy(dev, Texture_Handle(Resource_Handle{u32(index), slot.generation}))
 	}
 	for slot, index in dev.buffer_handles.slots {
-		if slot.alive do gfx_buffer_destroy(dev, Buffer_Handle(Resource_Handle{u32(index), slot.generation}))
+		if slot.alive do buffer_destroy(dev, Buffer_Handle(Resource_Handle{u32(index), slot.generation}))
 	}
 	delete(dev.pipelines)
 	delete(dev.compute_pipelines)

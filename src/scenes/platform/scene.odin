@@ -61,9 +61,9 @@ platform_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 
 	state.fly_camera = default.fly_camera_create(dev, "platform")
 	state.pipeline = default.create_textured_pipeline(dev)
-	state.sampler = gfx.gfx_sampler_create(dev, gfx.SAMPLER_TRILINEAR)
+	state.sampler = gfx.sampler_create(dev, gfx.SAMPLER_TRILINEAR)
 	for path, mat in PROTO_TEXTURES {
-		state.textures[mat] = gfx.gfx_texture_load(dev, path)
+		state.textures[mat] = gfx.texture_load(dev, path)
 		state.materials[mat] = gfx.material_create(state.pipeline)
 		default.bind_textured_material(&state.materials[mat], state.textures[mat], state.sampler)
 	}
@@ -135,9 +135,9 @@ platform_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	delete(state.solids)
 	delete(state.meshes)
 	for &material in state.materials do gfx.material_destroy(&material)
-	for texture in state.textures do gfx.gfx_texture_destroy(dev, texture)
-	gfx.gfx_sampler_destroy(dev, state.sampler)
-	gfx.gfx_pipeline_destroy(dev, state.pipeline)
+	for texture in state.textures do gfx.texture_destroy(dev, texture)
+	gfx.sampler_destroy(dev, state.sampler)
+	gfx.pipeline_destroy(dev, state.pipeline)
 	free(state)
 }
 

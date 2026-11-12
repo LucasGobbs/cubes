@@ -45,17 +45,17 @@ spawner_tick :: proc(world: ^World, id: Entity_Id, self: ^Spawner, dt: f32) {
 	if self.done do return
 	self.done = true
 	world_destroy_entity(world, self.victim)
-	entity_spawn(world, self.counter, Counter{})
+	spawn_typed(world, self.counter, Counter{})
 }
 
 @(test)
 tick_runs_once_per_update_per_live_entity :: proc(t: ^testing.T) {
 	world := World{}
 	defer world_destroy(&world)
-	counter := entity_register(&world, Counter, nil, counter_tick, nil)
+	counter := register_type(&world, Counter, nil, counter_tick, nil)
 
-	_, a := entity_spawn(&world, counter, Counter{})
-	_, b := entity_spawn(&world, counter, Counter{})
+	_, a := spawn_typed(&world, counter, Counter{})
+	_, b := spawn_typed(&world, counter, Counter{})
 	for _ in 0 ..< 3 do world_update(&world, 0.1)
 
 	testing.expect_value(t, a.ticks, 3)
@@ -67,17 +67,17 @@ destroy_runs_on_destroy_entity_and_world_destroy :: proc(t: ^testing.T) {
 	destroy_calls = 0
 	destroy_saw_valid = false
 	world := World{}
-	counter := entity_register(&world, Counter, nil, nil, counter_destroy)
+	counter := register_type(&world, Counter, nil, nil, counter_destroy)
 
-	id, _ := entity_spawn(&world, counter, Counter{})
+	id, _ := spawn_typed(&world, counter, Counter{})
 	world_destroy_entity(&world, id)
 	testing.expect_value(t, destroy_calls, 1)
 	testing.expect(t, destroy_saw_valid)
 	world_destroy_entity(&world, id) // stale id: no second call
 	testing.expect_value(t, destroy_calls, 1)
 
-	entity_spawn(&world, counter, Counter{})
-	entity_spawn(&world, counter, Counter{})
+	spawn_typed(&world, counter, Counter{})
+	spawn_typed(&world, counter, Counter{})
 	world_destroy(&world)
 	testing.expect_value(t, destroy_calls, 3)
 }
@@ -87,12 +87,12 @@ entity_destroyed_during_tick_is_not_ticked_after :: proc(t: ^testing.T) {
 	counter_ticks = 0
 	world := World{}
 	defer world_destroy(&world)
-	counter := entity_register(&world, Counter, nil, counter_tick, nil)
-	killer := entity_register(&world, Killer, nil, killer_tick, nil)
+	counter := register_type(&world, Counter, nil, counter_tick, nil)
+	killer := register_type(&world, Killer, nil, killer_tick, nil)
 
 	// Killer first: its slot ticks before the victim's, so the victim is skipped.
-	_, killer_state := entity_spawn(&world, killer, Killer{})
-	victim, _ := entity_spawn(&world, counter, Counter{})
+	_, killer_state := spawn_typed(&world, killer, Killer{})
+	victim, _ := spawn_typed(&world, counter, Counter{})
 	killer_state.target = victim
 	world_update(&world, 0.1)
 
@@ -104,13 +104,13 @@ entity_destroyed_during_tick_is_not_ticked_after :: proc(t: ^testing.T) {
 spawn_during_tick_ticks_next_update :: proc(t: ^testing.T) {
 	world := World{}
 	defer world_destroy(&world)
-	counter := entity_register(&world, Counter, nil, counter_tick, nil)
-	spawner := entity_register(&world, Spawner, nil, spawner_tick, nil)
+	counter := register_type(&world, Counter, nil, counter_tick, nil)
+	spawner := register_type(&world, Spawner, nil, spawner_tick, nil)
 
 	// Spawner first, victim above it: the spawned entity reuses the victim's index,
 	// which the update loop still reaches, so it must wait for the next update.
-	_, spawner_state := entity_spawn(&world, spawner, Spawner{counter = counter})
-	victim, _ := entity_spawn(&world, counter, Counter{})
+	_, spawner_state := spawn_typed(&world, spawner, Spawner{counter = counter})
+	victim, _ := spawn_typed(&world, counter, Counter{})
 	spawner_state.victim = victim
 
 	world_update(&world, 0.1)
@@ -128,12 +128,12 @@ spawn_during_tick_ticks_next_update :: proc(t: ^testing.T) {
 find_state_returns_first_live_of_type :: proc(t: ^testing.T) {
 	world := World{}
 	defer world_destroy(&world)
-	counter := entity_register(&world, Counter, nil, nil, nil)
-	other := entity_register(&world, Killer, nil, nil, nil)
+	counter := register_type(&world, Counter, nil, nil, nil)
+	other := register_type(&world, Killer, nil, nil, nil)
 
-	first, _ := entity_spawn(&world, counter, Counter{})
-	entity_spawn(&world, other, Killer{})
-	second, _ := entity_spawn(&world, counter, Counter{})
+	first, _ := spawn_typed(&world, counter, Counter{})
+	spawn_typed(&world, other, Killer{})
+	second, _ := spawn_typed(&world, counter, Counter{})
 	testing.expect_value(t, world_count(&world, counter), 2)
 
 	found, state := world_find_state(&world, counter, Counter)

@@ -35,10 +35,10 @@ game_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 
 	inputs := gfx.gfx_input(dev)
 	state.keys = {
-		input.add_button(inputs, "game.up"),
-		input.add_button(inputs, "game.down"),
-		input.add_button(inputs, "game.left"),
-		input.add_button(inputs, "game.right"),
+		input.button(inputs, "game.up"),
+		input.button(inputs, "game.down"),
+		input.button(inputs, "game.left"),
+		input.button(inputs, "game.right"),
 	}
 	input.bind_key(inputs, state.keys[0], .W)
 	input.bind_key(inputs, state.keys[1], .S)
@@ -47,20 +47,20 @@ game_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 
 	state.world = engine.world_create(dev)
 	// Player first: its slot ticks before enemies, so enemies chase this frame's position.
-	state.player_type = engine.entity_register(
+	state.player_type = engine.register_type(
 		&state.world,
 		Player,
 		player_create,
 		player_tick,
 		nil,
 	)
-	state.enemy_type = engine.entity_register(&state.world, Enemy, enemy_create, enemy_tick, nil)
-	engine.world_spawn(
+	state.enemy_type = engine.register_type(&state.world, Enemy, enemy_create, enemy_tick, nil)
+	engine.spawn(
 		&state.world,
 		engine.Camera{look_at = gfx.Vec3{}},
 		engine.Transform{position = {0, 6, 8}},
 	)
-	engine.entity_spawn(&state.world, state.player_type, Player{enemy = state.enemy_type})
+	engine.spawn_typed(&state.world, state.player_type, Player{enemy = state.enemy_type})
 	return true
 }
 
@@ -80,7 +80,7 @@ game_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	if state.spawn_timer >= GAME_SPAWN_INTERVAL {
 		state.spawn_timer = 0
 		if engine.world_count(&state.world, state.enemy_type) < GAME_ENEMY_MAX {
-			engine.entity_spawn(&state.world, state.enemy_type, Enemy{player = state.player_type})
+			engine.spawn_typed(&state.world, state.enemy_type, Enemy{player = state.player_type})
 			log.infof(
 				"game: enemy spawned, %d alive",
 				engine.world_count(&state.world, state.enemy_type),
@@ -91,7 +91,7 @@ game_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	state.log_timer += delta_time
 	if state.log_timer >= 1 {
 		state.log_timer = 0
-		health := engine.world_get(&state.world, player_id, engine.Health)
+		health := engine.get(&state.world, player_id, engine.Health)
 		log.infof(
 			"game: health %.0f/%.0f, enemies %d",
 			health.current,

@@ -22,7 +22,7 @@ system_destroy :: proc(system: ^System) {
 	system^ = {}
 }
 
-add_button :: proc(system: ^System, name: string) -> Button_Action {
+button :: proc(system: ^System, name: string) -> Button_Action {
 	assert(system.allocator.procedure != nil)
 	context.allocator = system.allocator
 	owned_name, err := strings.clone(name)

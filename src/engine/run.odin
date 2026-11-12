@@ -25,7 +25,7 @@ run :: proc(
 	dev: gfx.Device
 	created := gfx.create(&dev, rawptr(&state), run_create, title, width, height, fullscreen)
 	assert(created)
-	defer gfx.gfx_destroy(&dev, rawptr(&state), run_destroy)
+	defer gfx.destroy(&dev, rawptr(&state), run_destroy)
 	gfx.gfx_update(&dev, rawptr(&state), run_tick)
 }
 
@@ -42,7 +42,7 @@ Run_State :: struct {
 run_create :: proc(dev: ^gfx.Device, raw_state: rawptr) -> bool {
 	state := (^Run_State)(raw_state)
 	inputs := gfx.gfx_input(dev)
-	state.quit = input.add_button(inputs, "app.quit")
+	state.quit = input.button(inputs, "app.quit")
 	input.bind_key(inputs, state.quit, .ESCAPE)
 	state.world = world_create(dev)
 	state.start(state.app, &state.world)

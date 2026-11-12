@@ -48,9 +48,9 @@ stats: Stats
 // switches keep the binding.
 stats_create :: proc(dev: ^gfx.Device) {
 	inputs := gfx.gfx_input(dev)
-	stats.action = input.add_button(inputs, "app.stats")
+	stats.action = input.button(inputs, "app.stats")
 	input.bind_key(inputs, stats.action, .F1)
-	stats.dump_action = input.add_button(inputs, "app.stats_dump")
+	stats.dump_action = input.button(inputs, "app.stats_dump")
 	input.bind_key(inputs, stats.dump_action, .P) // with the panel open, logs its lines
 
 	font, ok := gfx.font_create(dev, "static/fonts/andale-mono.ttf")
@@ -58,7 +58,7 @@ stats_create :: proc(dev: ^gfx.Device) {
 	stats.font = font
 	stats.pipelines[0] = default.create_textured_overlay_pipeline(dev)
 	stats.pipelines[1] = default.create_textured_overlay_pipeline(dev, dev.renderer.post_format)
-	stats.sampler = gfx.gfx_sampler_create(dev, gfx.SAMPLER_TRILINEAR)
+	stats.sampler = gfx.sampler_create(dev, gfx.SAMPLER_TRILINEAR)
 	for index in 0 ..< 2 {
 		stats.materials[index] = gfx.material_create(stats.pipelines[index])
 		default.bind_textured_material(&stats.materials[index], stats.font.texture, stats.sampler)
@@ -75,9 +75,9 @@ stats_destroy :: proc(dev: ^gfx.Device) {
 	gfx.mesh_destroy(dev, &stats.mesh)
 	for index in 0 ..< 2 {
 		gfx.material_destroy(&stats.materials[index])
-		gfx.gfx_pipeline_destroy(dev, stats.pipelines[index])
+		gfx.pipeline_destroy(dev, stats.pipelines[index])
 	}
-	gfx.gfx_sampler_destroy(dev, stats.sampler)
+	gfx.sampler_destroy(dev, stats.sampler)
 	gfx.font_destroy(dev, &stats.font)
 	delete(stats.vertices)
 }
@@ -100,7 +100,7 @@ stats_tick :: proc(dev: ^gfx.Device, delta_time: f32, scene_name: string) {
 	if !stats.visible do return
 
 	renderer := &dev.renderer
-	camera := gfx.gfx_camera(dev).position
+	camera := gfx.camera(dev).position
 	lo, hi, sum := f32(1e9), f32(0), f32(0)
 	for fps in stats.history {
 		lo, hi, sum = min(lo, fps), max(hi, fps), sum + fps
@@ -237,10 +237,10 @@ stats_draw :: proc(ctx: ^gfx.Pass_Ctx, _: rawptr) {
 	gfx.renderer_begin_overlay_pass(ctx.renderer, ctx.color)
 	pass := ctx.renderer.pass
 	target := 0 if ctx.color == ctx.renderer.scene_color else 1 // pipeline color format must match the target
-	pipeline := gfx.gfx_pipeline_get(dev, stats.pipelines[target])
+	pipeline := gfx.pipeline_get(dev, stats.pipelines[target])
 	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-	gfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &stats.materials[target])
-	gfx.gfx_pipeline_bind_draw(
+	gfx.pipeline_bind_material(dev, pass, dev.command_buffer, &stats.materials[target])
+	gfx.pipeline_bind_draw(
 		dev,
 		stats.pipelines[target],
 		dev.command_buffer,
@@ -250,7 +250,7 @@ stats_draw :: proc(ctx: ^gfx.Pass_Ctx, _: rawptr) {
 			material = &stats.materials[target],
 		},
 	)
-	vertex_buffer := gfx.gfx_buffer_get(dev, stats.mesh.vertex_buffer)
+	vertex_buffer := gfx.buffer_get(dev, stats.mesh.vertex_buffer)
 	sdl.BindGPUVertexBuffers(pass, 0, &(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}), 1)
 	sdl.DrawGPUPrimitives(pass, u32(len(stats.vertices)), 1, 0, 0)
 	gfx.renderer_end_pass(ctx.renderer)

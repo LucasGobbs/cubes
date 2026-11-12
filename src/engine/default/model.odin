@@ -12,7 +12,7 @@ load_textured_model :: proc(
 	pipeline: gfx.Pipeline_Handle,
 	sampler: gfx.Sampler_Handle,
 ) -> gfx.Model {
-	model := gfx.gfx_load(dev, {model_path = model_path, pipeline = pipeline})
+	model := gfx.model_load(dev, {model_path = model_path, pipeline = pipeline})
 	bind_textured_material(&model.material, gfx.model_texture(&model), sampler)
 	return model
 }

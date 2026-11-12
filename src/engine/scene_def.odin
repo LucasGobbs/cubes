@@ -36,7 +36,7 @@ Entity_Def :: struct {
 	scale:    [3]f32,
 }
 
-// Everything the scene needs resident; assets_load_all loads it in one go.
+// Everything the scene needs resident; assets_load loads it in one go.
 Assets_Def :: struct {
 	models:   []string, // .glb/.gltf, static or skinned (detected)
 	textures: []string, // png/jpg, sRGB
@@ -77,12 +77,12 @@ scene_file_destroy :: proc(file: ^Scene_File) {
 // Spawns the camera (if any) and every entity. Returns the entity ids in
 // definition order (camera excluded); the slice uses the temp allocator.
 world_spawn_scene :: proc(world: ^World, def: ^Scene_Def) -> []Entity_Id {
-	assets_load_all(world, def.assets) // before spawning: spawns then hit the cache
+	assets_load(world, def.assets) // before spawning: spawns then hit the cache
 	if camera, ok := def.camera.?; ok {
 		c := Camera{fov_y = camera.fov_y, blur = camera.blur}
 		if look_at, has := camera.look_at.?; has do c.look_at = Vec3(look_at)
 		if bloom, has := camera.bloom.?; has do c.bloom = Bloom{bloom.threshold, bloom.intensity, bloom.radius}
-		world_spawn(world, c, Transform{position = camera.position})
+		spawn(world, c, Transform{position = camera.position})
 	}
 	ids := make([]Entity_Id, len(def.entities), context.temp_allocator)
 	for entity, index in def.entities {
@@ -91,7 +91,7 @@ world_spawn_scene :: proc(world: ^World, def: ^Scene_Def) -> []Entity_Id {
 			r := entity.rotation * linalg.RAD_PER_DEG
 			transform.rotation = linalg.quaternion_from_euler_angles_f32(r.x, r.y, r.z, .XYZ)
 		}
-		id := world_spawn(world, transform)
+		id := spawn(world, transform)
 		if entity.model != "" do world_add(world, id, Model{path = entity.model})
 		if entity.clip != "" do world_add(world, id, Animator{clip = entity.clip})
 		ids[index] = id

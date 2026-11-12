@@ -30,7 +30,7 @@ Sampler :: struct {
 	handle: ^sdl.GPUSampler,
 }
 
-gfx_sampler_create :: proc(
+sampler_create :: proc(
 	dev: ^Device,
 	create_info := sdl.GPUSamplerCreateInfo{},
 ) -> Sampler_Handle {
@@ -48,13 +48,13 @@ gfx_sampler_create :: proc(
 	return handle
 }
 
-gfx_sampler_get :: proc(dev: ^Device, handle: Sampler_Handle) -> ^Sampler {
+sampler_get :: proc(dev: ^Device, handle: Sampler_Handle) -> ^Sampler {
 	raw := Resource_Handle(handle)
 	assert(handle_pool_contains(&dev.sampler_handles, raw), "stale sampler handle")
 	return &dev.samplers[raw.index]
 }
 
-gfx_sampler_destroy :: proc(dev: ^Device, handle: Sampler_Handle) {
+sampler_destroy :: proc(dev: ^Device, handle: Sampler_Handle) {
 	raw := Resource_Handle(handle)
 	if !handle_pool_contains(&dev.sampler_handles, raw) do return
 	resource := &dev.samplers[raw.index]

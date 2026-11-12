@@ -62,7 +62,7 @@ main :: proc() {
 	assert(created)
 	// sdl.FlashWindow(dev.window, .UNTIL_FOCUSED)
 	// sdl.ShowSimpleMessageBox({.ERROR}, "Couldn't initialize SDL!", "Error", nil)
-	defer gfx.gfx_destroy(&dev, rawptr(&scene), scene_destroy)
+	defer gfx.destroy(&dev, rawptr(&scene), scene_destroy)
 	defer {
 		transition_destroy(&dev)
 		stats_destroy(&dev) // runs first (LIFO), while the device is alive
@@ -74,12 +74,12 @@ main :: proc() {
 scene_create :: proc(dev: ^gfx.Device, raw_scene: rawptr) -> bool {
 	scene := cast(^engine.Scene)raw_scene
 	inputs := gfx.gfx_input(dev)
-	quit_action = input.add_button(inputs, "app.quit")
+	quit_action = input.button(inputs, "app.quit")
 	input.bind_key(inputs, quit_action, .ESCAPE)
-	msaa_action = input.add_button(inputs, "app.msaa")
+	msaa_action = input.button(inputs, "app.msaa")
 	input.bind_key(inputs, msaa_action, .M)
 	for &action, index in switch_actions {
-		action = input.add_button(inputs, SCENES[index].name)
+		action = input.button(inputs, SCENES[index].name)
 		input.bind_key(inputs, action, input.Key(int(input.Key._1) + index))
 	}
 	transition_create(dev)
@@ -135,7 +135,7 @@ scene_switch :: proc(dev: ^gfx.Device, scene: ^engine.Scene, index: int) {
 	_ = sdl.WaitForGPUIdle(dev.gpu) // the old scene's buffers may still be in flight
 	scene_destroy(dev, rawptr(scene))
 	input.system_rewind(gfx.gfx_input(dev), scene_input_mark)
-	gfx.gfx_set_present_mode(dev, .IMMEDIATE)
+	gfx.set_present_mode(dev, .IMMEDIATE)
 
 	next, _ := scene_lookup(SCENES[index].name)
 	scene^ = next

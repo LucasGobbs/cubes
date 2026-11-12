@@ -6,7 +6,7 @@ import gfx "../gfx"
 
 create_textured_pipeline :: proc(dev: ^gfx.Device) -> gfx.Pipeline_Handle {
 	attributes := default_textured_vertex_attributes(gfx.VertexData)
-	return gfx.gfx_pipeline_create(
+	return gfx.pipeline_create(
 		dev,
 		{
 			vertex = default_textured_vertex(),
@@ -23,7 +23,7 @@ create_textured_pipeline :: proc(dev: ^gfx.Device) -> gfx.Pipeline_Handle {
 
 create_unlit_pipeline :: proc(dev: ^gfx.Device) -> gfx.Pipeline_Handle {
 	attributes := default_unlit_color_vertex_attributes(gfx.VertexData)
-	return gfx.gfx_pipeline_create(
+	return gfx.pipeline_create(
 		dev,
 		{
 			vertex = default_unlit_color_vertex(),
@@ -43,7 +43,7 @@ create_unlit_pipeline :: proc(dev: ^gfx.Device) -> gfx.Pipeline_Handle {
 // (see renderer_begin_overlay_pass).
 create_textured_overlay_pipeline :: proc(dev: ^gfx.Device, color_format := sdl.GPUTextureFormat.INVALID) -> gfx.Pipeline_Handle {
 	attributes := default_textured_vertex_attributes(gfx.VertexData)
-	return gfx.gfx_pipeline_create(
+	return gfx.pipeline_create(
 		dev,
 		{
 			vertex = default_textured_vertex(),
@@ -65,7 +65,7 @@ create_textured_overlay_pipeline :: proc(dev: ^gfx.Device, color_format := sdl.G
 // the renderer's storage buffer, so bind_draw only pushes view_projection.
 create_textured_instanced_pipeline :: proc(dev: ^gfx.Device) -> gfx.Pipeline_Handle {
 	attributes := default_textured_instanced_vertex_attributes(gfx.VertexData)
-	return gfx.gfx_pipeline_create(
+	return gfx.pipeline_create(
 		dev,
 		{
 			vertex = default_textured_instanced_vertex(),
@@ -86,7 +86,7 @@ create_textured_instanced_pipeline :: proc(dev: ^gfx.Device) -> gfx.Pipeline_Han
 // per-instance transforms and joint palettes.
 create_textured_skinned_pipeline :: proc(dev: ^gfx.Device) -> gfx.Pipeline_Handle {
 	attributes := default_textured_skinned_vertex_attributes(gfx.SkinnedVertexData)
-	return gfx.gfx_pipeline_create(
+	return gfx.pipeline_create(
 		dev,
 		{
 			vertex = default_textured_skinned_vertex(),
@@ -184,8 +184,8 @@ bind_textured_skinned_storage :: proc(
 	transforms: gfx.Buffer_Handle,
 	palettes: gfx.Buffer_Handle,
 ) {
-	transform_buffer := gfx.gfx_buffer_get(dev, transforms)
-	palette_buffer := gfx.gfx_buffer_get(dev, palettes)
+	transform_buffer := gfx.buffer_get(dev, transforms)
+	palette_buffer := gfx.buffer_get(dev, palettes)
 	sdl.BindGPUVertexStorageBuffers(
 		pass,
 		DEFAULT_TEXTURED_SKINNED_VERTEX_INSTANCE_TRANSFORMS.location.slot,

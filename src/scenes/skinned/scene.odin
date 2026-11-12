@@ -27,12 +27,12 @@ skinned_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	engine.scene_camera_reset(demo, dev, {0, 1.0, 1.9}, {0, 0.8, 0})
 
 	state.pipeline = default.create_textured_skinned_pipeline(dev)
-	state.sampler = gfx.gfx_sampler_create(dev, gfx.SAMPLER_TRILINEAR)
+	state.sampler = gfx.sampler_create(dev, gfx.SAMPLER_TRILINEAR)
 
 	imported, ok := loader.model_import_skinned_from_gltf(SKINNED_MODEL_PATH)
 	if !ok do return false
 	defer loader.skinned_model_destroy(&imported)
-	state.model = gfx.skinned_model_create(dev, &imported, state.pipeline)
+	state.model = gfx.model_create_skinned(dev, &imported, state.pipeline)
 	gfx.model_upload_to_gpu(&state.model, &dev.renderer.uploader)
 	default.bind_textured_skinned_material(
 		&state.model.material,
@@ -61,8 +61,8 @@ skinned_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 skinned_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	state := cast(^Skinned_State)demo.state
 	gfx.scene_destroy(&state.scene)
-	gfx.gfx_unload(dev, &state.model)
-	gfx.gfx_sampler_destroy(dev, state.sampler)
-	gfx.gfx_pipeline_destroy(dev, state.pipeline)
+	gfx.model_unload(dev, &state.model)
+	gfx.sampler_destroy(dev, state.sampler)
+	gfx.pipeline_destroy(dev, state.pipeline)
 	free(state)
 }

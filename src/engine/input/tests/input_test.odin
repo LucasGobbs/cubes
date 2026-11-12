@@ -37,7 +37,7 @@ input_wasd_resolves_axis_2d :: proc(t: ^testing.T) {
 input_button_reports_update_edges :: proc(t: ^testing.T) {
 	inputs := input.system_create(mock.create())
 	defer input.system_destroy(&inputs)
-	quit := input.add_button(&inputs, "app.quit")
+	quit := input.button(&inputs, "app.quit")
 	input.bind_key(&inputs, quit, .ESCAPE)
 
 	event := mock.key_event(.ESCAPE, true)
@@ -82,7 +82,7 @@ input_sdl_translates_keyboard_and_focus_loss :: proc(t: ^testing.T) {
 input_sdl_translates_mouse :: proc(t: ^testing.T) {
 	inputs := input.system_create(input_sdl.create())
 	defer input.system_destroy(&inputs)
-	click := input.add_button(&inputs, "ui.click")
+	click := input.button(&inputs, "ui.click")
 	input.bind_mouse_button(&inputs, click, .X2)
 
 	events: [3]sdl.Event
@@ -109,7 +109,7 @@ input_sdl_translates_mouse :: proc(t: ^testing.T) {
 input_mock_drives_mouse :: proc(t: ^testing.T) {
 	inputs := input.system_create(mock.create())
 	defer input.system_destroy(&inputs)
-	click := input.add_button(&inputs, "ui.click")
+	click := input.button(&inputs, "ui.click")
 	input.bind_mouse_button(&inputs, click, .Left)
 	events := [3]mock.Event {
 		mock.mouse_button_event(.Left, true),
@@ -127,11 +127,11 @@ input_mock_drives_mouse :: proc(t: ^testing.T) {
 input_rewind_drops_actions_and_bindings_added_after_mark :: proc(t: ^testing.T) {
 	inputs := input.system_create(mock.create())
 	defer input.system_destroy(&inputs)
-	quit := input.add_button(&inputs, "app.quit")
+	quit := input.button(&inputs, "app.quit")
 	input.bind_key(&inputs, quit, .ESCAPE)
 
 	mark := input.system_mark(&inputs)
-	jump := input.add_button(&inputs, "scene.jump")
+	jump := input.button(&inputs, "scene.jump")
 	move := input.add_axis_2d(&inputs, "scene.move")
 	input.bind_key(&inputs, jump, .SPACE)
 	input.bind_button_axis_2d(&inputs, move, {up = .W, down = .S, left = .A, right = .D})

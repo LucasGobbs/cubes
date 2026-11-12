@@ -50,15 +50,15 @@ flare_create :: proc(dev: ^gfx.Device, flare: ^Flare) {
 			pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3] = 255, 255, 255, u8(alpha * 255)
 		}
 	}
-	flare.texture = gfx.gfx_texture_create(dev, FLARE_TEXTURE_SIZE, FLARE_TEXTURE_SIZE, .R8G8B8A8_UNORM, .SAMPLER)
-	gfx.gfx_texture_get(dev, flare.texture)._temporary_raw_data = pixels
+	flare.texture = gfx.texture_create(dev, FLARE_TEXTURE_SIZE, FLARE_TEXTURE_SIZE, .R8G8B8A8_UNORM, .SAMPLER)
+	gfx.texture_get(dev, flare.texture)._temporary_raw_data = pixels
 	uploader := &dev.renderer.uploader
 	gfx.uploader_begin(uploader)
 	gfx.uploader_upload_texture(uploader, flare.texture)
 	gfx.uploader_flush_blocking(uploader)
-	gfx.gfx_texture_get(dev, flare.texture)._temporary_raw_data = nil
+	gfx.texture_get(dev, flare.texture)._temporary_raw_data = nil
 
-	flare.sampler = gfx.gfx_sampler_create(dev, gfx.SAMPLER_LINEAR_CLAMP)
+	flare.sampler = gfx.sampler_create(dev, gfx.SAMPLER_LINEAR_CLAMP)
 	flare.pipeline = default.create_textured_overlay_pipeline(dev)
 	flare.material = gfx.material_create(flare.pipeline)
 	default.bind_textured_material(&flare.material, flare.texture, flare.sampler)
@@ -72,9 +72,9 @@ flare_destroy :: proc(dev: ^gfx.Device, flare: ^Flare) {
 	gfx.renderer_clear_passes(&dev.renderer, .After_Scene)
 	gfx.mesh_destroy(dev, &flare.mesh)
 	gfx.material_destroy(&flare.material)
-	gfx.gfx_pipeline_destroy(dev, flare.pipeline)
-	gfx.gfx_sampler_destroy(dev, flare.sampler)
-	gfx.gfx_texture_destroy(dev, flare.texture)
+	gfx.pipeline_destroy(dev, flare.pipeline)
+	gfx.sampler_destroy(dev, flare.sampler)
+	gfx.texture_destroy(dev, flare.texture)
 	delete(flare.vertices)
 }
 
@@ -92,7 +92,7 @@ flare_sun_blocked :: proc(origin, sun: [3]f32) -> bool {
 flare_update :: proc(dev: ^gfx.Device, flare: ^Flare, sun: [3]f32) {
 	clear(&flare.vertices)
 	flare.draw = false
-	camera := gfx.gfx_camera(dev)
+	camera := gfx.camera(dev)
 	clip := gfx.camera_view_projection(camera) * [4]f32{camera.position.x + sun.x * 1000, camera.position.y + sun.y * 1000, camera.position.z + sun.z * 1000, 1}
 	if clip.w > 0 && !flare_sun_blocked(camera.position, sun) {
 		ndc := clip.xy / clip.w
@@ -132,10 +132,10 @@ flare_draw :: proc(ctx: ^gfx.Pass_Ctx, user: rawptr) {
 	dev := ctx.dev
 	gfx.renderer_begin_overlay_pass(ctx.renderer, ctx.color)
 	pass := ctx.renderer.pass
-	pipeline := gfx.gfx_pipeline_get(dev, flare.pipeline)
+	pipeline := gfx.pipeline_get(dev, flare.pipeline)
 	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-	gfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &flare.material)
-	gfx.gfx_pipeline_bind_draw(
+	gfx.pipeline_bind_material(dev, pass, dev.command_buffer, &flare.material)
+	gfx.pipeline_bind_draw(
 		dev,
 		flare.pipeline,
 		dev.command_buffer,
@@ -145,7 +145,7 @@ flare_draw :: proc(ctx: ^gfx.Pass_Ctx, user: rawptr) {
 			material = &flare.material,
 		},
 	)
-	vertex_buffer := gfx.gfx_buffer_get(dev, flare.mesh.vertex_buffer)
+	vertex_buffer := gfx.buffer_get(dev, flare.mesh.vertex_buffer)
 	sdl.BindGPUVertexBuffers(pass, 0, &(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}), 1)
 	sdl.DrawGPUPrimitives(pass, u32(len(flare.vertices)), 1, 0, 0)
 	gfx.renderer_end_pass(ctx.renderer)

@@ -40,14 +40,14 @@ model_texture_create :: proc(dev: ^Device, image: loader.ImageData) -> Texture_H
 	if len(image.pixels) == 0 do return {}
 	// glTF base color textures are sRGB by spec.
 	assert(image.format == .RGBA8_UNORM)
-	texture := gfx_texture_create_rgba8(dev, image.width, image.height, srgb = true, mipmaps = true)
-	gfx_texture_get(dev, texture)._temporary_raw_data = image.pixels
+	texture := texture_create_rgba8(dev, image.width, image.height, srgb = true, mipmaps = true)
+	texture_get(dev, texture)._temporary_raw_data = image.pixels
 	return texture
 }
 
 // The skin moves into the model; imported.skin is zeroed so
 // skinned_model_destroy does not free it twice.
-skinned_model_create :: proc(
+model_create_skinned :: proc(
 	dev: ^Device,
 	imported: ^loader.ImportedSkinnedModel,
 	pipeline: Pipeline_Handle,
@@ -74,10 +74,10 @@ model_upload_to_gpu :: proc(model: ^Model, uploader: ^Uploader) {
 		uploader_upload_texture(uploader, model.owned_texture)
 	}
 	uploader_flush_blocking(uploader)
-	gfx_buffer_get(uploader.dev, model.mesh.vertex_buffer)._temporary_raw_data = nil
-	gfx_buffer_get(uploader.dev, model.mesh.index_buffer)._temporary_raw_data = nil
+	buffer_get(uploader.dev, model.mesh.vertex_buffer)._temporary_raw_data = nil
+	buffer_get(uploader.dev, model.mesh.index_buffer)._temporary_raw_data = nil
 	if Resource_Handle(model.owned_texture).generation != 0 {
-		gfx_texture_get(uploader.dev, model.owned_texture)._temporary_raw_data = nil
+		texture_get(uploader.dev, model.owned_texture)._temporary_raw_data = nil
 	}
 }
 
@@ -86,7 +86,7 @@ model_destroy :: proc(dev: ^Device, model: ^Model) {
 	material_destroy(&model.material)
 	loader.skin_destroy(&model.skin)
 	if Resource_Handle(model.owned_texture).generation != 0 {
-		gfx_texture_destroy(dev, model.owned_texture)
+		texture_destroy(dev, model.owned_texture)
 	}
 	model^ = {}
 }

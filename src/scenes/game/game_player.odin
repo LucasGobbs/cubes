@@ -1,4 +1,4 @@
-// Per-entity convention: a state struct registered with engine.entity_register, plus
+// Per-entity convention: a state struct registered with engine.register_type, plus
 // create/tick procs. Components (Transform, Model, Health, ...) live in engine.World,
 // never in the struct. Scenes only orchestrate.
 // Player is a CesiumMan steered on the XZ plane; enemy chases it. See game_enemy.odin.
@@ -43,16 +43,16 @@ player_tick :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Player, d
 	}
 	if move != {} {
 		direction := linalg.normalize(move)
-		transform := engine.world_get(world, id, engine.Transform)
+		transform := engine.get(world, id, engine.Transform)
 		transform.position += direction * PLAYER_SPEED * dt
 		transform.rotation = game_facing(direction)
 	}
 
-	health := engine.world_get(world, id, engine.Health)
+	health := engine.get(world, id, engine.Health)
 	if health.current > 0 do return
 	log.infof("game: player down, respawning at origin")
 	engine.world_destroy_type(world, self.enemy)
-	transform := engine.world_get(world, id, engine.Transform)
+	transform := engine.get(world, id, engine.Transform)
 	transform.position = {}
 	transform.rotation = linalg.QUATERNIONF32_IDENTITY
 	health.current = health.max

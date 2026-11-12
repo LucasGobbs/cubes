@@ -17,15 +17,15 @@ main :: proc() {
 }
 
 start :: proc(app: ^App, world: ^engine.World) {
-	engine.world_spawn(
+	engine.spawn(
 		world,
 		engine.Camera{look_at = engine.Vec3{0, 0.8, 0}, bloom = engine.Bloom{threshold = 0.5, intensity = 1.5, radius = 12}},
 		engine.Transform{position = {0, 1, 1.9}},
 	)
-	app.hero = engine.world_spawn(world, engine.Model{path = HERO_MODEL}, engine.Animator{clip = "clip_0"})
+	app.hero = engine.spawn(world, engine.Model{path = HERO_MODEL}, engine.Animator{clip = "clip_0"})
 }
 
 update :: proc(app: ^App, world: ^engine.World, dt: f32) {
-	transform := engine.world_get(world, app.hero, engine.Transform)
+	transform := engine.get(world, app.hero, engine.Transform)
 	transform.rotation = linalg.quaternion_angle_axis_f32(dt, {0, 1, 0}) * transform.rotation
 }
