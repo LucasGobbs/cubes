@@ -44,6 +44,9 @@ buffer_stage :: proc(
 	ok := sdl.WaitForGPUIdle(gfx_ctx.gpu)
 	assert(ok)
 	buffer_destroy(gfx_ctx, handle)
+	// The holder owns the replacement across scenes; a scene scope must not free it.
+	gfx_ctx.scope_paused += 1
+	defer gfx_ctx.scope_paused -= 1
 	return buffer_create_from_bytes(gfx_ctx, data, usage)
 }
 
