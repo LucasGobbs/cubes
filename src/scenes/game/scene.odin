@@ -29,12 +29,12 @@ game_scene :: proc() -> scenekit.Scene {
 	return {name = "Game", create = game_create, tick = game_tick, destroy = game_destroy}
 }
 
-game_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
+game_create :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) -> bool {
 	state := new(Game_State)
 	demo.state = state
-	scenekit.scene_camera_reset(demo, gfx) // restores full-window targets after the editor shrinks them
+	scenekit.scene_camera_reset(demo, dev) // restores full-window targets after the editor shrinks them
 
-	inputs := gbbfx.gfx_input(gfx)
+	inputs := gbbfx.gfx_input(dev)
 	state.keys = {
 		glove.add_button(inputs, "game.up"),
 		glove.add_button(inputs, "game.down"),
@@ -46,7 +46,7 @@ game_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	glove.bind_key(inputs, state.keys[2], .A)
 	glove.bind_key(inputs, state.keys[3], .D)
 
-	state.world = engine.world_create(gfx)
+	state.world = engine.world_create(dev)
 	// Player first: its slot ticks before enemies, so enemies chase this frame's position.
 	state.player_type = engine.entity_register(
 		&state.world,
@@ -65,9 +65,9 @@ game_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	return true
 }
 
-game_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
+game_tick :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device, delta_time: f32) {
 	state := cast(^Game_State)demo.state
-	inputs := gbbfx.gfx_input(gfx)
+	inputs := gbbfx.gfx_input(dev)
 
 	move: gbbfx.Vec3
 	if glove.down(inputs, state.keys[0]) do move.z -= 1
@@ -105,7 +105,7 @@ game_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	engine.world_render(&state.world)
 }
 
-game_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
+game_destroy :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) {
 	state := cast(^Game_State)demo.state
 	engine.world_destroy(&state.world)
 	free(state)

@@ -21,19 +21,19 @@ skinned_scene :: proc() -> scenekit.Scene {
 	return {name = "Skinned", create = skinned_create, tick = skinned_tick, destroy = skinned_destroy}
 }
 
-skinned_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
+skinned_create :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) -> bool {
 	state := new(Skinned_State)
 	demo.state = state
-	scenekit.scene_camera_reset(demo, gfx, {0, 1.0, 1.9}, {0, 0.8, 0})
+	scenekit.scene_camera_reset(demo, dev, {0, 1.0, 1.9}, {0, 0.8, 0})
 
-	state.pipeline = defaults.create_textured_skinned_pipeline(gfx)
-	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
+	state.pipeline = defaults.create_textured_skinned_pipeline(dev)
+	state.sampler = gbbfx.gfx_sampler_create(dev, gbbfx.SAMPLER_TRILINEAR)
 
 	imported, ok := loader.model_import_skinned_from_gltf(SKINNED_MODEL_PATH)
 	if !ok do return false
 	defer loader.skinned_model_destroy(&imported)
-	state.model = gbbfx.skinned_model_create(gfx, &imported, state.pipeline)
-	gbbfx.model_upload_to_gpu(&state.model, &gfx.renderer.uploader)
+	state.model = gbbfx.skinned_model_create(dev, &imported, state.pipeline)
+	gbbfx.model_upload_to_gpu(&state.model, &dev.renderer.uploader)
 	defaults.bind_textured_skinned_material(
 		&state.model.material,
 		gbbfx.model_texture(&state.model),
@@ -52,17 +52,17 @@ skinned_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	return true
 }
 
-skinned_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
+skinned_tick :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device, delta_time: f32) {
 	state := cast(^Skinned_State)demo.state
 	gbbfx.scene_tick_animations(&state.scene, delta_time)
-	gbbfx.gfx_render(gfx, &state.scene)
+	gbbfx.gfx_render(dev, &state.scene)
 }
 
-skinned_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
+skinned_destroy :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) {
 	state := cast(^Skinned_State)demo.state
 	gbbfx.scene_destroy(&state.scene)
-	gbbfx.gfx_unload(gfx, &state.model)
-	gbbfx.gfx_sampler_destroy(gfx, state.sampler)
-	gbbfx.gfx_pipeline_destroy(gfx, state.pipeline)
+	gbbfx.gfx_unload(dev, &state.model)
+	gbbfx.gfx_sampler_destroy(dev, state.sampler)
+	gbbfx.gfx_pipeline_destroy(dev, state.pipeline)
 	free(state)
 }

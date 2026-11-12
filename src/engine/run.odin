@@ -22,11 +22,11 @@ run :: proc(
 		start  = transmute(proc(rawptr, ^World))start,
 		update = transmute(proc(rawptr, ^World, f32))update,
 	}
-	gfx: gbbfx.Gfx
-	created := gbbfx.create(&gfx, rawptr(&state), run_create, title, width, height, fullscreen)
+	dev: gbbfx.Device
+	created := gbbfx.create(&dev, rawptr(&state), run_create, title, width, height, fullscreen)
 	assert(created)
-	defer gbbfx.gfx_destroy(&gfx, rawptr(&state), run_destroy)
-	gbbfx.gfx_update(&gfx, rawptr(&state), run_tick)
+	defer gbbfx.gfx_destroy(&dev, rawptr(&state), run_destroy)
+	gbbfx.gfx_update(&dev, rawptr(&state), run_tick)
 }
 
 @(private = "file")
@@ -39,21 +39,21 @@ Run_State :: struct {
 }
 
 @(private = "file")
-run_create :: proc(gfx: ^gbbfx.Gfx, raw_state: rawptr) -> bool {
+run_create :: proc(dev: ^gbbfx.Device, raw_state: rawptr) -> bool {
 	state := (^Run_State)(raw_state)
-	inputs := gbbfx.gfx_input(gfx)
+	inputs := gbbfx.gfx_input(dev)
 	state.quit = glove.add_button(inputs, "app.quit")
 	glove.bind_key(inputs, state.quit, .ESCAPE)
-	state.world = world_create(gfx)
+	state.world = world_create(dev)
 	state.start(state.app, &state.world)
 	return true
 }
 
 @(private = "file")
-run_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, raw_state: rawptr) {
+run_tick :: proc(dev: ^gbbfx.Device, delta_time: f32, raw_state: rawptr) {
 	state := (^Run_State)(raw_state)
-	if glove.pressed(gbbfx.gfx_input(gfx), state.quit) {
-		gbbfx.gfx_request_quit(gfx)
+	if glove.pressed(gbbfx.gfx_input(dev), state.quit) {
+		gbbfx.gfx_request_quit(dev)
 		return
 	}
 	state.update(state.app, &state.world, delta_time)
@@ -62,7 +62,7 @@ run_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, raw_state: rawptr) {
 }
 
 @(private = "file")
-run_destroy :: proc(gfx: ^gbbfx.Gfx, raw_state: rawptr) {
+run_destroy :: proc(dev: ^gbbfx.Device, raw_state: rawptr) {
 	state := (^Run_State)(raw_state)
 	world_destroy(&state.world)
 }

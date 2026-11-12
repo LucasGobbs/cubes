@@ -44,30 +44,30 @@ ed_event_hook :: proc(event: ^sdl.Event, user_data: rawptr) {
 	editor.editor_handle_event(cast(^editor.Editor)user_data, event)
 }
 
-ed_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
+ed_create :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) -> bool {
 	state := new(Editor_State)
 	demo.state = state
-	scenekit.scene_camera_reset(demo, gfx)
+	scenekit.scene_camera_reset(demo, dev)
 
-	state.fly_camera = scenekit.fly_camera_create(gfx, "editor")
+	state.fly_camera = scenekit.fly_camera_create(dev, "editor")
 
-	state.textured_pipeline = defaults.create_textured_pipeline(gfx)
-	state.unlit_pipeline = defaults.create_unlit_pipeline(gfx)
-	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
+	state.textured_pipeline = defaults.create_textured_pipeline(dev)
+	state.unlit_pipeline = defaults.create_unlit_pipeline(dev)
+	state.sampler = gbbfx.gfx_sampler_create(dev, gbbfx.SAMPLER_TRILINEAR)
 
 	state.textured_model = scenekit.load_textured_model(
-		gfx,
+		dev,
 		"static/models/sea/ship-large.glb",
 		state.textured_pipeline,
 		state.sampler,
 	)
 	state.unlit_model = gbbfx.gfx_load(
-		gfx,
+		dev,
 		{model_path = "static/models/sea/ship-large.glb", pipeline = state.unlit_pipeline},
 	)
 	defaults.set_unlit_color(&state.unlit_model.material, {0.15, 0.85, 0.3, 1})
 
-	state.skybox = defaults.skybox_create(gfx, scenekit.SKYBOX_PATH)
+	state.skybox = defaults.skybox_create(dev, scenekit.SKYBOX_PATH)
 	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
 
 	gbbfx.scene_add_model(&state.scene, &state.textured_model, {-5, -.5, -12}, {0.4, 0.4, 0.4})
@@ -98,8 +98,8 @@ ed_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 		{position = {-1, 1, 0}, color = {1, 1, 1, 1}, uv = {0, 1}},
 	}
 	state.quad_indices = {0, 1, 2, 2, 3, 0}
-	state.quad_mesh = gbbfx.mesh_create(gfx, state.quad_vertices[:], state.quad_indices[:])
-	gbbfx.mesh_upload(&gfx.renderer, &state.quad_mesh)
+	state.quad_mesh = gbbfx.mesh_create(dev, state.quad_vertices[:], state.quad_indices[:])
+	gbbfx.mesh_upload(&dev.renderer, &state.quad_mesh)
 	quad := gbbfx.scene_add_entity(&state.scene)
 	quad_entity := gbbfx.scene_entity(&state.scene, quad)
 	gbbfx.entity_set_position(quad_entity, {0, 1.2, -8})
@@ -107,15 +107,15 @@ ed_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 
 	// Post-processing: separable gaussian blur over scene_color, run by the
 	// renderer after the scene (renderer_run_post).
-	state.blur = defaults.blur_create(gfx, 2)
-	gbbfx.renderer_set_passes(&gfx.renderer, .Post, []gbbfx.Render_Pass{defaults.blur_pass(&state.blur)})
+	state.blur = defaults.blur_create(dev, 2)
+	gbbfx.renderer_set_passes(&dev.renderer, .Post, []gbbfx.Render_Pass{defaults.blur_pass(&state.blur)})
 
 	when gbbfx.EDITOR {
 		state.editor = new(editor.Editor)
-		ok := editor.editor_init(gfx, state.editor)
+		ok := editor.editor_init(dev, state.editor)
 		assert(ok)
-		gbbfx.gfx_set_event_hook(gfx, ed_event_hook, state.editor)
-		_ = sdl.SetWindowRelativeMouseMode(gfx.window, false)
+		gbbfx.gfx_set_event_hook(dev, ed_event_hook, state.editor)
+		_ = sdl.SetWindowRelativeMouseMode(dev.window, false)
 	}
 
 	// A small fleet: jittered grid placements with random yaw and scale.
@@ -144,7 +144,7 @@ ed_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	return true
 }
 
-ed_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
+ed_tick :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device, delta_time: f32) {
 	state := cast(^Editor_State)demo.state
 
 	// Mouse-look only when the cursor is over the viewport widget (always
@@ -153,10 +153,10 @@ ed_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 	when gbbfx.EDITOR {
 		mouse_in_viewport = editor.editor_mouse_in_viewport(state.editor, state.ui.viewport)
 	}
-	scenekit.fly_camera_tick(&state.fly_camera, gfx, delta_time, look = mouse_in_viewport)
+	scenekit.fly_camera_tick(&state.fly_camera, dev, delta_time, look = mouse_in_viewport)
 
 	when gbbfx.EDITOR {
-		camera := gbbfx.gfx_camera(gfx)
+		camera := gbbfx.gfx_camera(dev)
 		state.ui.fps = 1 / delta_time
 		editor.editor_build_ui(state.editor, &state.ui)
 		defaults.set_unlit_color(&state.shared_material, state.tint)
@@ -166,19 +166,19 @@ ed_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 		if state.editor.visible {
 			vp := state.ui.viewport
 			if vp.w > 0 && vp.h > 0 {
-				gbbfx.renderer_resize_targets(&gfx.renderer, u32(vp.w), u32(vp.h))
+				gbbfx.renderer_resize_targets(&dev.renderer, u32(vp.w), u32(vp.h))
 				gbbfx.camera_set_aspect(camera, f32(vp.w) / f32(vp.h))
 			}
 		} else {
-			gbbfx.renderer_resize_targets(&gfx.renderer, u32(gfx.window_size.x), u32(gfx.window_size.y))
-			gbbfx.camera_set_aspect(camera, gbbfx.gfx_aspect_ratio(gfx))
+			gbbfx.renderer_resize_targets(&dev.renderer, u32(dev.window_size.x), u32(dev.window_size.y))
+			gbbfx.camera_set_aspect(camera, gbbfx.gfx_aspect_ratio(dev))
 		}
 	}
 
 	// Rebuild the quad's geometry every frame and re-upload it.
-	state.quad_vertices[2].position.y = 1 + 0.5 * linalg.sin(gfx.time * 2)
-	state.quad_vertices[3].position.y = 1 - 0.5 * linalg.sin(gfx.time * 2)
-	gbbfx.mesh_update(&gfx.renderer, &state.quad_mesh, state.quad_vertices[:], state.quad_indices[:])
+	state.quad_vertices[2].position.y = 1 + 0.5 * linalg.sin(dev.time * 2)
+	state.quad_vertices[3].position.y = 1 - 0.5 * linalg.sin(dev.time * 2)
+	gbbfx.mesh_update(&dev.renderer, &state.quad_mesh, state.quad_vertices[:], state.quad_indices[:])
 
 	state.rotation += state.rotation_speed * delta_time
 	gbbfx.entity_set_rotation_euler(
@@ -190,40 +190,40 @@ ed_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 
 	// Frame flow: scene -> offscreen, post passes -> final, editor overlay
 	// (or plain present) -> swapchain.
-	gbbfx.renderer_begin_frame(&gfx.renderer)
-	gbbfx.renderer_render_scene(&gfx.renderer, &state.scene)
-	if gfx.swapchain != nil {
-		final := gbbfx.renderer_run_post(&gfx.renderer)
+	gbbfx.renderer_begin_frame(&dev.renderer)
+	gbbfx.renderer_render_scene(&dev.renderer, &state.scene)
+	if dev.swapchain != nil {
+		final := gbbfx.renderer_run_post(&dev.renderer)
 		when gbbfx.EDITOR {
 			if state.editor.visible {
-				editor.editor_draw(state.editor, gfx, final, state.ui.viewport)
+				editor.editor_draw(state.editor, dev, final, state.ui.viewport)
 			} else {
-				gbbfx.renderer_present(&gfx.renderer, final)
+				gbbfx.renderer_present(&dev.renderer, final)
 			}
 		} else {
-			gbbfx.renderer_present(&gfx.renderer, final)
+			gbbfx.renderer_present(&dev.renderer, final)
 		}
 	}
-	gbbfx.gfx_end_frame(gfx)
+	gbbfx.gfx_end_frame(dev)
 }
 
-ed_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
+ed_destroy :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) {
 	state := cast(^Editor_State)demo.state
-	gbbfx.gfx_set_event_hook(gfx, nil, nil)
-	_ = sdl.SetWindowRelativeMouseMode(gfx.window, true)
+	gbbfx.gfx_set_event_hook(dev, nil, nil)
+	_ = sdl.SetWindowRelativeMouseMode(dev.window, true)
 	gbbfx.scene_destroy(&state.scene)
-	defaults.skybox_destroy(gfx, &state.skybox)
+	defaults.skybox_destroy(dev, &state.skybox)
 	when gbbfx.EDITOR {
-		editor.editor_destroy(gfx, state.editor)
+		editor.editor_destroy(dev, state.editor)
 		free(state.editor)
 	}
-	gbbfx.renderer_clear_passes(&gfx.renderer, .Post) // passes point into state
-	gbbfx.mesh_destroy(gfx, &state.quad_mesh)
+	gbbfx.renderer_clear_passes(&dev.renderer, .Post) // passes point into state
+	gbbfx.mesh_destroy(dev, &state.quad_mesh)
 	gbbfx.material_destroy(&state.shared_material)
-	gbbfx.gfx_unload(gfx, &state.textured_model)
-	gbbfx.gfx_unload(gfx, &state.unlit_model)
-	gbbfx.gfx_sampler_destroy(gfx, state.sampler)
-	gbbfx.gfx_pipeline_destroy(gfx, state.textured_pipeline)
-	gbbfx.gfx_pipeline_destroy(gfx, state.unlit_pipeline)
+	gbbfx.gfx_unload(dev, &state.textured_model)
+	gbbfx.gfx_unload(dev, &state.unlit_model)
+	gbbfx.gfx_sampler_destroy(dev, state.sampler)
+	gbbfx.gfx_pipeline_destroy(dev, state.textured_pipeline)
+	gbbfx.gfx_pipeline_destroy(dev, state.unlit_pipeline)
 	free(state)
 }

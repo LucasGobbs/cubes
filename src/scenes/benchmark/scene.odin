@@ -113,16 +113,16 @@ benchmark_scene :: proc() -> scenekit.Scene {
 	}
 }
 
-benchmark_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
+benchmark_create :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) -> bool {
 	state := new(Benchmark_State)
 	state.fog_on = true // haze by default so boats and dragons share the sea's horizon blend
 	demo.state = state
-	scenekit.scene_camera_reset(demo, gfx, {0, 8, 20})
+	scenekit.scene_camera_reset(demo, dev, {0, 8, 20})
 	// Uncapped: the point of this scene is measuring real frame cost.
-	gbbfx.gfx_set_present_mode(gfx, .IMMEDIATE)
+	gbbfx.gfx_set_present_mode(dev, .IMMEDIATE)
 
-	inputs := gbbfx.gfx_input(gfx)
-	state.fly_camera = scenekit.fly_camera_create(gfx, "benchmark")
+	inputs := gbbfx.gfx_input(dev)
+	state.fly_camera = scenekit.fly_camera_create(dev, "benchmark")
 	state.add_action = glove.add_button(inputs, "benchmark.add")
 	state.subtract_action = glove.add_button(inputs, "benchmark.subtract")
 	glove.bind_key(inputs, state.add_action, .EQUALS)
@@ -130,18 +130,18 @@ benchmark_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state.fog_action = glove.add_button(inputs, "benchmark.fog")
 	glove.bind_key(inputs, state.fog_action, .V)
 
-	state.pipeline = defaults.create_textured_instanced_pipeline(gfx)
-	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
+	state.pipeline = defaults.create_textured_instanced_pipeline(dev)
+	state.sampler = gbbfx.gfx_sampler_create(dev, gbbfx.SAMPLER_TRILINEAR)
 	boat_paths := BOAT_PATHS
 	for path, index in boat_paths {
-		state.models[index] = gbbfx.gfx_load(gfx, {model_path = path, pipeline = state.pipeline})
+		state.models[index] = gbbfx.gfx_load(dev, {model_path = path, pipeline = state.pipeline})
 		defaults.bind_textured_instanced_material(
 			&state.models[index].material,
 			gbbfx.model_texture(&state.models[index]),
 			state.sampler,
 		)
 	}
-	state.dragon = gbbfx.gfx_load(gfx, {model_path = DRAGON_PATH, pipeline = state.pipeline})
+	state.dragon = gbbfx.gfx_load(dev, {model_path = DRAGON_PATH, pipeline = state.pipeline})
 	defaults.bind_textured_instanced_material(
 		&state.dragon.material,
 		gbbfx.model_texture(&state.dragon),
@@ -149,20 +149,20 @@ benchmark_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	)
 
 	// On-screen text: font atlas + blended depth-less overlay pipeline.
-	font, font_ok := gbbfx.font_create(gfx, "static/fonts/andale-mono.ttf")
+	font, font_ok := gbbfx.font_create(dev, "static/fonts/andale-mono.ttf")
 	assert(font_ok)
 	state.font = font
-	state.overlay_pipeline = defaults.create_textured_overlay_pipeline(gfx)
+	state.overlay_pipeline = defaults.create_textured_overlay_pipeline(dev)
 	state.overlay_material = gbbfx.material_create(state.overlay_pipeline)
 	defaults.bind_textured_material(&state.overlay_material, state.font.texture, state.sampler)
 	dummy := [6]gbbfx.VertexData{}
-	state.text_mesh = gbbfx.mesh_create_unindexed(gfx, dummy[:])
-	gbbfx.mesh_upload(&gfx.renderer, &state.text_mesh)
+	state.text_mesh = gbbfx.mesh_create_unindexed(dev, dummy[:])
+	gbbfx.mesh_upload(&dev.renderer, &state.text_mesh)
 
-	state.skybox = defaults.skybox_create(gfx, scenekit.SKYBOX_PATH)
-	state.sea_pipeline = sea_pipeline_create(gfx, state)
+	state.skybox = defaults.skybox_create(dev, scenekit.SKYBOX_PATH)
+	state.sea_pipeline = sea_pipeline_create(dev, state)
 	state.sea_material = gbbfx.material_create(state.sea_pipeline)
-	state.sea_mesh = sea_mesh_create(gfx)
+	state.sea_mesh = sea_mesh_create(dev)
 
 	rand.reset(1) // fixed layout: every run draws the same fleet, so results compare
 	benchmark_populate(state, 150)
@@ -223,7 +223,7 @@ bench_to_ndc :: proc(x, y, width, height: f32) -> [3]f32 {
 
 benchmark_push_text :: proc(
 	state: ^Benchmark_State,
-	gfx: ^gbbfx.Gfx,
+	dev: ^gbbfx.Device,
 	text: string,
 	x, top: f32,
 	color: [4]f32,
@@ -233,8 +233,8 @@ benchmark_push_text :: proc(
 	quads: [dynamic]gbbfx.Font_Quad
 	defer delete(quads)
 	gbbfx.font_layout(&state.font, text, &cursor_x, &cursor_y, &quads)
-	width := f32(gfx.window_size.x)
-	height := f32(gfx.window_size.y)
+	width := f32(dev.window_size.x)
+	height := f32(dev.window_size.y)
 	for quad in quads {
 		p0 := bench_to_ndc(quad.x0, quad.y0, width, height)
 		p1 := bench_to_ndc(quad.x1, quad.y0, width, height)
@@ -256,7 +256,7 @@ benchmark_push_text :: proc(
 	}
 }
 
-sea_mesh_create :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Mesh {
+sea_mesh_create :: proc(dev: ^gbbfx.Device) -> gbbfx.Mesh {
 	n :: SEA_CELLS + 1
 	cell :: f32(2 * SEA_HALF) / SEA_CELLS
 	vertices := make([dynamic]gbbfx.VertexData, 0, n * n, context.temp_allocator)
@@ -274,15 +274,15 @@ sea_mesh_create :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Mesh {
 			append(&indices, i, i + stride, i + 1, i + 1, i + stride, i + stride + 1)
 		}
 	}
-	mesh := gbbfx.mesh_create(gfx, vertices[:], indices[:])
-	gbbfx.mesh_upload(&gfx.renderer, &mesh)
+	mesh := gbbfx.mesh_create(dev, vertices[:], indices[:])
+	gbbfx.mesh_upload(&dev.renderer, &mesh)
 	return mesh
 }
 
-sea_pipeline_create :: proc(gfx: ^gbbfx.Gfx, state: ^Benchmark_State) -> gbbfx.Pipeline_Handle {
+sea_pipeline_create :: proc(dev: ^gbbfx.Device, state: ^Benchmark_State) -> gbbfx.Pipeline_Handle {
 	attributes := shader_parameters.sea_vertex_attributes(gbbfx.VertexData)
 	return gbbfx.gfx_pipeline_create(
-		gfx,
+		dev,
 		{
 			vertex = shader_parameters.sea_vertex(),
 			fragment = shader_parameters.sea_fragment(),
@@ -317,10 +317,10 @@ sea_bind_draw :: proc(
 	gbbfx.draw_push_uniform(draw_context, shader_parameters.SEA_VERTEX_UNIFORM_BLOCK, &uniforms)
 }
 
-benchmark_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
+benchmark_tick :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device, delta_time: f32) {
 	state := cast(^Benchmark_State)demo.state
 
-	inputs := gbbfx.gfx_input(gfx)
+	inputs := gbbfx.gfx_input(dev)
 	if glove.pressed(inputs, state.add_action) {
 		benchmark_populate(state, state.per_model + BENCH_STEP)
 	}
@@ -331,11 +331,11 @@ benchmark_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) 
 		state.fog_on = !state.fog_on
 	}
 	fog_rgb := gbbfx.color_srgb_to_linear({0.671, 0.757, 0.949, 1}) // skybox horizon; matches `sky` in sea.slang
-	gfx.renderer.fog = state.fog_on ? {fog_rgb.r, fog_rgb.g, fog_rgb.b, FOG_VIEW_DISTANCE} : [4]f32{}
+	dev.renderer.fog = state.fog_on ? {fog_rgb.r, fog_rgb.g, fog_rgb.b, FOG_VIEW_DISTANCE} : [4]f32{}
 
-	scenekit.fly_camera_tick(&state.fly_camera, gfx, delta_time)
+	scenekit.fly_camera_tick(&state.fly_camera, dev, delta_time)
 	state.sea_time += delta_time
-	camera := gfx.renderer.camera.position
+	camera := dev.renderer.camera.position
 	for boat in state.boats {
 		flat := gbbfx.Vec3{boat.x, SEA_Y, boat.z}
 		h, grad := sea_surface_height(flat.xz, state.sea_time, linalg.distance(camera, flat))
@@ -356,7 +356,7 @@ benchmark_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) 
 	state.hud_frames += 1
 	if state.hud_time >= 1 || (state.hud_fps == 0 && state.hud_time > 0) {
 		state.hud_fps = f32(state.hud_frames) / state.hud_time
-		state.hud_draws = gfx.renderer.draw_calls
+		state.hud_draws = dev.renderer.draw_calls
 		state.hud_time, state.hud_frames = 0, 0
 	}
 
@@ -365,7 +365,7 @@ benchmark_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) 
 	fps_buffer: [32]byte
 	benchmark_push_text(
 		state,
-		gfx,
+		dev,
 		fmt.bprintf(fps_buffer[:], "%.0f FPS", state.hud_fps),
 		10,
 		10,
@@ -374,7 +374,7 @@ benchmark_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) 
 	count_buffer: [32]byte
 	benchmark_push_text(
 		state,
-		gfx,
+		dev,
 		fmt.bprintf(count_buffer[:], "objects: %d", state.per_model * BOAT_COUNT + DRAGON_COUNT),
 		10,
 		30,
@@ -383,7 +383,7 @@ benchmark_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) 
 	draws_buffer: [32]byte
 	benchmark_push_text(
 		state,
-		gfx,
+		dev,
 		fmt.bprintf(draws_buffer[:], "draws: %d", state.hud_draws),
 		10,
 		50,
@@ -391,7 +391,7 @@ benchmark_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) 
 	)
 	benchmark_push_text(
 		state,
-		gfx,
+		dev,
 		state.fog_on ? "fog + view distance on (V)" : "fog + view distance off (V)",
 		10,
 		90,
@@ -399,35 +399,35 @@ benchmark_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) 
 	)
 	benchmark_push_text(
 		state,
-		gfx,
+		dev,
 		"=/- objects  wasd move  shift fast  c smooth cam",
 		10,
 		70,
 		gbbfx.color_srgb_to_linear({0.8, 0.8, 0.8, 1}),
 	)
-	gbbfx.mesh_update_unindexed(&gfx.renderer, &state.text_mesh, state.text_vertices[:])
+	gbbfx.mesh_update_unindexed(&dev.renderer, &state.text_mesh, state.text_vertices[:])
 
 	// Frame flow: scene -> offscreen, text into the offscreen, blit out.
-	gbbfx.renderer_begin_frame(&gfx.renderer)
-	gbbfx.renderer_render_scene(&gfx.renderer, &state.scene)
-	if gfx.swapchain != nil {
-		renderer := &gfx.renderer
+	gbbfx.renderer_begin_frame(&dev.renderer)
+	gbbfx.renderer_render_scene(&dev.renderer, &state.scene)
+	if dev.swapchain != nil {
+		renderer := &dev.renderer
 		gbbfx.renderer_begin_overlay_pass(renderer, renderer.scene_color)
 		pass := renderer.pass
-		pipeline := gbbfx.gfx_pipeline_get(gfx, state.overlay_pipeline)
+		pipeline := gbbfx.gfx_pipeline_get(dev, state.overlay_pipeline)
 		sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-		gbbfx.gfx_pipeline_bind_material(gfx, pass, gfx.command_buffer, &state.overlay_material)
+		gbbfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &state.overlay_material)
 		gbbfx.gfx_pipeline_bind_draw(
-			gfx,
+			dev,
 			state.overlay_pipeline,
-			gfx.command_buffer,
+			dev.command_buffer,
 			{
 				view_projection = linalg.MATRIX4F32_IDENTITY,
 				model_transform = linalg.MATRIX4F32_IDENTITY,
 				material = &state.overlay_material,
 			},
 		)
-		vertex_buffer := gbbfx.gfx_buffer_get(gfx, state.text_mesh.vertex_buffer)
+		vertex_buffer := gbbfx.gfx_buffer_get(dev, state.text_mesh.vertex_buffer)
 		sdl.BindGPUVertexBuffers(
 			pass,
 			0,
@@ -438,24 +438,24 @@ benchmark_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) 
 		gbbfx.renderer_end_pass(renderer)
 		gbbfx.renderer_present(renderer, gbbfx.renderer_run_post(renderer)) // run_post: global overlays (F1 stats)
 	}
-	gbbfx.gfx_end_frame(gfx)
+	gbbfx.gfx_end_frame(dev)
 }
 
-benchmark_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
+benchmark_destroy :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) {
 	state := cast(^Benchmark_State)demo.state
 	gbbfx.scene_destroy(&state.scene)
-	defaults.skybox_destroy(gfx, &state.skybox)
-	gbbfx.mesh_destroy(gfx, &state.sea_mesh)
+	defaults.skybox_destroy(dev, &state.skybox)
+	gbbfx.mesh_destroy(dev, &state.sea_mesh)
 	gbbfx.material_destroy(&state.sea_material)
-	gbbfx.gfx_pipeline_destroy(gfx, state.sea_pipeline)
+	gbbfx.gfx_pipeline_destroy(dev, state.sea_pipeline)
 	delete(state.text_vertices)
-	gbbfx.mesh_destroy(gfx, &state.text_mesh)
+	gbbfx.mesh_destroy(dev, &state.text_mesh)
 	gbbfx.material_destroy(&state.overlay_material)
-	gbbfx.gfx_pipeline_destroy(gfx, state.overlay_pipeline)
-	gbbfx.font_destroy(gfx, &state.font)
-	for &model in state.models do gbbfx.gfx_unload(gfx, &model)
-	gbbfx.gfx_unload(gfx, &state.dragon)
-	gbbfx.gfx_sampler_destroy(gfx, state.sampler)
-	gbbfx.gfx_pipeline_destroy(gfx, state.pipeline)
+	gbbfx.gfx_pipeline_destroy(dev, state.overlay_pipeline)
+	gbbfx.font_destroy(dev, &state.font)
+	for &model in state.models do gbbfx.gfx_unload(dev, &model)
+	gbbfx.gfx_unload(dev, &state.dragon)
+	gbbfx.gfx_sampler_destroy(dev, state.sampler)
+	gbbfx.gfx_pipeline_destroy(dev, state.pipeline)
 	free(state)
 }

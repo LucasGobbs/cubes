@@ -4,10 +4,10 @@ import "core:math/linalg"
 import sdl "vendor:sdl3"
 import gbbfx ".."
 
-create_textured_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
+create_textured_pipeline :: proc(dev: ^gbbfx.Device) -> gbbfx.Pipeline_Handle {
 	attributes := default_textured_vertex_attributes(gbbfx.VertexData)
 	return gbbfx.gfx_pipeline_create(
-		gfx,
+		dev,
 		{
 			vertex = default_textured_vertex(),
 			fragment = default_textured_fragment(),
@@ -21,10 +21,10 @@ create_textured_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
 	)
 }
 
-create_unlit_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
+create_unlit_pipeline :: proc(dev: ^gbbfx.Device) -> gbbfx.Pipeline_Handle {
 	attributes := default_unlit_color_vertex_attributes(gbbfx.VertexData)
 	return gbbfx.gfx_pipeline_create(
-		gfx,
+		dev,
 		{
 			vertex = default_unlit_color_vertex(),
 			fragment = default_unlit_color_fragment(),
@@ -41,10 +41,10 @@ create_unlit_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
 // Textured pipeline for screen-space overlays: no depth, alpha blending.
 // Vertices are expected in clip space with an identity view-projection
 // (see renderer_begin_overlay_pass).
-create_textured_overlay_pipeline :: proc(gfx: ^gbbfx.Gfx, color_format := sdl.GPUTextureFormat.INVALID) -> gbbfx.Pipeline_Handle {
+create_textured_overlay_pipeline :: proc(dev: ^gbbfx.Device, color_format := sdl.GPUTextureFormat.INVALID) -> gbbfx.Pipeline_Handle {
 	attributes := default_textured_vertex_attributes(gbbfx.VertexData)
 	return gbbfx.gfx_pipeline_create(
-		gfx,
+		dev,
 		{
 			vertex = default_textured_vertex(),
 			fragment = default_textured_fragment(),
@@ -63,10 +63,10 @@ create_textured_overlay_pipeline :: proc(gfx: ^gbbfx.Gfx, color_format := sdl.GP
 // Instanced textured pipeline: the renderer collapses runs of identical
 // (mesh, material) items into one draw; per-instance transforms arrive via
 // the renderer's storage buffer, so bind_draw only pushes view_projection.
-create_textured_instanced_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
+create_textured_instanced_pipeline :: proc(dev: ^gbbfx.Device) -> gbbfx.Pipeline_Handle {
 	attributes := default_textured_instanced_vertex_attributes(gbbfx.VertexData)
 	return gbbfx.gfx_pipeline_create(
-		gfx,
+		dev,
 		{
 			vertex = default_textured_instanced_vertex(),
 			fragment = default_textured_instanced_fragment(),
@@ -84,10 +84,10 @@ create_textured_instanced_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Ha
 // Skinned textured pipeline: bind-pose vertices plus joint indices and weights.
 // Skinned runs are drawn with bind_textured_skinned_storage supplying the
 // per-instance transforms and joint palettes.
-create_textured_skinned_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
+create_textured_skinned_pipeline :: proc(dev: ^gbbfx.Device) -> gbbfx.Pipeline_Handle {
 	attributes := default_textured_skinned_vertex_attributes(gbbfx.SkinnedVertexData)
 	return gbbfx.gfx_pipeline_create(
-		gfx,
+		dev,
 		{
 			vertex = default_textured_skinned_vertex(),
 			fragment = default_textured_skinned_fragment(),
@@ -179,13 +179,13 @@ bind_textured_skinned_material :: proc(
 // buffers must be laid out with the same instance index. Binding replaces the
 // pass's slot 0, so rebind the static instance buffer before later static runs.
 bind_textured_skinned_storage :: proc(
-	gfx: ^gbbfx.Gfx,
+	dev: ^gbbfx.Device,
 	pass: ^sdl.GPURenderPass,
 	transforms: gbbfx.Buffer_Handle,
 	palettes: gbbfx.Buffer_Handle,
 ) {
-	transform_buffer := gbbfx.gfx_buffer_get(gfx, transforms)
-	palette_buffer := gbbfx.gfx_buffer_get(gfx, palettes)
+	transform_buffer := gbbfx.gfx_buffer_get(dev, transforms)
+	palette_buffer := gbbfx.gfx_buffer_get(dev, palettes)
 	sdl.BindGPUVertexStorageBuffers(
 		pass,
 		DEFAULT_TEXTURED_SKINNED_VERTEX_INSTANCE_TRANSFORMS.location.slot,

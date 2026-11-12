@@ -31,19 +31,19 @@ models_scene :: proc() -> scenekit.Scene {
 	return {name = "Models", create = models_create, tick = models_tick, destroy = models_destroy}
 }
 
-models_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
+models_create :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) -> bool {
 	state := new(Models_State)
 	demo.state = state
-	scenekit.scene_camera_reset(demo, gfx, {0, 2, 4})
+	scenekit.scene_camera_reset(demo, dev, {0, 2, 4})
 
-	state.fly_camera = scenekit.fly_camera_create(gfx, "models")
+	state.fly_camera = scenekit.fly_camera_create(dev, "models")
 
-	state.pipeline = defaults.create_textured_pipeline(gfx)
-	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
+	state.pipeline = defaults.create_textured_pipeline(dev)
+	state.sampler = gbbfx.gfx_sampler_create(dev, gbbfx.SAMPLER_TRILINEAR)
 
 	for path, index in MODEL_PATHS {
 		state.models[index] = scenekit.load_textured_model(
-			gfx,
+			dev,
 			path,
 			state.pipeline,
 			state.sampler,
@@ -58,10 +58,10 @@ models_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	}
 
 	// Ground plane: raw quad, tiled mud texture.
-	state.skybox = defaults.skybox_create(gfx, scenekit.SKYBOX_PATH)
+	state.skybox = defaults.skybox_create(dev, scenekit.SKYBOX_PATH)
 	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
 
-	state.ground_texture = gbbfx.gfx_texture_load(gfx, "static/muddy_ground.jpg")
+	state.ground_texture = gbbfx.gfx_texture_load(dev, "static/muddy_ground.jpg")
 	state.ground_material = gbbfx.material_create(state.pipeline)
 	defaults.bind_textured_material(&state.ground_material, state.ground_texture, state.sampler)
 	tiling :: f32(40)
@@ -72,18 +72,18 @@ models_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 		{position = {-100, -1, 100}, color = {1, 1, 1, 1}, normal = {0, 1, 0}, uv = {0, tiling}},
 	}
 	ground_indices := [6]u16{0, 2, 1, 0, 3, 2}
-	state.ground_mesh = gbbfx.mesh_create(gfx, ground_vertices[:], ground_indices[:])
-	gbbfx.mesh_upload(&gfx.renderer, &state.ground_mesh)
+	state.ground_mesh = gbbfx.mesh_create(dev, ground_vertices[:], ground_indices[:])
+	gbbfx.mesh_upload(&dev.renderer, &state.ground_mesh)
 	ground := gbbfx.scene_add_entity(&state.scene)
 	ground_entity := gbbfx.scene_entity(&state.scene, ground)
 	gbbfx.entity_add_renderable(ground_entity, &state.ground_mesh, &state.ground_material)
 	return true
 }
 
-models_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
+models_tick :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device, delta_time: f32) {
 	state := cast(^Models_State)demo.state
 
-	scenekit.fly_camera_tick(&state.fly_camera, gfx, delta_time)
+	scenekit.fly_camera_tick(&state.fly_camera, dev, delta_time)
 
 	state.rotation += delta_time
 	for entity, index in state.entities {
@@ -94,18 +94,18 @@ models_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 			0,
 		)
 	}
-	gbbfx.gfx_render(gfx, &state.scene)
+	gbbfx.gfx_render(dev, &state.scene)
 }
 
-models_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
+models_destroy :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) {
 	state := cast(^Models_State)demo.state
 	gbbfx.scene_destroy(&state.scene)
-	defaults.skybox_destroy(gfx, &state.skybox)
-	gbbfx.mesh_destroy(gfx, &state.ground_mesh)
+	defaults.skybox_destroy(dev, &state.skybox)
+	gbbfx.mesh_destroy(dev, &state.ground_mesh)
 	gbbfx.material_destroy(&state.ground_material)
-	gbbfx.gfx_texture_destroy(gfx, state.ground_texture)
-	for &model in state.models do gbbfx.gfx_unload(gfx, &model)
-	gbbfx.gfx_sampler_destroy(gfx, state.sampler)
-	gbbfx.gfx_pipeline_destroy(gfx, state.pipeline)
+	gbbfx.gfx_texture_destroy(dev, state.ground_texture)
+	for &model in state.models do gbbfx.gfx_unload(dev, &model)
+	gbbfx.gfx_sampler_destroy(dev, state.sampler)
+	gbbfx.gfx_pipeline_destroy(dev, state.pipeline)
 	free(state)
 }

@@ -20,8 +20,8 @@ FlyCamera :: struct {
 	look_velocity: [2]f32,
 }
 
-fly_camera_create :: proc(gfx: ^gbbfx.Gfx, prefix: string) -> FlyCamera {
-	inputs := gbbfx.gfx_input(gfx)
+fly_camera_create :: proc(dev: ^gbbfx.Device, prefix: string) -> FlyCamera {
+	inputs := gbbfx.gfx_input(dev)
 	fly_camera := FlyCamera {
 		move_action  = glove.add_axis_2d(inputs, fmt.tprintf("{}.move", prefix)),
 		boost_action = glove.add_button(inputs, fmt.tprintf("{}.boost", prefix)),
@@ -48,18 +48,18 @@ fly_camera_create :: proc(gfx: ^gbbfx.Gfx, prefix: string) -> FlyCamera {
 // C toggles smooth mode: movement and look ease in and out, for recording walkthroughs.
 fly_camera_tick :: proc(
 	fly_camera: ^FlyCamera,
-	gfx: ^gbbfx.Gfx,
+	dev: ^gbbfx.Device,
 	delta_time: f32,
 	look := true,
 ) {
-	inputs := gbbfx.gfx_input(gfx)
+	inputs := gbbfx.gfx_input(dev)
 	if glove.pressed(inputs, fly_camera.smooth_action) do fly_camera.smooth = !fly_camera.smooth
 
 	// Exponential ease toward the target; 1 when not smooth (instant response).
 	ease: f32 = 1
 	if fly_camera.smooth do ease = 1 - math.exp(-SMOOTH_RATE * delta_time)
 
-	camera := gbbfx.gfx_camera(gfx)
+	camera := gbbfx.gfx_camera(dev)
 	look_target: [2]f32
 	if look do look_target = glove.mouse_delta(inputs)
 	fly_camera.look_velocity += (look_target - fly_camera.look_velocity) * ease

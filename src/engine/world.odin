@@ -99,7 +99,7 @@ Component :: union {
 }
 
 World :: struct {
-	gfx:      ^gbbfx.Gfx, // nil is fine for worlds that only hold Transforms (tests)
+	dev:      ^gbbfx.Device, // nil is fine for worlds that only hold Transforms (tests)
 	slots:    [dynamic]Slot,
 	free:     [dynamic]u32,
 	types:    [dynamic]Entity_Type_Info,
@@ -121,8 +121,8 @@ Slot :: struct {
 }
 
 // Use world_create; a zero World has no asset cache.
-world_create :: proc(gfx: ^gbbfx.Gfx) -> World {
-	return World{gfx = gfx, assets = {models = make(map[string]^Model_Asset)}}
+world_create :: proc(dev: ^gbbfx.Device) -> World {
+	return World{dev = dev, assets = {models = make(map[string]^Model_Asset)}}
 }
 
 // Registers a per-entity state type. create runs after spawn, tick once per
@@ -240,9 +240,9 @@ world_destroy_type :: proc(world: ^World, type: Entity_Type) {
 }
 
 // Frees every entity, cached asset and effect. Clears the Post passes this world
-// may have set on the renderer. Compute pipelines are freed with the Gfx.
+// may have set on the renderer. Compute pipelines are freed with the Device.
 world_destroy :: proc(world: ^World) {
-	if world.gfx != nil do gbbfx.renderer_clear_passes(&world.gfx.renderer, .Post)
+	if world.dev != nil do gbbfx.renderer_clear_passes(&world.dev.renderer, .Post)
 	for index := 0; index < len(world.slots); index += 1 {
 		slot := world.slots[index]
 		if slot.alive do world_destroy_entity(world, Entity_Id{u32(index), slot.generation})
@@ -280,7 +280,7 @@ world_update :: proc(world: ^World, dt: f32) {
 }
 
 world_render :: proc(world: ^World) {
-	gbbfx.renderer_render_frame(&world.gfx.renderer, world_extract, world)
+	gbbfx.renderer_render_frame(&world.dev.renderer, world_extract, world)
 }
 
 @(private = "file")
@@ -299,7 +299,7 @@ update_camera :: proc(world: ^World) {
 		camera := slot_component(&slot, Camera)
 		if camera == nil do continue
 		transform := slot_component(&slot, Transform)
-		cam := gbbfx.gfx_camera(world.gfx)
+		cam := gbbfx.gfx_camera(world.dev)
 		cam.position = transform.position
 		if target, ok := camera.look_at.?; ok {
 			cam.yaw, cam.pitch = direction_angles(target - transform.position)
@@ -309,7 +309,7 @@ update_camera :: proc(world: ^World) {
 		}
 		gbbfx.camera_rotate(cam, 0, 0) // rebuilds direction, right and up from yaw/pitch
 		fov := camera.fov_y if camera.fov_y > 0 else gbbfx.CAMERA_FOV_Y
-		cam.projection = gbbfx.camera_perspective(gbbfx.gfx_aspect_ratio(world.gfx), fov)
+		cam.projection = gbbfx.camera_perspective(gbbfx.gfx_aspect_ratio(world.dev), fov)
 		set_effect_passes(world, camera)
 		return
 	}
@@ -331,7 +331,7 @@ set_effect_passes :: proc(world: ^World, camera: ^Camera) {
 	if radius, ok := camera.blur.?; ok {
 		if world.blur == nil {
 			world.blur = new(defaults.Blur)
-			world.blur^ = defaults.blur_create(world.gfx)
+			world.blur^ = defaults.blur_create(world.dev)
 		}
 		world.blur.radius = radius if radius > 0 else 4
 		world.blur.radius = min(world.blur.radius, defaults.BLUR_MAX_RADIUS)
@@ -341,7 +341,7 @@ set_effect_passes :: proc(world: ^World, camera: ^Camera) {
 	if settings, ok := camera.bloom.?; ok {
 		if world.bloom == nil {
 			world.bloom = new(defaults.Bloom)
-			world.bloom^ = defaults.bloom_create(world.gfx)
+			world.bloom^ = defaults.bloom_create(world.dev)
 		}
 		// Same values as defaults.bloom_create, applied to the existing pipelines.
 		threshold := settings.threshold if settings.threshold > 0 else 0.8
@@ -353,7 +353,7 @@ set_effect_passes :: proc(world: ^World, camera: ^Camera) {
 		passes[count] = defaults.bloom_pass(world.bloom)
 		count += 1
 	}
-	gbbfx.renderer_set_passes(&world.gfx.renderer, .Post, passes[:count])
+	gbbfx.renderer_set_passes(&world.dev.renderer, .Post, passes[:count])
 }
 
 @(private = "file")
@@ -432,7 +432,7 @@ sync_transform :: proc(slot: ^Slot) {
 @(private = "file")
 slot_resolve :: proc(world: ^World, slot: ^Slot) {
 	if model := slot_component(slot, Model); model != nil && gbbfx.entity_renderable(&slot.entity) == nil {
-		assert(world.gfx != nil, "engine: Model needs a world with a Gfx")
+		assert(world.dev != nil, "engine: Model needs a world with a Device")
 		asset := asset_model(world, model.path)
 		if asset.skinned {
 			gbbfx.entity_add_skinned_renderable(&slot.entity, &asset.model.mesh, &asset.model.material, &asset.model.skin)

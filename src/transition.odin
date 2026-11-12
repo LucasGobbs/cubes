@@ -31,21 +31,21 @@ Transition :: struct {
 transition: Transition
 
 // Call before stats_create so the overlay draws under the stats panel.
-transition_create :: proc(gfx: ^gbbfx.Gfx) {
+transition_create :: proc(dev: ^gbbfx.Device) {
 	dummy := [6]gbbfx.VertexData{}
-	transition.mesh = gbbfx.mesh_create_unindexed(gfx, dummy[:])
-	gbbfx.mesh_upload(&gfx.renderer, &transition.mesh)
-	gbbfx.renderer_add_pass(&gfx.renderer, .After_Post, {name = "transition", run = transition_draw})
+	transition.mesh = gbbfx.mesh_create_unindexed(dev, dummy[:])
+	gbbfx.mesh_upload(&dev.renderer, &transition.mesh)
+	gbbfx.renderer_add_pass(&dev.renderer, .After_Post, {name = "transition", run = transition_draw})
 }
 
 // Passes are cleared by stats_destroy.
-transition_destroy :: proc(gfx: ^gbbfx.Gfx) {
-	gbbfx.mesh_destroy(gfx, &transition.mesh)
+transition_destroy :: proc(dev: ^gbbfx.Device) {
+	gbbfx.mesh_destroy(dev, &transition.mesh)
 }
 
 // Runs at the top of a tick. Returns true when it swapped the scene (the caller
 // must skip ticking the old one).
-transition_tick :: proc(gfx: ^gbbfx.Gfx, scene: ^scenekit.Scene, delta_time: f32) -> bool {
+transition_tick :: proc(dev: ^gbbfx.Device, scene: ^scenekit.Scene, delta_time: f32) -> bool {
 	transition.draw = false
 	if transition.phase == .None {
 		request, ok := engine.take_scene_request()
@@ -58,15 +58,15 @@ transition_tick :: proc(gfx: ^gbbfx.Gfx, scene: ^scenekit.Scene, delta_time: f32
 		}
 		if index == current_scene do return false
 		if request.transition == .Cut {
-			scene_switch(gfx, scene, index)
+			scene_switch(dev, scene, index)
 			return true
 		}
 		if request.transition == .Flash || request.transition == .Blink {
 			// Swap now; only the overlay lingers. The In phase lasts duration/2.
-			scene_switch(gfx, scene, index)
+			scene_switch(dev, scene, index)
 			request.duration = 0.5 if request.transition == .Flash else 0.2
 			transition.request, transition.target, transition.elapsed, transition.phase = request, index, 0, .In
-			transition_build(gfx, 0)
+			transition_build(dev, 0)
 			return true
 		}
 		transition.request, transition.target, transition.elapsed, transition.phase = request, index, 0, .Out
@@ -78,13 +78,13 @@ transition_tick :: proc(gfx: ^gbbfx.Gfx, scene: ^scenekit.Scene, delta_time: f32
 	progress := min(transition.elapsed / half, 1)
 	swapped := false
 	if transition.phase == .Out && progress >= 1 {
-		scene_switch(gfx, scene, transition.target)
+		scene_switch(dev, scene, transition.target)
 		transition.phase, transition.elapsed, progress, swapped = .In, 0, 0, true
 	} else if transition.phase == .In && progress >= 1 {
 		transition.phase = .None
 		return false
 	}
-	transition_build(gfx, progress)
+	transition_build(dev, progress)
 	return swapped
 }
 
@@ -109,12 +109,12 @@ transition_polygon :: proc(sides: int, r, aspect, rotation: f32, color: [4]f32) 
 	}
 }
 
-transition_build :: proc(gfx: ^gbbfx.Gfx, progress: f32) {
+transition_build :: proc(dev: ^gbbfx.Device, progress: f32) {
 	out := transition.phase == .Out
 	// cover: 0 = nothing, 1 = whole screen, in both phases.
 	cover := progress if out else 1 - progress
 	color := [4]f32{0, 0, 0, 1}
-	aspect := f32(gfx.window_size.x) / f32(gfx.window_size.y)
+	aspect := f32(dev.window_size.x) / f32(dev.window_size.y)
 	clear(&transition.vertices)
 	switch transition.request.transition {
 	case .Cut:
@@ -155,30 +155,30 @@ transition_build :: proc(gfx: ^gbbfx.Gfx, progress: f32) {
 		transition.draw = false
 		return
 	}
-	gbbfx.mesh_update_unindexed(&gfx.renderer, &transition.mesh, transition.vertices[:])
+	gbbfx.mesh_update_unindexed(&dev.renderer, &transition.mesh, transition.vertices[:])
 	transition.draw = true
 }
 
 transition_draw :: proc(ctx: ^gbbfx.Pass_Ctx, _: rawptr) {
 	if !transition.draw do return
-	gfx := ctx.gfx
+	dev := ctx.dev
 	gbbfx.renderer_begin_overlay_pass(ctx.renderer, ctx.color)
 	pass := ctx.renderer.pass
 	target := 0 if ctx.color == ctx.renderer.scene_color else 1 // pipeline format must match the target
-	pipeline := gbbfx.gfx_pipeline_get(gfx, stats.pipelines[target])
+	pipeline := gbbfx.gfx_pipeline_get(dev, stats.pipelines[target])
 	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-	gbbfx.gfx_pipeline_bind_material(gfx, pass, gfx.command_buffer, &stats.materials[target])
+	gbbfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &stats.materials[target])
 	gbbfx.gfx_pipeline_bind_draw(
-		gfx,
+		dev,
 		stats.pipelines[target],
-		gfx.command_buffer,
+		dev.command_buffer,
 		{
 			view_projection = linalg.MATRIX4F32_IDENTITY,
 			model_transform = linalg.MATRIX4F32_IDENTITY,
 			material = &stats.materials[target],
 		},
 	)
-	vertex_buffer := gbbfx.gfx_buffer_get(gfx, transition.mesh.vertex_buffer)
+	vertex_buffer := gbbfx.gfx_buffer_get(dev, transition.mesh.vertex_buffer)
 	sdl.BindGPUVertexBuffers(pass, 0, &(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}), 1)
 	sdl.DrawGPUPrimitives(pass, u32(len(transition.vertices)), 1, 0, 0)
 	gbbfx.renderer_end_pass(ctx.renderer)

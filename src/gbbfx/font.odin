@@ -38,7 +38,7 @@ Font :: struct {
 	baseline:     i32,
 }
 
-font_create :: proc(gfx: ^Gfx, path: string, pixel_height: f32 = 16) -> (Font, bool) {
+font_create :: proc(dev: ^Device, path: string, pixel_height: f32 = 16) -> (Font, bool) {
 	data, read_error := os.read_entire_file(path, context.temp_allocator)
 	if read_error != nil do return {}, false
 
@@ -83,22 +83,22 @@ font_create :: proc(gfx: ^Gfx, path: string, pixel_height: f32 = 16) -> (Font, b
 		rgba[index * 4 + 3] = alpha
 	}
 	font.texture = gfx_texture_create(
-		gfx,
+		dev,
 		FONT_ATLAS_SIZE,
 		FONT_ATLAS_SIZE,
 		.R8G8B8A8_UNORM,
 		.SAMPLER,
 	)
-	gfx_texture_get(gfx, font.texture)._temporary_raw_data = rgba
-	uploader_begin(&gfx.renderer.uploader)
-	uploader_upload_texture(&gfx.renderer.uploader, font.texture)
-	uploader_flush_blocking(&gfx.renderer.uploader)
-	gfx_texture_get(gfx, font.texture)._temporary_raw_data = nil
+	gfx_texture_get(dev, font.texture)._temporary_raw_data = rgba
+	uploader_begin(&dev.renderer.uploader)
+	uploader_upload_texture(&dev.renderer.uploader, font.texture)
+	uploader_flush_blocking(&dev.renderer.uploader)
+	gfx_texture_get(dev, font.texture)._temporary_raw_data = nil
 	return font, true
 }
 
-font_destroy :: proc(gfx: ^Gfx, font: ^Font) {
-	gfx_texture_destroy(gfx, font.texture)
+font_destroy :: proc(dev: ^Device, font: ^Font) {
+	gfx_texture_destroy(dev, font.texture)
 	font^ = {}
 }
 

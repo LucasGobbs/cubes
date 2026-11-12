@@ -46,47 +46,47 @@ stats: Stats
 
 // Registers F1 and the draw pass. Call before the input mark is taken so scene
 // switches keep the binding.
-stats_create :: proc(gfx: ^gbbfx.Gfx) {
-	inputs := gbbfx.gfx_input(gfx)
+stats_create :: proc(dev: ^gbbfx.Device) {
+	inputs := gbbfx.gfx_input(dev)
 	stats.action = glove.add_button(inputs, "app.stats")
 	glove.bind_key(inputs, stats.action, .F1)
 	stats.dump_action = glove.add_button(inputs, "app.stats_dump")
 	glove.bind_key(inputs, stats.dump_action, .P) // with the panel open, logs its lines
 
-	font, ok := gbbfx.font_create(gfx, "static/fonts/andale-mono.ttf")
+	font, ok := gbbfx.font_create(dev, "static/fonts/andale-mono.ttf")
 	assert(ok)
 	stats.font = font
-	stats.pipelines[0] = defaults.create_textured_overlay_pipeline(gfx)
-	stats.pipelines[1] = defaults.create_textured_overlay_pipeline(gfx, gfx.renderer.post_format)
-	stats.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)
+	stats.pipelines[0] = defaults.create_textured_overlay_pipeline(dev)
+	stats.pipelines[1] = defaults.create_textured_overlay_pipeline(dev, dev.renderer.post_format)
+	stats.sampler = gbbfx.gfx_sampler_create(dev, gbbfx.SAMPLER_TRILINEAR)
 	for index in 0 ..< 2 {
 		stats.materials[index] = gbbfx.material_create(stats.pipelines[index])
 		defaults.bind_textured_material(&stats.materials[index], stats.font.texture, stats.sampler)
 	}
 	dummy := [6]gbbfx.VertexData{}
-	stats.mesh = gbbfx.mesh_create_unindexed(gfx, dummy[:])
-	gbbfx.mesh_upload(&gfx.renderer, &stats.mesh)
+	stats.mesh = gbbfx.mesh_create_unindexed(dev, dummy[:])
+	gbbfx.mesh_upload(&dev.renderer, &stats.mesh)
 
-	gbbfx.renderer_add_pass(&gfx.renderer, .After_Post, {name = "stats", run = stats_draw})
+	gbbfx.renderer_add_pass(&dev.renderer, .After_Post, {name = "stats", run = stats_draw})
 }
 
-stats_destroy :: proc(gfx: ^gbbfx.Gfx) {
-	gbbfx.renderer_clear_passes(&gfx.renderer, .After_Post)
-	gbbfx.mesh_destroy(gfx, &stats.mesh)
+stats_destroy :: proc(dev: ^gbbfx.Device) {
+	gbbfx.renderer_clear_passes(&dev.renderer, .After_Post)
+	gbbfx.mesh_destroy(dev, &stats.mesh)
 	for index in 0 ..< 2 {
 		gbbfx.material_destroy(&stats.materials[index])
-		gbbfx.gfx_pipeline_destroy(gfx, stats.pipelines[index])
+		gbbfx.gfx_pipeline_destroy(dev, stats.pipelines[index])
 	}
-	gbbfx.gfx_sampler_destroy(gfx, stats.sampler)
-	gbbfx.font_destroy(gfx, &stats.font)
+	gbbfx.gfx_sampler_destroy(dev, stats.sampler)
+	gbbfx.font_destroy(dev, &stats.font)
 	delete(stats.vertices)
 }
 
-stats_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, scene_name: string) {
-	if glove.pressed(gbbfx.gfx_input(gfx), stats.action) do stats.visible = !stats.visible
+stats_tick :: proc(dev: ^gbbfx.Device, delta_time: f32, scene_name: string) {
+	if glove.pressed(gbbfx.gfx_input(dev), stats.action) do stats.visible = !stats.visible
 	ms := delta_time * 1000
 	stats.frame_ms = ms if stats.frame_ms == 0 else stats.frame_ms * 0.95 + ms * 0.05
-	render_ms := f32(time.duration_microseconds(gfx.renderer.prepare_time + gfx.renderer.flush_time)) / 1000
+	render_ms := f32(time.duration_microseconds(dev.renderer.prepare_time + dev.renderer.flush_time)) / 1000
 	stats.render_ms = render_ms if stats.render_ms == 0 else stats.render_ms * 0.95 + render_ms * 0.05
 	if stats.frame_ms == ms do stats.history = 1 / max(delta_time, 1e-4) // first frame: no zero-filled history
 	// One graph sample per STATS_SAMPLE_SECONDS (mean fps of that window) keeps the curve calm.
@@ -99,8 +99,8 @@ stats_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, scene_name: string) {
 	}
 	if !stats.visible do return
 
-	renderer := &gfx.renderer
-	camera := gbbfx.gfx_camera(gfx).position
+	renderer := &dev.renderer
+	camera := gbbfx.gfx_camera(dev).position
 	lo, hi, sum := f32(1e9), f32(0), f32(0)
 	for fps in stats.history {
 		lo, hi, sum = min(lo, fps), max(hi, fps), sum + fps
@@ -123,10 +123,10 @@ stats_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, scene_name: string) {
 			stats.render_ms / STATS_BUDGET_MS * 100,
 			f32(STATS_BUDGET_MS),
 		),
-		fmt.tprintf("window  %dx%d  msaa %s", gfx.window_size.x, gfx.window_size.y, renderer.msaa_enabled ? "4x" : "off"),
+		fmt.tprintf("window  %dx%d  msaa %s", dev.window_size.x, dev.window_size.y, renderer.msaa_enabled ? "4x" : "off"),
 		fmt.tprintf("camera  %.1f %.1f %.1f", camera.x, camera.y, camera.z),
 	}
-	if glove.pressed(gbbfx.gfx_input(gfx), stats.dump_action) {
+	if glove.pressed(gbbfx.gfx_input(dev), stats.dump_action) {
 		for line in lines do log.infof("stats| %s", line)
 	}
 
@@ -139,15 +139,15 @@ stats_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, scene_name: string) {
 	// The window can be smaller than the targets sized at startup (fullscreen
 	// transitions, menu bar), and the blit crops to it: anchor to what is visible.
 	visible_height: i32
-	_ = sdl.GetWindowSize(gfx.window, nil, &visible_height)
-	visible_height = min(visible_height, gfx.window_size.y)
+	_ = sdl.GetWindowSize(dev.window, nil, &visible_height)
+	visible_height = min(visible_height, dev.window_size.y)
 	left := f32(STATS_MARGIN)
 	top := f32(visible_height) - STATS_MARGIN - panel_height
 
 	clear(&stats.vertices)
 	// Solid rect: sample the atlas's white block.
 	solid := [2]f32{gbbfx.FONT_WHITE_U, gbbfx.FONT_WHITE_V}
-	stats_push_rect(gfx, left, top, left + panel_width, top + panel_height, solid, STATS_BACKGROUND)
+	stats_push_rect(dev, left, top, left + panel_width, top + panel_height, solid, STATS_BACKGROUND)
 	for line, index in lines {
 		y := top + STATS_PADDING + line_height * f32(index) + f32(stats.font.baseline)
 		x := left + STATS_PADDING
@@ -155,7 +155,7 @@ stats_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, scene_name: string) {
 		quads.allocator = context.temp_allocator
 		gbbfx.font_layout(&stats.font, line, &x, &y, &quads)
 		for quad in quads {
-			stats_push_rect(gfx, quad.x0, quad.y0, quad.x1, quad.y1, {}, {1, 1, 1, 1}, quad)
+			stats_push_rect(dev, quad.x0, quad.y0, quad.x1, quad.y1, {}, {1, 1, 1, 1}, quad)
 		}
 	}
 
@@ -165,8 +165,8 @@ stats_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, scene_name: string) {
 	gy0 := top + 2 * STATS_PADDING + line_height * len(lines)
 	gy1 := gy0 + STATS_GRAPH_HEIGHT
 	frame := [4]f32{0.8, 0.8, 0.8, 0.9}
-	stats_push_rect(gfx, gx0, gy0, gx1, gy0 + 1, solid, frame)
-	stats_push_rect(gfx, gx0, gy1 - 1, gx1, gy1, solid, frame)
+	stats_push_rect(dev, gx0, gy0, gx1, gy0 + 1, solid, frame)
+	stats_push_rect(dev, gx0, gy1 - 1, gx1, gy1, solid, frame)
 	range := max(hi - lo, 1) // flat history would otherwise divide by zero
 	y_of := proc(fps, lo, range, gy0, gy1: f32) -> f32 {return gy1 - 3 - (fps - lo) / range * (gy1 - gy0 - 6)}
 	mid := y_of(avg, lo, range, gy0, gy1)
@@ -174,20 +174,20 @@ stats_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, scene_name: string) {
 	prev: [2]f32
 	for i in 0 ..< STATS_HISTORY {
 		point := [2]f32{gx0 + f32(i) * step, y_of(stats.history[(stats.head + i) % STATS_HISTORY], lo, range, gy0, gy1)}
-		if i > 0 do stats_push_line(gfx, prev, point, solid, {0.4, 1, 0.5, 1})
+		if i > 0 do stats_push_line(dev, prev, point, solid, {0.4, 1, 0.5, 1})
 		prev = point
 	}
 	for x := gx0; x < gx1; x += 8 { // dotted average, drawn over the curve
-		stats_push_rect(gfx, x, mid - 0.5, min(x + 4, gx1), mid + 1.5, solid, {1, 0.85, 0.3, 1})
+		stats_push_rect(dev, x, mid - 0.5, min(x + 4, gx1), mid + 1.5, solid, {1, 0.85, 0.3, 1})
 	}
-	gbbfx.mesh_update_unindexed(&gfx.renderer, &stats.mesh, stats.vertices[:])
+	gbbfx.mesh_update_unindexed(&dev.renderer, &stats.mesh, stats.vertices[:])
 }
 
 // 1.5 px thick segment as a quad, offset along the perpendicular.
-stats_push_line :: proc(gfx: ^gbbfx.Gfx, a, b: [2]f32, solid: [2]f32, color: [4]f32) {
+stats_push_line :: proc(dev: ^gbbfx.Device, a, b: [2]f32, solid: [2]f32, color: [4]f32) {
 	d := linalg.normalize0(b - a)
 	n := [2]f32{-d.y, d.x} * 0.75
-	width, height := f32(gfx.window_size.x), f32(gfx.window_size.y)
+	width, height := f32(dev.window_size.x), f32(dev.window_size.y)
 	ndc := proc(p: [2]f32, w, h: f32) -> [3]f32 {return {p.x / w * 2 - 1, 1 - p.y / h * 2, 0}}
 	p0, p1, p2, p3 := ndc(a + n, width, height), ndc(b + n, width, height), ndc(b - n, width, height), ndc(a - n, width, height)
 	append(
@@ -204,13 +204,13 @@ stats_push_line :: proc(gfx: ^gbbfx.Gfx, a, b: [2]f32, solid: [2]f32, color: [4]
 // Pixel-space rect (y-down) to two clip-space triangles. With `quad`, UVs come
 // from the glyph; otherwise both corners sample the single `solid` texel.
 stats_push_rect :: proc(
-	gfx: ^gbbfx.Gfx,
+	dev: ^gbbfx.Device,
 	x0, y0, x1, y1: f32,
 	solid: [2]f32,
 	color: [4]f32,
 	quad: Maybe(gbbfx.Font_Quad) = nil,
 ) {
-	width, height := f32(gfx.window_size.x), f32(gfx.window_size.y)
+	width, height := f32(dev.window_size.x), f32(dev.window_size.y)
 	ndc := proc(x, y, w, h: f32) -> [3]f32 {return {x / w * 2 - 1, 1 - y / h * 2, 0}}
 	uv0, uv1, uv2, uv3 := solid, solid, solid, solid
 	if glyph, ok := quad.?; ok {
@@ -233,24 +233,24 @@ stats_push_rect :: proc(
 
 stats_draw :: proc(ctx: ^gbbfx.Pass_Ctx, _: rawptr) {
 	if !stats.visible || len(stats.vertices) == 0 do return
-	gfx := ctx.gfx
+	dev := ctx.dev
 	gbbfx.renderer_begin_overlay_pass(ctx.renderer, ctx.color)
 	pass := ctx.renderer.pass
 	target := 0 if ctx.color == ctx.renderer.scene_color else 1 // pipeline color format must match the target
-	pipeline := gbbfx.gfx_pipeline_get(gfx, stats.pipelines[target])
+	pipeline := gbbfx.gfx_pipeline_get(dev, stats.pipelines[target])
 	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-	gbbfx.gfx_pipeline_bind_material(gfx, pass, gfx.command_buffer, &stats.materials[target])
+	gbbfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &stats.materials[target])
 	gbbfx.gfx_pipeline_bind_draw(
-		gfx,
+		dev,
 		stats.pipelines[target],
-		gfx.command_buffer,
+		dev.command_buffer,
 		{
 			view_projection = linalg.MATRIX4F32_IDENTITY,
 			model_transform = linalg.MATRIX4F32_IDENTITY,
 			material = &stats.materials[target],
 		},
 	)
-	vertex_buffer := gbbfx.gfx_buffer_get(gfx, stats.mesh.vertex_buffer)
+	vertex_buffer := gbbfx.gfx_buffer_get(dev, stats.mesh.vertex_buffer)
 	sdl.BindGPUVertexBuffers(pass, 0, &(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}), 1)
 	sdl.DrawGPUPrimitives(pass, u32(len(stats.vertices)), 1, 0, 0)
 	gbbfx.renderer_end_pass(ctx.renderer)

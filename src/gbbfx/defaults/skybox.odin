@@ -15,11 +15,11 @@ Skybox :: struct {
 }
 
 // path: equirectangular (2:1) PNG/JPEG panorama, e.g. static/skybox/skybox-day.png.
-skybox_create :: proc(gfx: ^gbbfx.Gfx, path: string) -> Skybox {
+skybox_create :: proc(dev: ^gbbfx.Device, path: string) -> Skybox {
 	skybox: Skybox
 	attributes := default_skybox_vertex_attributes(gbbfx.VertexData)
 	skybox.pipeline = gbbfx.gfx_pipeline_create(
-		gfx,
+		dev,
 		{
 			vertex = default_skybox_vertex(),
 			fragment = default_skybox_fragment(),
@@ -31,9 +31,9 @@ skybox_create :: proc(gfx: ^gbbfx.Gfx, path: string) -> Skybox {
 			bind_draw = bind_skybox_draw,
 		},
 	)
-	skybox.texture = gbbfx.gfx_texture_load(gfx, path, mipmaps = false) // shader samples level 0
+	skybox.texture = gbbfx.gfx_texture_load(dev, path, mipmaps = false) // shader samples level 0
 	skybox.sampler = gbbfx.gfx_sampler_create(
-		gfx,
+		dev,
 		{
 			min_filter = .LINEAR,
 			mag_filter = .LINEAR,
@@ -48,8 +48,8 @@ skybox_create :: proc(gfx: ^gbbfx.Gfx, path: string) -> Skybox {
 		{position = {3, -1, 0}, color = {1, 1, 1, 1}},
 		{position = {-1, 3, 0}, color = {1, 1, 1, 1}},
 	}
-	skybox.mesh = gbbfx.mesh_create_unindexed(gfx, triangle[:])
-	gbbfx.mesh_upload(&gfx.renderer, &skybox.mesh)
+	skybox.mesh = gbbfx.mesh_create_unindexed(dev, triangle[:])
+	gbbfx.mesh_upload(&dev.renderer, &skybox.mesh)
 
 	skybox.material = gbbfx.material_create(skybox.pipeline)
 	gbbfx.material_bind_texture(
@@ -74,12 +74,12 @@ skybox_add_to_scene :: proc(scene: ^gbbfx.Scene, skybox: ^Skybox) -> int {
 	return index
 }
 
-skybox_destroy :: proc(gfx: ^gbbfx.Gfx, skybox: ^Skybox) {
-	gbbfx.mesh_destroy(gfx, &skybox.mesh)
+skybox_destroy :: proc(dev: ^gbbfx.Device, skybox: ^Skybox) {
+	gbbfx.mesh_destroy(dev, &skybox.mesh)
 	gbbfx.material_destroy(&skybox.material)
-	gbbfx.gfx_texture_destroy(gfx, skybox.texture)
-	gbbfx.gfx_sampler_destroy(gfx, skybox.sampler)
-	gbbfx.gfx_pipeline_destroy(gfx, skybox.pipeline)
+	gbbfx.gfx_texture_destroy(dev, skybox.texture)
+	gbbfx.gfx_sampler_destroy(dev, skybox.sampler)
+	gbbfx.gfx_pipeline_destroy(dev, skybox.pipeline)
 	skybox^ = {}
 }
 
