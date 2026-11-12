@@ -441,7 +441,7 @@
                     {
                         "name": "input",
                         "stage": "fragment",
-                        "binding": {"kind": "varyingInput", "index": 0, "count": 6},
+                        "binding": {"kind": "varyingInput", "index": 0, "count": 7},
                         "type": {
                             "kind": "struct",
                             "name": "VertexOutput",
@@ -554,10 +554,27 @@
                                     "stage": "fragment",
                                     "binding": {"kind": "varyingInput", "index": 5},
                                     "semanticName": "HEIGHT"
+                                },
+                                {
+                                    "name": "sun",
+                                    "type": {
+                                        "kind": "vector",
+                                        "elementCount": 3,
+                                        "elementType": {
+                                            "kind": "scalar",
+                                            "scalarType": "float32"
+                                        },
+                                        "sizes": [
+                                            {"kind": "varyingInput", "value": 1}
+                                        ]
+                                    },
+                                    "stage": "fragment",
+                                    "binding": {"kind": "varyingInput", "index": 6},
+                                    "semanticName": "SUN"
                                 }
                             ],
                             "sizes": [
-                                {"kind": "varyingInput", "value": 6}
+                                {"kind": "varyingInput", "value": 7}
                             ]
                         }
                     },
@@ -578,7 +595,7 @@
                 {
                     "name": "input",
                     "stage": "fragment",
-                    "binding": {"kind": "varyingInput", "index": 0, "count": 6},
+                    "binding": {"kind": "varyingInput", "index": 0, "count": 7},
                     "type": {
                         "kind": "struct",
                         "name": "VertexOutput",
@@ -691,10 +708,27 @@
                                 "stage": "fragment",
                                 "binding": {"kind": "varyingInput", "index": 5},
                                 "semanticName": "HEIGHT"
+                            },
+                            {
+                                "name": "sun",
+                                "type": {
+                                    "kind": "vector",
+                                    "elementCount": 3,
+                                    "elementType": {
+                                        "kind": "scalar",
+                                        "scalarType": "float32"
+                                    },
+                                    "sizes": [
+                                        {"kind": "varyingInput", "value": 1}
+                                    ]
+                                },
+                                "stage": "fragment",
+                                "binding": {"kind": "varyingInput", "index": 6},
+                                "semanticName": "SUN"
                             }
                         ],
                         "sizes": [
-                            {"kind": "varyingInput", "value": 6}
+                            {"kind": "varyingInput", "value": 7}
                         ]
                     }
                 },

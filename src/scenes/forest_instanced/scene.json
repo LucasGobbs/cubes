@@ -1,0 +1,4 @@
+{
+  "name": "Forest (instanced)",
+  "camera": { "position": [0, 3.5, 0], "look_at": [0, 3, -10] }
+}

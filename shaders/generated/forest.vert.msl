@@ -3,37 +3,37 @@
 #include <metal_texture>
 using namespace metal;
 
-#line 40 "shaders/forest.slang"
+#line 41 "shaders/forest.slang"
 float2 wind_offset_0(float3 world_0, float t_0, float weight_0, float kind_0)
 {
 
-#line 41
+#line 42
     float2 _S1 = world_0.xz;
 
-#line 41
+#line 42
     float gust_0 = sin(dot(_S1, float2(0.10999999940395355f, 0.07000000029802322f)) + t_0 * 1.29999995231628418f) * 0.5f + 0.5f;
     float flutter_0 = sin(dot(_S1, float2(0.89999997615814209f, 0.69999998807907104f)) + t_0 * 3.09999990463256836f + world_0.x * 0.30000001192092896f);
 
-#line 42
+#line 43
     float amp_0;
     if(kind_0 < 1.5f)
     {
 
-#line 43
+#line 44
         amp_0 = 0.34999999403953552f;
 
-#line 43
+#line 44
     }
     else
     {
 
-#line 43
+#line 44
         amp_0 = 0.11999999731779099f;
 
-#line 43
+#line 44
     }
 
-#line 43
+#line 44
     float2 _S2 = float2(weight_0) ;
 
     return normalize(float2(1.0f, 0.44999998807907104f)) * float2((gust_0 * 0.80000001192092896f + flutter_0 * 0.15000000596046448f))  * float2(amp_0)  * _S2 * _S2;
@@ -50,6 +50,7 @@ struct vertexMain_Result_0
     float4 fog_0 [[user(FOG)]];
     float kind_1 [[user(KIND)]];
     float height_0 [[user(HEIGHT)]];
+    float3 sun_0 [[user(SUN)]];
 };
 
 
@@ -98,6 +99,7 @@ struct VertexOutput_0
     float4 fog_2;
     float kind_2;
     float height_1;
+    float3 sun_1;
 };
 
 
@@ -105,98 +107,123 @@ struct VertexOutput_0
 [[vertex]] vertexMain_Result_0 vertexMain(vertexInput_0 _S3 [[stage_in]], SLANG_ParameterGroup_UniformBlock_natural_0 constant* UniformBlock_0 [[buffer(0)]])
 {
 
-#line 50
+#line 51
     thread float4 world_1 = (((float4(_S3.position_1, 1.0f)) * (matrix<float,int(4),int(4)> ((&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(3)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(3)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(3)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(3)]))));
     float kind_3 = _S3.uv_0.y;
     if(kind_3 > 0.5f)
     {
 
-#line 53
+#line 54
         float _S4 = _S3.uv_0.x;
 
-#line 53
+#line 54
         float2 w_0 = wind_offset_0(world_1.xyz, (&UniformBlock_0->data_1)->time_0.x, _S4, kind_3);
         world_1.x = world_1.x + w_0.x;
         world_1.z = world_1.z + w_0.y;
         if(kind_3 < 1.5f)
         {
 
-#line 56
+#line 57
             world_1.y = world_1.y - length(w_0) * 0.34999999403953552f * _S4;
 
-#line 56
+#line 57
         }
 
-#line 52
+#line 53
     }
 
-#line 58
+#line 59
     thread VertexOutput_0 output_0;
     (&output_0)->position_2 = (((world_1) * (matrix<float,int(4),int(4)> ((&UniformBlock_0->data_1)->view_projection_0.data_0[int(0)][int(0)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(1)][int(0)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(2)][int(0)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(3)][int(0)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(0)][int(1)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(1)][int(1)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(2)][int(1)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(3)][int(1)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(0)][int(2)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(1)][int(2)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(2)][int(2)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(3)][int(2)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(0)][int(3)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(1)][int(3)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(2)][int(3)], (&UniformBlock_0->data_1)->view_projection_0.data_0[int(3)][int(3)]))));
     (&output_0)->color_2 = _S3.color_1.xyz;
 
-#line 60
+#line 61
     matrix<float,int(4),int(4)>  _S5 = matrix<float,int(4),int(4)> ((&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(0)], (&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(1)], (&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(2)], (&UniformBlock_0->data_1)->model_0.data_0[int(0)][int(3)], (&UniformBlock_0->data_1)->model_0.data_0[int(1)][int(3)], (&UniformBlock_0->data_1)->model_0.data_0[int(2)][int(3)], (&UniformBlock_0->data_1)->model_0.data_0[int(3)][int(3)]);
     (&output_0)->normal_2 = normalize((((_S3.normal_1) * (matrix<float,int(3),int(3)> (_S5[int(0)].xyz, _S5[int(1)].xyz, _S5[int(2)].xyz)))));
     float3 _S6 = (&UniformBlock_0->data_1)->camera_position_0.xyz - world_1.xyz;
 
-#line 62
+#line 63
     (&output_0)->to_camera_1 = _S6;
     float d_0 = length(_S6);
-    float3 _S7 = (&UniformBlock_0->data_1)->fog_1.xyz;
+    float3 sun_dir_0 = normalize((&UniformBlock_0->data_1)->time_0.yzw);
+    (&output_0)->sun_1 = sun_dir_0;
 
-#line 64
-    float _S8;
+#line 66
+    float t_1;
 
-#line 64
+
     if(((&UniformBlock_0->data_1)->fog_1.w) > 0.0f)
     {
 
-#line 64
-        _S8 = saturate((d_0 - 0.60000002384185791f * (&UniformBlock_0->data_1)->fog_1.w) / (0.40000000596046448f * (&UniformBlock_0->data_1)->fog_1.w));
+#line 69
+        t_1 = saturate(d_0 / (&UniformBlock_0->data_1)->fog_1.w);
 
-#line 64
+#line 69
     }
     else
     {
 
-#line 64
-        _S8 = 0.0f;
+#line 69
+        t_1 = 0.0f;
 
-#line 64
+#line 69
     }
 
-#line 64
-    (&output_0)->fog_2 = float4(_S7, _S8);
+#line 75
+    float3 fog_color_0 = mix(mix(mix(float3(0.5f, 0.72000002861022949f, 0.74000000953674316f), float3(0.40000000596046448f, 0.60000002384185791f, 0.87999999523162842f), float3(smoothstep(0.0f, 0.5f, t_1)) ), float3(0.5f, 0.55000001192092896f, 0.8399999737739563f), float3(smoothstep(0.40000000596046448f, 1.0f, t_1)) ), float3(0.94999998807907104f, 0.69999998807907104f, 0.5f), float3((pow(saturate(dot(- normalize((&output_0)->to_camera_1), sun_dir_0)), 8.0f) * 0.55000001192092896f)) );
+    float valley_0 = saturate((30.0f - world_1.y) / 30.0f) * 0.25f;
+
+#line 76
+    float fog_t_0;
+    if(((&UniformBlock_0->data_1)->fog_1.w) > 0.0f)
+    {
+
+#line 77
+        fog_t_0 = saturate((d_0 - 0.10000000149011612f * (&UniformBlock_0->data_1)->fog_1.w) / (0.89999997615814209f * (&UniformBlock_0->data_1)->fog_1.w) + valley_0 * t_1);
+
+#line 77
+    }
+    else
+    {
+
+#line 77
+        fog_t_0 = 0.0f;
+
+#line 77
+    }
+    (&output_0)->fog_2 = float4(fog_color_0, smoothstep(0.0f, 1.0f, pow(fog_t_0, 1.39999997615814209f)) * 0.92000001668930054f);
     (&output_0)->kind_2 = kind_3;
     (&output_0)->height_1 = _S3.uv_0.x;
-    VertexOutput_0 _S9 = output_0;
+    VertexOutput_0 _S7 = output_0;
 
-#line 67
-    thread vertexMain_Result_0 _S10;
+#line 81
+    thread vertexMain_Result_0 _S8;
 
-#line 67
-    (&_S10)->position_0 = _S9.position_2;
+#line 81
+    (&_S8)->position_0 = _S7.position_2;
 
-#line 67
-    (&_S10)->color_0 = _S9.color_2;
+#line 81
+    (&_S8)->color_0 = _S7.color_2;
 
-#line 67
-    (&_S10)->normal_0 = _S9.normal_2;
+#line 81
+    (&_S8)->normal_0 = _S7.normal_2;
 
-#line 67
-    (&_S10)->to_camera_0 = _S9.to_camera_1;
+#line 81
+    (&_S8)->to_camera_0 = _S7.to_camera_1;
 
-#line 67
-    (&_S10)->fog_0 = _S9.fog_2;
+#line 81
+    (&_S8)->fog_0 = _S7.fog_2;
 
-#line 67
-    (&_S10)->kind_1 = _S9.kind_2;
+#line 81
+    (&_S8)->kind_1 = _S7.kind_2;
 
-#line 67
-    (&_S10)->height_0 = _S9.height_1;
+#line 81
+    (&_S8)->height_0 = _S7.height_1;
 
-#line 67
-    return _S10;
+#line 81
+    (&_S8)->sun_0 = _S7.sun_1;
+
+#line 81
+    return _S8;
 }
 

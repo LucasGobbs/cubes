@@ -1,6 +1,6 @@
 # Cubes
 
-Demo of the `gbbfx` renderer (Odin + SDL3 GPU + Slang) with nine scenes, plus an
+Demo of the `gbbfx` renderer (Odin + SDL3 GPU + Slang) with ten scenes, plus an
 entity/component `engine` layer on top.
 
 ![Sea scene: animated waves, fog, thousands of instanced boats](media/sea.gif)
@@ -24,7 +24,7 @@ capture above).
 
 ```
 make build                     # release binary ./main
-make run ARGS=models           # scenes: simple, editor, models, skinned, postfx, game, platform, forest, benchmark (default); fullscreen by default
+make run ARGS=models           # scenes: simple, editor, models, skinned, postfx, game, platform, forest_naive, forest_instanced, benchmark (default); fullscreen by default
 make run ARGS="benchmark --bench 10"  # run 10 s without input, print fps/draws/triangles/CPU stats, exit
 make run ARGS="models --WINDOWED"     # windowed (goes through the compositor)
 make editor                    # debug build with the microui editor overlay
@@ -37,17 +37,31 @@ repo root (the `make` targets do this) or from inside `dist/`.
 
 ## Controls
 
-- `1`-`9`: switch scene at runtime (order of `SCENES` in `src/scene.odin`).
-- `M`: toggle MSAA.
-- `Esc`: quit.
+- `1`-`9`, `0`: switch scene at runtime with a fade (order of `SCENES` in `src/scene.odin`).
+- `F1`: stats panel; `P` logs it. `M`: toggle MSAA. `Esc`: quit.
 
-## Forest scene
+## Scene files and transitions
 
-`./main forest`: BotW-style toon meadow. The 256x256 m world is 16x16 chunks baked
-once into world-space meshes (terrain + trees, grass at two LODs) and streamed as the
-camera moves; wind and shading live in `shaders/forest.slang`, so a frame is one draw
-per visible chunk mesh (about 125 draws, 120 FPS windowed in `--bench`). Source:
-`src/scenes/forest/` (`terrain.odin`, `grass.odin`, `trees.odin`, `scene.odin`).
+A scene can be plain data: `src/scenes/<name>/scene.json` (name, camera with optional bloom,
+entities with model, clip, position, rotation in degrees, scale; see
+`src/engine/scene_def.odin`). Register it in `SCENES` with `file = "..."`; `src/scenes/data/`
+runs it, `postfx` is one. Game code switches scenes with
+`engine.change_scene("forest_instanced", .Fade, 0.6)` (`Cut`, `Fade`, `Fade_White`, `Wipe`);
+the host runs the transition (`src/transition.odin`) and swaps when the screen is covered.
+
+## Forest scenes
+
+Both are the same BotW-style toon meadow: a 1024x1024 m world of 64x64 chunks streamed as
+the camera moves, grass at two LODs, wind and shading in a shader, two-tone fog, sun
+lens flare. They differ in how trees, rocks and bushes are drawn (F1 shows the numbers):
+
+- `./main forest_naive` (`src/scenes/forest_naive/`, `shaders/forest.slang`): everything
+  of a chunk is baked into one world-space mesh, one draw per chunk mesh. Every tree
+  is unique geometry. It also owns the terrain, grass and flare code both scenes use.
+- `./main forest_instanced` (`src/scenes/forest_instanced/`, `shaders/forest_instanced.slang`):
+  13 variant meshes (oak, pine, broadleaf, autumn, rocks, bushes) are uploaded once and
+  every placed tree is an instance of one, so each variant is a single instanced draw.
+  The renderer sorts by (pipeline, material) only, so each variant has its own material.
 
 ## Skeletal animation
 
