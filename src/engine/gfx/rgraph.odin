@@ -154,6 +154,8 @@ pool_acquire :: proc(renderer: ^Renderer, width, height: u32) -> Texture_Handle 
 	// shortcut: no memory aliasing within a frame, every acquire gets its own
 	// texture; add lifetime tracking when a chain passes ~8 transients.
 	assert(len(pool.entries) < 16, "too many transient textures")
+	renderer.gfx_ctx.scope_paused += 1 // pool belongs to the renderer, not the scene scope
+	defer renderer.gfx_ctx.scope_paused -= 1
 	texture := texture_create_with_usage(
 		renderer.gfx_ctx,
 		width,

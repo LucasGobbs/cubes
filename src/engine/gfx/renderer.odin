@@ -189,6 +189,8 @@ renderer_set_msaa :: proc(renderer: ^Renderer, enabled: bool) -> bool {
 	if enabled == renderer.msaa_enabled do return enabled
 
 	gfx_ctx := renderer.gfx_ctx
+	gfx_ctx.scope_paused += 1 // renderer owns these targets, not the scene scope
+	defer gfx_ctx.scope_paused -= 1
 	_ = sdl.WaitForGPUIdle(gfx_ctx.gpu)
 	size := texture_get(gfx_ctx, renderer.scene_color)
 	width, height := size.width, size.height
@@ -242,6 +244,8 @@ renderer_destroy :: proc(renderer: ^Renderer) {
 // Resizes the scene color, depth and MSAA color targets together (they must match).
 // Waits for GPU idle; call between frames.
 renderer_resize_targets :: proc(renderer: ^Renderer, width, height: u32) {
+	renderer.gfx_ctx.scope_paused += 1 // renderer owns these targets, not the scene scope
+	defer renderer.gfx_ctx.scope_paused -= 1
 	texture_resize(renderer.gfx_ctx, &renderer.scene_color, width, height)
 	texture_resize(renderer.gfx_ctx, &renderer.scene_depth, width, height)
 	if renderer.msaa_enabled {

@@ -23,6 +23,7 @@ compute_pipeline_create :: proc(
 	} else {
 		gfx_ctx.compute_pipelines[index] = resource
 	}
+	scope_track(gfx_ctx, .Compute_Pipeline, Resource_Handle(handle))
 	return handle
 }
 
@@ -35,6 +36,7 @@ compute_pipeline_get :: proc(gfx_ctx: ^Device, handle: Compute_Pipeline_Handle) 
 compute_pipeline_destroy :: proc(gfx_ctx: ^Device, handle: Compute_Pipeline_Handle) {
 	raw := Resource_Handle(handle)
 	if !handle_pool_contains(&gfx_ctx.compute_pipeline_handles, raw) do return
+	scope_untrack(gfx_ctx, .Compute_Pipeline, raw)
 	resource := &gfx_ctx.compute_pipelines[raw.index]
 	if resource.handle != nil do sdl.ReleaseGPUComputePipeline(gfx_ctx.gpu, resource.handle)
 	resource^ = {}

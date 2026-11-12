@@ -72,7 +72,7 @@ host_run :: proc(config: Config, scene: Scene) {
 	transition_create(&ctx.gfx)
 	stats_create(&ctx)
 	scene_input_mark = input.system_mark(&ctx.input)
-	scene_ok := host_scene.create(&host_scene, &ctx)
+	scene_ok := host_scene_create(&ctx, &host_scene)
 	assert(scene_ok)
 
 	host_loop(&ctx)
@@ -166,10 +166,15 @@ host_scene_switch :: proc(ctx: ^Context, scene: ^Scene, index: int) {
 	next, _ := scene_lookup(host_config.scenes, host_config.scenes[index].name)
 	scene^ = next
 	current_scene = index
-	if !next.create(scene, ctx) {
+	if !host_scene_create(ctx, scene) {
 		log.errorf("scene %q failed to create", host_config.scenes[index].name)
 		request_quit(ctx)
 	}
+}
+
+host_scene_create :: proc(ctx: ^Context, scene: ^Scene) -> bool {
+	gfx.scope_begin(&ctx.gfx) // every create pairs with exactly one host_scene_destroy, even if create fails
+	return scene.create(scene, ctx)
 }
 
 host_scene_destroy :: proc(ctx: ^Context, scene: ^Scene) {
@@ -177,6 +182,7 @@ host_scene_destroy :: proc(ctx: ^Context, scene: ^Scene) {
 		scene.destroy(scene, ctx)
 		scene.state = nil
 	}
+	gfx.scope_end(&ctx.gfx) // frees the scene's handle resources not destroyed manually
 }
 
 // Single-scene app: start/update procs with a typed app pointer, a World, and the

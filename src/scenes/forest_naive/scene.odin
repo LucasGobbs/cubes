@@ -43,7 +43,8 @@ Forest_State :: struct {
 	draws:      [dynamic]gfx.Draw,
 	skybox:     gfx.Skybox,
 	bloom:      gfx.Bloom,
-	fly_camera: default.Fly_Camera,
+	fly_camera: gfx.Fly_Camera,
+	fly_controls: engine.Fly_Controls,
 	chunks:     [CHUNKS_PER_SIDE * CHUNKS_PER_SIDE]Chunk,
 	time:       f32,
 	flare:      Flare,
@@ -59,7 +60,8 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	demo.state = state
 	for &chunk in state.chunks do chunk.grass_entity = -1
 	engine.scene_camera_reset(demo, gfx_ctx, {0, terrain_height(0, 0) + 2.5, 0}, {0, terrain_height(0, -10) + 2, -10})
-	state.fly_camera = default.fly_camera_create(gfx_ctx, &ctx.input, "forest")
+	state.fly_camera = gfx.fly_camera_create()
+	state.fly_controls = engine.fly_controls_create(&ctx.input, "forest")
 
 	attributes := shader_parameters.forest_vertex_attributes(gfx.VertexData)
 	state.pipeline = gfx.pipeline_create(
@@ -113,7 +115,8 @@ forest_bind_draw :: proc(
 forest_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Forest_State)demo.state
-	default.fly_camera_tick(&state.fly_camera, gfx_ctx, &ctx.input, delta_time)
+	fly := engine.fly_controls_read(&ctx.input, &state.fly_controls)
+	gfx.fly_camera_update(gfx.camera(gfx_ctx), &state.fly_camera, fly, delta_time)
 	state.time += delta_time
 	gfx_ctx.renderer.fog = {FOG_COLOR.r, FOG_COLOR.g, FOG_COLOR.b, FOG_DISTANCE}
 	forest_stream(state, gfx_ctx, BUILD_PER_FRAME, BUILD_RADIUS)

@@ -54,6 +54,11 @@ buffer_create :: proc(gfx_ctx: ^Device, size: u32, usage: sdl.GPUBufferUsageFlag
 		usage  = {usage},
 	}
 	assert(resource.handle != nil)
+	return buffer_add(gfx_ctx, resource)
+}
+
+// Registers a native buffer in the pool. Split out so tests run without a GPU.
+buffer_add :: proc(gfx_ctx: ^Device, resource: Buffer) -> Buffer_Handle {
 	handle := Buffer_Handle(handle_pool_acquire(&gfx_ctx.buffer_handles))
 	index := Resource_Handle(handle).index
 	if int(index) == len(gfx_ctx.buffers) {
@@ -61,6 +66,7 @@ buffer_create :: proc(gfx_ctx: ^Device, size: u32, usage: sdl.GPUBufferUsageFlag
 	} else {
 		gfx_ctx.buffers[index] = resource
 	}
+	scope_track(gfx_ctx, .Buffer, Resource_Handle(handle))
 	return handle
 }
 
@@ -73,6 +79,7 @@ buffer_get :: proc(gfx_ctx: ^Device, handle: Buffer_Handle) -> ^Buffer {
 buffer_destroy :: proc(gfx_ctx: ^Device, handle: Buffer_Handle) {
 	raw := Resource_Handle(handle)
 	if !handle_pool_contains(&gfx_ctx.buffer_handles, raw) do return
+	scope_untrack(gfx_ctx, .Buffer, raw)
 	resource := &gfx_ctx.buffers[raw.index]
 	if resource.handle != nil do sdl.ReleaseGPUBuffer(gfx_ctx.gpu, resource.handle)
 	resource^ = {}

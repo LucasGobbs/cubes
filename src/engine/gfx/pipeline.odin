@@ -178,6 +178,7 @@ pipeline_create :: proc(gfx_ctx: ^Device, desc: Graphics_Pipeline_Desc) -> Pipel
 	} else {
 		gfx_ctx.pipelines[index] = resource
 	}
+	scope_track(gfx_ctx, .Pipeline, Resource_Handle(handle))
 	return handle
 }
 
@@ -197,6 +198,7 @@ pipeline_get :: proc(gfx_ctx: ^Device, handle: Pipeline_Handle) -> ^Pipeline {
 pipeline_destroy :: proc(gfx_ctx: ^Device, handle: Pipeline_Handle) {
 	raw := Resource_Handle(handle)
 	if !handle_pool_contains(&gfx_ctx.pipeline_handles, raw) do return
+	scope_untrack(gfx_ctx, .Pipeline, raw)
 	resource := &gfx_ctx.pipelines[raw.index]
 	if resource.handle != nil do sdl.ReleaseGPUGraphicsPipeline(gfx_ctx.gpu, resource.handle)
 	if resource.handle_msaa != nil do sdl.ReleaseGPUGraphicsPipeline(gfx_ctx.gpu, resource.handle_msaa)

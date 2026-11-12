@@ -27,7 +27,8 @@ Models_State :: struct {
 	skybox:          gfx.Skybox,
 	model_draws:     [4]int,
 	rotation:        f32,
-	fly_camera:      default.Fly_Camera,
+	fly_camera:      gfx.Fly_Camera,
+	fly_controls:    engine.Fly_Controls,
 }
 
 models_scene :: proc() -> engine.Scene {
@@ -45,7 +46,8 @@ models_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	demo.state = state
 	engine.scene_camera_reset(demo, gfx_ctx, {0, 2, 4})
 
-	state.fly_camera = default.fly_camera_create(gfx_ctx, &ctx.input, "models")
+	state.fly_camera = gfx.fly_camera_create()
+	state.fly_controls = engine.fly_controls_create(&ctx.input, "models")
 
 	state.pipeline = gfx.create_textured_pipeline(gfx_ctx)
 	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
@@ -89,7 +91,8 @@ models_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 	gfx_ctx := &ctx.gfx
 	state := cast(^Models_State)demo.state
 
-	default.fly_camera_tick(&state.fly_camera, gfx_ctx, &ctx.input, delta_time)
+	fly := engine.fly_controls_read(&ctx.input, &state.fly_controls)
+	gfx.fly_camera_update(gfx.camera(gfx_ctx), &state.fly_camera, fly, delta_time)
 
 	state.rotation += delta_time
 	for draw, index in state.model_draws {

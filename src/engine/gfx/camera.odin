@@ -13,6 +13,22 @@ Camera :: struct {
 	up, right:  Vec3,
 	yaw, pitch: f32,
 	projection: matrix[4, 4]f32,
+	lens:       Projection,
+}
+
+// fov_y in radians. far = 0 means infinite (reverse-Z, see camera_perspective).
+Perspective :: struct {
+	fov_y, near, far: f32,
+}
+
+// size = half height of the view in world units. far must be > near.
+Orthographic :: struct {
+	size, near, far: f32,
+}
+
+Projection :: union {
+	Perspective,
+	Orthographic,
 }
 
 camera_create :: proc(
@@ -36,13 +52,19 @@ camera_create :: proc(
 		yaw = yaw,
 		pitch = pitch,
 		projection = projection,
+		lens = Perspective{fov_y = CAMERA_FOV_Y, near = CAMERA_NEAR},
 	}
 }
 
-camera_rotate :: proc(camera: ^Camera, yaw_delta, pitch_delta: f32) {
-	camera.yaw += yaw_delta
-	pitch_limit := linalg.to_radians(f32(89))
-	camera.pitch = math.clamp(camera.pitch + pitch_delta, -pitch_limit, pitch_limit)
+camera_pitch_limit :: proc() -> f32 {
+	return linalg.to_radians(f32(89))
+}
+
+// Sets absolute yaw/pitch (pitch clamped) and rebuilds direction, right and up.
+camera_set_angles :: proc(camera: ^Camera, yaw, pitch: f32) {
+	camera.yaw = yaw
+	pitch_limit := camera_pitch_limit()
+	camera.pitch = math.clamp(pitch, -pitch_limit, pitch_limit)
 
 	cos_pitch := math.cos(camera.pitch)
 	camera.direction = linalg.normalize(
@@ -58,12 +80,16 @@ camera_rotate :: proc(camera: ^Camera, yaw_delta, pitch_delta: f32) {
 	camera.up = linalg.normalize(linalg.cross(camera.right, camera.direction))
 }
 
+camera_rotate :: proc(camera: ^Camera, yaw_delta, pitch_delta: f32) {
+	camera_set_angles(camera, camera.yaw + yaw_delta, camera.pitch + pitch_delta)
+}
+
 CAMERA_FOV_Y :: 70 * math.RAD_PER_DEG
 CAMERA_NEAR :: 0.1
 
-// Reverse-Z, infinite-far perspective for the right-handed view from
-// camera_view and NDC depth in [0, 1] (Metal/Vulkan/D3D): depth is 1 at the
-// near plane and tends to 0 at infinity. Float depth keeps most of its
+// Reverse-Z perspective for the right-handed view from camera_view and NDC
+// depth in [0, 1] (Metal/Vulkan/D3D): depth is 1 at the near plane and tends to
+// 0 at far (or infinity when far = 0). Float depth keeps most of its
 // precision far from the camera, where a standard 0..1 mapping (or Odin's
 // OpenGL-style linalg.matrix4_perspective, which Metal half-clips) loses it.
 // The renderer clears depth to 0 and pipelines compare GREATER to match.
@@ -71,6 +97,7 @@ camera_perspective :: proc(
 	aspect: f32,
 	fov_y: f32 = CAMERA_FOV_Y,
 	near: f32 = CAMERA_NEAR,
+	far: f32 = 0,
 ) -> (
 	m: matrix[4, 4]f32,
 ) {
@@ -78,13 +105,38 @@ camera_perspective :: proc(
 	m[0, 0] = focal / aspect
 	m[1, 1] = focal
 	m[3, 2] = -1
-	m[2, 3] = near
+	if far == 0 {
+		m[2, 3] = near
+	} else {
+		m[2, 2] = near / (far - near)
+		m[2, 3] = near * far / (far - near)
+	}
 	return
 }
 
-// Rebuilds the projection with a different aspect ratio (viewport resize).
+// Reverse-Z orthographic: depth 1 at near, 0 at far, same convention as camera_perspective.
+lens_matrix :: proc(lens: Projection, aspect: f32) -> (m: matrix[4, 4]f32) {
+	switch p in lens {
+	case Perspective:
+		return camera_perspective(aspect, p.fov_y, p.near, p.far)
+	case Orthographic:
+		m[0, 0] = 1 / (p.size * aspect)
+		m[1, 1] = 1 / p.size
+		m[2, 2] = 1 / (p.far - p.near)
+		m[2, 3] = p.far / (p.far - p.near)
+		m[3, 3] = 1
+	}
+	return
+}
+
+camera_set_projection :: proc(camera: ^Camera, lens: Projection, aspect: f32) {
+	camera.lens = lens
+	camera.projection = lens_matrix(lens, aspect)
+}
+
+// Rebuilds the projection with a different aspect ratio (viewport resize), keeping the lens.
 camera_set_aspect :: proc(camera: ^Camera, aspect: f32) {
-	camera.projection = camera_perspective(aspect)
+	camera_set_projection(camera, camera.lens, aspect)
 }
 
 camera_view :: proc(camera: ^Camera) -> matrix[4, 4]f32 {

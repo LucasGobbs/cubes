@@ -40,7 +40,8 @@ Platform_State :: struct {
 	meshes:    [dynamic]^gfx.Mesh,
 	draws:     [dynamic]gfx.Draw,
 	skybox:    gfx.Skybox,
-	fly_camera: default.Fly_Camera,
+	fly_camera: gfx.Fly_Camera,
+	fly_controls: engine.Fly_Controls,
 	player:    int,
 	time:      f32,
 }
@@ -60,7 +61,8 @@ platform_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	demo.state = state
 	engine.scene_camera_reset(demo, gfx_ctx, {24, 18, 34}, {2, 2, -1})
 
-	state.fly_camera = default.fly_camera_create(gfx_ctx, &ctx.input, "platform")
+	state.fly_camera = gfx.fly_camera_create()
+	state.fly_controls = engine.fly_controls_create(&ctx.input, "platform")
 	state.pipeline = gfx.create_textured_pipeline(gfx_ctx)
 	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 	for path, mat in PROTO_TEXTURES {
@@ -105,7 +107,8 @@ platform_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 platform_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Platform_State)demo.state
-	default.fly_camera_tick(&state.fly_camera, gfx_ctx, &ctx.input, delta_time)
+	fly := engine.fly_controls_read(&ctx.input, &state.fly_controls)
+	gfx.fly_camera_update(gfx.camera(gfx_ctx), &state.fly_camera, fly, delta_time)
 
 	// Player walks a looping 3D path through the platforms, hopping between waypoints.
 	state.time += delta_time

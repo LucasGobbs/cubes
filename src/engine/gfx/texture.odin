@@ -62,6 +62,7 @@ texture_create_with_usage :: proc(
 	} else {
 		gfx_ctx.textures[index] = resource
 	}
+	scope_track(gfx_ctx, .Texture, Resource_Handle(handle))
 	return handle
 }
 
@@ -91,6 +92,7 @@ texture_resize :: proc(gfx_ctx: ^Device, handle: ^Texture_Handle, width, height:
 texture_destroy :: proc(gfx_ctx: ^Device, handle: Texture_Handle) {
 	raw := Resource_Handle(handle)
 	if !handle_pool_contains(&gfx_ctx.texture_handles, raw) do return
+	scope_untrack(gfx_ctx, .Texture, raw)
 	resource := &gfx_ctx.textures[raw.index]
 	if resource.handle != nil do sdl.ReleaseGPUTexture(gfx_ctx.gpu, resource.handle)
 	resource^ = {}

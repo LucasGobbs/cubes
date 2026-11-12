@@ -52,6 +52,7 @@ sampler_create :: proc(
 	} else {
 		gfx_ctx.samplers[index] = resource
 	}
+	scope_track(gfx_ctx, .Sampler, Resource_Handle(handle))
 	return handle
 }
 
@@ -64,6 +65,7 @@ sampler_get :: proc(gfx_ctx: ^Device, handle: Sampler_Handle) -> ^Sampler {
 sampler_destroy :: proc(gfx_ctx: ^Device, handle: Sampler_Handle) {
 	raw := Resource_Handle(handle)
 	if !handle_pool_contains(&gfx_ctx.sampler_handles, raw) do return
+	scope_untrack(gfx_ctx, .Sampler, raw)
 	resource := &gfx_ctx.samplers[raw.index]
 	if resource.handle != nil do sdl.ReleaseGPUSampler(gfx_ctx.gpu, resource.handle)
 	resource^ = {}

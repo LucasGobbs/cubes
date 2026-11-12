@@ -22,7 +22,8 @@ Simple_State :: struct {
 	skybox:            gfx.Skybox,
 	spinning:          int,
 	rotation:          f32,
-	fly_camera:        default.Fly_Camera,
+	fly_camera:        gfx.Fly_Camera,
+	fly_controls:      engine.Fly_Controls,
 	// move_action:       input.Axis_2D_Action,
 	// boost_action:      input.Button_Action,
 	// up_action:         input.Button_Action,
@@ -39,7 +40,8 @@ simple_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	demo.state = state
 	engine.scene_camera_reset(demo, gfx_ctx)
 
-	state.fly_camera = default.fly_camera_create(gfx_ctx, &ctx.input, "simple")
+	state.fly_camera = gfx.fly_camera_create()
+	state.fly_controls = engine.fly_controls_create(&ctx.input, "simple")
 
 	state.textured_pipeline = gfx.create_textured_pipeline(gfx_ctx)
 	state.unlit_pipeline = gfx.create_unlit_pipeline(gfx_ctx)
@@ -85,7 +87,8 @@ simple_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 	gfx_ctx := &ctx.gfx
 	state := cast(^Simple_State)demo.state
 
-	default.fly_camera_tick(&state.fly_camera, gfx_ctx, &ctx.input, delta_time)
+	fly := engine.fly_controls_read(&ctx.input, &state.fly_controls)
+	gfx.fly_camera_update(gfx.camera(gfx_ctx), &state.fly_camera, fly, delta_time)
 
 	state.rotation += linalg.to_radians(f32(60)) * delta_time
 	gfx.draw_set_transform(

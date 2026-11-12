@@ -25,6 +25,10 @@ Device :: struct {
 	pipeline_handles:         Handle_Pool,
 	compute_pipelines:        [dynamic]Compute_Pipeline,
 	compute_pipeline_handles: Handle_Pool,
+
+	// Open resource scopes (scope.odin). scope_paused > 0 keeps renderer-owned creations out of them.
+	scopes:                   [dynamic][dynamic]Scope_Entry,
+	scope_paused:             int,
 }
 
 create :: proc(
@@ -129,6 +133,8 @@ end_frame :: proc(gfx_ctx: ^Device) {
 destroy :: proc(gfx_ctx: ^Device) {
 	assert(gfx_ctx.command_buffer == nil)
 	assert(!gfx_ctx.frame_open)
+	assert(len(gfx_ctx.scopes) == 0, "gfx.destroy with open scope; host must scope_end first")
+	delete(gfx_ctx.scopes)
 	renderer_destroy(&gfx_ctx.renderer)
 	for slot, index in gfx_ctx.pipeline_handles.slots {
 		if slot.alive do pipeline_destroy(gfx_ctx, Pipeline_Handle(Resource_Handle{u32(index), slot.generation}))

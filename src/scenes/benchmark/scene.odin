@@ -94,7 +94,8 @@ Benchmark_State :: struct {
 	overlay_material: gfx.Material,
 	text_mesh:        gfx.Mesh,
 	text_vertices:    [dynamic]gfx.VertexData,
-	fly_camera:       default.Fly_Camera,
+	fly_camera:       gfx.Fly_Camera,
+	fly_controls:     engine.Fly_Controls,
 	add_action:       input.Button_Action,
 	subtract_action:  input.Button_Action,
 	fog_action:       input.Button_Action,
@@ -124,7 +125,8 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx.set_present_mode(gfx_ctx, .IMMEDIATE)
 
 	inputs := &ctx.input
-	state.fly_camera = default.fly_camera_create(gfx_ctx, &ctx.input, "benchmark")
+	state.fly_camera = gfx.fly_camera_create()
+	state.fly_controls = engine.fly_controls_create(&ctx.input, "benchmark")
 	state.add_action = input.button(inputs, "benchmark.add")
 	state.subtract_action = input.button(inputs, "benchmark.subtract")
 	input.bind_key(inputs, state.add_action, .EQUALS)
@@ -331,7 +333,8 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 	fog_rgb := gfx.color_srgb_to_linear({0.671, 0.757, 0.949, 1}) // skybox horizon; matches `sky` in sea.slang
 	gfx_ctx.renderer.fog = state.fog_on ? {fog_rgb.r, fog_rgb.g, fog_rgb.b, FOG_VIEW_DISTANCE} : [4]f32{}
 
-	default.fly_camera_tick(&state.fly_camera, gfx_ctx, &ctx.input, delta_time)
+	fly := engine.fly_controls_read(&ctx.input, &state.fly_controls)
+	gfx.fly_camera_update(gfx.camera(gfx_ctx), &state.fly_camera, fly, delta_time)
 	state.sea_time += delta_time
 	camera := gfx_ctx.renderer.camera.position
 	for boat in state.boats {
