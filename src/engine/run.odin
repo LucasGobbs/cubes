@@ -1,7 +1,7 @@
 package engine
 
-import glove "../glove"
-import gbbfx "../gbbfx"
+import input "input"
+import gfx "gfx"
 
 // Owns the window, the GPU device and the World. Blocks until the window closes
 // or ESC is pressed. start runs once before the first frame; update runs every
@@ -15,18 +15,18 @@ run :: proc(
 	height := 780,
 	fullscreen := false,
 ) {
-	// gbbfx callbacks take rawptr, so the user procs are stored type-erased.
+	// gfx callbacks take rawptr, so the user procs are stored type-erased.
 	// Only the pointer type differs; the calling convention is identical.
 	state := Run_State {
 		app    = rawptr(app),
 		start  = transmute(proc(rawptr, ^World))start,
 		update = transmute(proc(rawptr, ^World, f32))update,
 	}
-	dev: gbbfx.Device
-	created := gbbfx.create(&dev, rawptr(&state), run_create, title, width, height, fullscreen)
+	dev: gfx.Device
+	created := gfx.create(&dev, rawptr(&state), run_create, title, width, height, fullscreen)
 	assert(created)
-	defer gbbfx.gfx_destroy(&dev, rawptr(&state), run_destroy)
-	gbbfx.gfx_update(&dev, rawptr(&state), run_tick)
+	defer gfx.gfx_destroy(&dev, rawptr(&state), run_destroy)
+	gfx.gfx_update(&dev, rawptr(&state), run_tick)
 }
 
 @(private = "file")
@@ -35,25 +35,25 @@ Run_State :: struct {
 	start:  proc(rawptr, ^World),
 	update: proc(rawptr, ^World, f32),
 	world:  World,
-	quit:   glove.Button_Action,
+	quit:   input.Button_Action,
 }
 
 @(private = "file")
-run_create :: proc(dev: ^gbbfx.Device, raw_state: rawptr) -> bool {
+run_create :: proc(dev: ^gfx.Device, raw_state: rawptr) -> bool {
 	state := (^Run_State)(raw_state)
-	inputs := gbbfx.gfx_input(dev)
-	state.quit = glove.add_button(inputs, "app.quit")
-	glove.bind_key(inputs, state.quit, .ESCAPE)
+	inputs := gfx.gfx_input(dev)
+	state.quit = input.add_button(inputs, "app.quit")
+	input.bind_key(inputs, state.quit, .ESCAPE)
 	state.world = world_create(dev)
 	state.start(state.app, &state.world)
 	return true
 }
 
 @(private = "file")
-run_tick :: proc(dev: ^gbbfx.Device, delta_time: f32, raw_state: rawptr) {
+run_tick :: proc(dev: ^gfx.Device, delta_time: f32, raw_state: rawptr) {
 	state := (^Run_State)(raw_state)
-	if glove.pressed(gbbfx.gfx_input(dev), state.quit) {
-		gbbfx.gfx_request_quit(dev)
+	if input.pressed(gfx.gfx_input(dev), state.quit) {
+		gfx.gfx_request_quit(dev)
 		return
 	}
 	state.update(state.app, &state.world, delta_time)
@@ -62,7 +62,7 @@ run_tick :: proc(dev: ^gbbfx.Device, delta_time: f32, raw_state: rawptr) {
 }
 
 @(private = "file")
-run_destroy :: proc(dev: ^gbbfx.Device, raw_state: rawptr) {
+run_destroy :: proc(dev: ^gfx.Device, raw_state: rawptr) {
 	state := (^Run_State)(raw_state)
 	world_destroy(&state.world)
 }

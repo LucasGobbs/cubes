@@ -2,7 +2,7 @@ package forest_instanced
 
 import "core:math"
 import "core:math/linalg"
-import gbbfx "../../gbbfx"
+import gfx "../../engine/gfx"
 import naive "../forest_naive"
 
 // Local-space variant meshes (origin at base centre on the ground, y up, scale 1) drawn as
@@ -16,7 +16,7 @@ VARIANT_ROCK_FIRST :: 8 // 8..10
 VARIANT_BUSH_FIRST :: 11 // 11..12
 
 Variant_Data :: struct {
-	verts: [dynamic]gbbfx.VertexData,
+	verts: [dynamic]gfx.VertexData,
 	idx:   [dynamic]u16,
 }
 
@@ -379,7 +379,7 @@ tree_tube :: proc(m: ^Variant_Data, path: [][3]f32, rad: []f32, color: [3]f32) {
 			dir := u * math.cos(a) + w * math.sin(a)
 			append(
 				&m.verts,
-				gbbfx.VertexData {
+				gfx.VertexData {
 					position = path[i] + dir * rad[i],
 					color = {col.r, col.g, col.b, 1},
 					uv = {0, 0},
@@ -400,7 +400,7 @@ tree_emit_cone :: proc(m: ^Variant_Data, base: [3]f32, radius, height, droop: f3
 		dir := [3]f32{math.cos(a), 0, math.sin(a)}
 		append(
 			&m.verts,
-			gbbfx.VertexData {
+			gfx.VertexData {
 				position = base + dir * radius - {0, droop, 0},
 				color = col,
 				uv = {base_w, 2},
@@ -408,7 +408,7 @@ tree_emit_cone :: proc(m: ^Variant_Data, base: [3]f32, radius, height, droop: f3
 			},
 		)
 	}
-	append(&m.verts, gbbfx.VertexData{position = base + {0, height, 0}, color = col, uv = {1, 2}, normal = {0, 1, 0}})
+	append(&m.verts, gfx.VertexData{position = base + {0, height, 0}, color = col, uv = {1, 2}, normal = {0, 1, 0}})
 	apex := u16(int(first) + TREE_SIDES)
 	for k in 0 ..< TREE_SIDES {
 		tree_add_tri(m, first + u16(k), first + u16((k + 1) % TREE_SIDES), apex)
@@ -453,7 +453,7 @@ tree_emit_blob :: proc(m: ^Variant_Data, b: Tree_Blob) {
 			if b.whi > b.wlo do t = min(max((p.y - b.wlo) / (b.whi - b.wlo), 0), 1)
 			append(
 				&m.verts,
-				gbbfx.VertexData {
+				gfx.VertexData {
 					position = p,
 					color = {b.color.r, b.color.g, b.color.b, 1},
 					uv = {t, b.kind},

@@ -4,9 +4,9 @@ package platform
 
 import "core:math"
 import "core:math/linalg"
-import gbbfx "../../gbbfx"
-import defaults "../../gbbfx/defaults"
-import scenekit "../../scenekit"
+import gfx "../../engine/gfx"
+import default "../../engine/default"
+import engine "../../engine"
 
 // Waypoints (centre of the player cube) on platform tops, spread across x, y and z.
 PLAYER_PATH := [?][3]f32{{-9, 1.5, 0}, {-6, 1.0, 1}, {-3, 2.8, -3}, {1, 3.8, 3}, {4.5, 5.8, -6}, {9, 7.3, 2}, {4, 1.5, -5}, {0, 0.5, -2}}
@@ -31,45 +31,45 @@ PROTO_TEXTURES := [Proto_Material]string {
 }
 
 Platform_State :: struct {
-	pipeline:  gbbfx.Pipeline_Handle,
-	sampler:   gbbfx.Sampler_Handle,
-	textures:  [Proto_Material]gbbfx.Texture_Handle,
-	materials: [Proto_Material]gbbfx.Material,
+	pipeline:  gfx.Pipeline_Handle,
+	sampler:   gfx.Sampler_Handle,
+	textures:  [Proto_Material]gfx.Texture_Handle,
+	materials: [Proto_Material]gfx.Material,
 	// CPU vertex data must outlive mesh upload; kept until destroy.
 	solids:    [dynamic]Proto_Solid,
-	meshes:    [dynamic]^gbbfx.Mesh,
-	scene:     gbbfx.Scene,
-	skybox:    defaults.Skybox,
-	fly_camera: scenekit.FlyCamera,
+	meshes:    [dynamic]^gfx.Mesh,
+	scene:     gfx.Scene,
+	skybox:    default.Skybox,
+	fly_camera: default.Fly_Camera,
 	player:    int,
 	time:      f32,
 }
 
 Proto_Solid :: struct {
-	verts: [dynamic]gbbfx.VertexData,
+	verts: [dynamic]gfx.VertexData,
 	idx:   [dynamic]u16,
 }
 
-platform_scene :: proc() -> scenekit.Scene {
+platform_scene :: proc() -> engine.Scene {
 	return {name = "Platform", create = platform_create, tick = platform_tick, destroy = platform_destroy}
 }
 
-platform_create :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) -> bool {
+platform_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	state := new(Platform_State)
 	demo.state = state
-	scenekit.scene_camera_reset(demo, dev, {24, 18, 34}, {2, 2, -1})
+	engine.scene_camera_reset(demo, dev, {24, 18, 34}, {2, 2, -1})
 
-	state.fly_camera = scenekit.fly_camera_create(dev, "platform")
-	state.pipeline = defaults.create_textured_pipeline(dev)
-	state.sampler = gbbfx.gfx_sampler_create(dev, gbbfx.SAMPLER_TRILINEAR)
+	state.fly_camera = default.fly_camera_create(dev, "platform")
+	state.pipeline = default.create_textured_pipeline(dev)
+	state.sampler = gfx.gfx_sampler_create(dev, gfx.SAMPLER_TRILINEAR)
 	for path, mat in PROTO_TEXTURES {
-		state.textures[mat] = gbbfx.gfx_texture_load(dev, path)
-		state.materials[mat] = gbbfx.material_create(state.pipeline)
-		defaults.bind_textured_material(&state.materials[mat], state.textures[mat], state.sampler)
+		state.textures[mat] = gfx.gfx_texture_load(dev, path)
+		state.materials[mat] = gfx.material_create(state.pipeline)
+		default.bind_textured_material(&state.materials[mat], state.textures[mat], state.sampler)
 	}
 
-	state.skybox = defaults.skybox_create(dev, scenekit.SKYBOX_PATH)
-	defaults.skybox_add_to_scene(&state.scene, &state.skybox)
+	state.skybox = default.skybox_create(dev, default.SKYBOX_PATH)
+	default.skybox_add_to_scene(&state.scene, &state.skybox)
 
 	// Ground covers the whole field (x -24..24, z -14..14) with a pit at x -4..0, z -2..2.
 	proto_box(state, dev, {-14, -1, 0}, {10, 1, 14}, .Ground)
@@ -79,7 +79,7 @@ platform_create :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) -> bool {
 
 	// Ramp turned on Y so it climbs diagonally across the ground.
 	ramp := proto_piece(state, dev, {{-6, 0}, {0, 0}, {0, 4}}, 4, {-8, 0, 0}, .Ramp)
-	gbbfx.entity_set_rotation_euler(gbbfx.scene_entity(&state.scene, ramp), 0, 0.6, 0)
+	gfx.entity_set_rotation_euler(gfx.scene_entity(&state.scene, ramp), 0, 0.6, 0)
 
 	// Trapezoid step set back in depth.
 	proto_piece(state, dev, {{-1.5, 0}, {1.5, 0}, {0.8, 3}, {-0.8, 3}}, 2, {4, 0, -5}, .Trapezoid)
@@ -101,9 +101,9 @@ platform_create :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) -> bool {
 	return true
 }
 
-platform_tick :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device, delta_time: f32) {
+platform_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	state := cast(^Platform_State)demo.state
-	scenekit.fly_camera_tick(&state.fly_camera, dev, delta_time)
+	default.fly_camera_tick(&state.fly_camera, dev, delta_time)
 
 	// Player walks a looping 3D path through the platforms, hopping between waypoints.
 	state.time += delta_time
@@ -115,17 +115,17 @@ platform_tick :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device, delta_time: f32
 	f = f * f * (3 - 2 * f)
 	pos := PLAYER_PATH[i] + (PLAYER_PATH[(i + 1) % n] - PLAYER_PATH[i]) * f
 	pos.y += 1.0 * math.sin(f * math.PI)
-	gbbfx.entity_set_position(gbbfx.scene_entity(&state.scene, state.player), pos)
+	gfx.entity_set_position(gfx.scene_entity(&state.scene, state.player), pos)
 
-	gbbfx.gfx_render(dev, &state.scene)
+	gfx.gfx_render(dev, &state.scene)
 }
 
-platform_destroy :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) {
+platform_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	state := cast(^Platform_State)demo.state
-	gbbfx.scene_destroy(&state.scene)
-	defaults.skybox_destroy(dev, &state.skybox)
+	gfx.scene_destroy(&state.scene)
+	default.skybox_destroy(dev, &state.skybox)
 	for mesh in state.meshes {
-		gbbfx.mesh_destroy(dev, mesh)
+		gfx.mesh_destroy(dev, mesh)
 		free(mesh)
 	}
 	for &solid in state.solids {
@@ -134,17 +134,17 @@ platform_destroy :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) {
 	}
 	delete(state.solids)
 	delete(state.meshes)
-	for &material in state.materials do gbbfx.material_destroy(&material)
-	for texture in state.textures do gbbfx.gfx_texture_destroy(dev, texture)
-	gbbfx.gfx_sampler_destroy(dev, state.sampler)
-	gbbfx.gfx_pipeline_destroy(dev, state.pipeline)
+	for &material in state.materials do gfx.material_destroy(&material)
+	for texture in state.textures do gfx.gfx_texture_destroy(dev, texture)
+	gfx.gfx_sampler_destroy(dev, state.sampler)
+	gfx.gfx_pipeline_destroy(dev, state.pipeline)
 	free(state)
 }
 
 // Axis-aligned box centred at `center` with half extents `half`.
 proto_box :: proc(
 	state: ^Platform_State,
-	dev: ^gbbfx.Device,
+	dev: ^gfx.Device,
 	center, half: [3]f32,
 	material: Proto_Material,
 ) -> int {
@@ -155,7 +155,7 @@ proto_box :: proc(
 // Convex XY polygon (local to `at`, centred on z = 0) extruded by `depth`.
 proto_piece :: proc(
 	state: ^Platform_State,
-	dev: ^gbbfx.Device,
+	dev: ^gfx.Device,
 	poly: [][2]f32,
 	depth: f32,
 	at: [3]f32,
@@ -166,15 +166,15 @@ proto_piece :: proc(
 	append(&state.solids, solid)
 	stored := &state.solids[len(state.solids) - 1]
 
-	mesh := new(gbbfx.Mesh)
-	mesh^ = gbbfx.mesh_create(dev, stored.verts[:], stored.idx[:])
-	gbbfx.mesh_upload(&dev.renderer, mesh)
+	mesh := new(gfx.Mesh)
+	mesh^ = gfx.mesh_create(dev, stored.verts[:], stored.idx[:])
+	gfx.mesh_upload(&dev.renderer, mesh)
 	append(&state.meshes, mesh)
 
-	index := gbbfx.scene_add_entity(&state.scene)
-	entity := gbbfx.scene_entity(&state.scene, index)
-	gbbfx.entity_set_position(entity, at)
-	gbbfx.entity_add_renderable(entity, mesh, &state.materials[material])
+	index := gfx.scene_add_entity(&state.scene)
+	entity := gfx.scene_entity(&state.scene, index)
+	gfx.entity_set_position(entity, at)
+	gfx.entity_add_renderable(entity, mesh, &state.materials[material])
 	return index
 }
 
@@ -217,7 +217,7 @@ proto_add_face :: proc(solid: ^Proto_Solid, normal: [3]f32, pts: [][3]f32) {
 		d := p - pts[0]
 		append(
 			&solid.verts,
-			gbbfx.VertexData {
+			gfx.VertexData {
 				position = p,
 				color = {1, 1, 1, 1},
 				normal = normal,

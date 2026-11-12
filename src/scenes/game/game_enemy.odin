@@ -7,7 +7,7 @@ import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
 import engine "../../engine"
-import gbbfx "../../gbbfx"
+import gfx "../../engine/gfx"
 
 ENEMY_MODEL :: "static/models/sea/ship-large.glb"
 ENEMY_SCALE :: 0.02
@@ -25,7 +25,7 @@ enemy_create :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Enemy) {
 	player_id, _ := engine.world_find_state(world, self.player, Player)
 	player_position := engine.world_get(world, player_id, engine.Transform).position
 	angle := rand.float32_range(0, linalg.TAU)
-	offset := gbbfx.Vec3{math.cos(angle), 0, math.sin(angle)} * ENEMY_RING
+	offset := gfx.Vec3{math.cos(angle), 0, math.sin(angle)} * ENEMY_RING
 	engine.world_add(world, id, engine.Model{path = ENEMY_MODEL})
 	engine.world_add(
 		world,

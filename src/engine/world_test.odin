@@ -87,7 +87,7 @@ destroy_invalid_id_is_noop :: proc(t: ^testing.T) {
 
 @(test)
 direction_angles_match_camera_convention :: proc(t: ^testing.T) {
-	// gbbfx.Camera looks along (cos yaw * cos pitch, sin pitch, sin yaw * cos pitch).
+	// gfx.Camera looks along (cos yaw * cos pitch, sin pitch, sin yaw * cos pitch).
 	yaw, pitch := direction_angles(Vec3{0, 0, -2})
 	testing.expect(t, math.abs(yaw + math.PI / 2) < 1e-5)
 	testing.expect(t, math.abs(pitch) < 1e-5)

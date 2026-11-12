@@ -2,7 +2,7 @@ package forest_naive
 
 import "core:math"
 import "core:math/linalg"
-import gbbfx "../../gbbfx"
+import gfx "../../engine/gfx"
 
 WORLD_HALF :: 512.0
 CHUNK_SIZE :: 16.0
@@ -109,7 +109,7 @@ chunk_origin :: proc(cx, cz: int) -> (x, z: f32) {
 	return
 }
 
-terrain_chunk :: proc(cx, cz: int, verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32) {
+terrain_chunk :: proc(cx, cz: int, verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32) {
 	ox, oz := chunk_origin(cx, cz)
 	base := u32(len(verts))
 	N :: TERRAIN_VERTS_PER_SIDE
@@ -120,7 +120,7 @@ terrain_chunk :: proc(cx, cz: int, verts: ^[dynamic]gbbfx.VertexData, idx: ^[dyn
 			z := oz + f32(j)
 			n := terrain_normal(x, z)
 			c := terrain_color(x, z)
-			append(verts, gbbfx.VertexData {
+			append(verts, gfx.VertexData {
 				position = {x, terrain_height(x, z), z},
 				color    = {c.r, c.g, c.b, 1},
 				uv       = {0, 0},

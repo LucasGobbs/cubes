@@ -7,7 +7,7 @@ package forest_instanced
 
 import "core:math"
 import "core:math/linalg"
-import gbbfx "../../gbbfx"
+import gfx "../../engine/gfx"
 import naive "../forest_naive"
 
 TUFT_SHAPES :: 3
@@ -30,7 +30,7 @@ tuft_variant :: proc(lod, shape, color: int) -> int {
 }
 
 tufts_build :: proc() -> (out: [TUFT_COUNT]Variant_Data) {
-	verts: [dynamic]gbbfx.VertexData
+	verts: [dynamic]gfx.VertexData
 	idx: [dynamic]u32
 	defer delete(verts)
 	defer delete(idx)
@@ -82,7 +82,7 @@ tufts_build :: proc() -> (out: [TUFT_COUNT]Variant_Data) {
 	return
 }
 
-tuft_narrow :: proc(data: ^Variant_Data, verts: []gbbfx.VertexData, idx: []u32) {
+tuft_narrow :: proc(data: ^Variant_Data, verts: []gfx.VertexData, idx: []u32) {
 	assert(len(verts) < 1 << 16)
 	append(&data.verts, ..verts)
 	for i in idx do append(&data.idx, u16(i))

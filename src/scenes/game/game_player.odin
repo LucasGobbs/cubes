@@ -8,7 +8,7 @@ import "core:log"
 import "core:math"
 import "core:math/linalg"
 import engine "../../engine"
-import gbbfx "../../gbbfx"
+import gfx "../../engine/gfx"
 
 PLAYER_MODEL :: "static/models/rigged_cesiumman.glb"
 PLAYER_CLIP :: "clip_0"
@@ -19,7 +19,7 @@ PLAYER_AUTOPILOT_TURN :: 0.8 // rad/s of the circle's heading
 
 Player :: struct {
 	enemy:   engine.Entity_Type, // destroyed on respawn
-	input:   gbbfx.Vec3, // zero move means no input; the scene writes it each frame
+	input:   gfx.Vec3, // zero move means no input; the scene writes it each frame
 	idle:    f32, // seconds since last input
 	heading: f32, // heading of the autopilot circle
 }

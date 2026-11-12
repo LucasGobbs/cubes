@@ -1,12 +1,12 @@
-// Editor overlay UI: microui context rendered through gbbfx as NDC quads in
+// Editor overlay UI: microui context rendered through gfx as NDC quads in
 // a depth-less overlay pass. Text comes from a stb_truetype-baked atlas.
 // Game code builds windows between editor_begin/editor_end and calls
 // editor_draw after post processing, before present.
 package editor
 
-import gbbfx "../gbbfx"
-import defaults "../gbbfx/defaults"
-import goose_sdl "../gbbfx/sdl_gpu"
+import gfx "../engine/gfx"
+import default "../engine/default"
+import goose_sdl "../engine/gfx/sdl_gpu"
 import "core:math/linalg"
 import sdl "vendor:sdl3"
 import mu "vendor:microui"
@@ -24,23 +24,23 @@ Draw_Span :: struct {
 
 Editor :: struct {
 	ctx:      mu.Context,
-	dev:      ^gbbfx.Device,
-	font:     gbbfx.Font,
-	pipeline: gbbfx.Pipeline_Handle,
-	material: gbbfx.Material,
-	sampler:  gbbfx.Sampler_Handle,
-	mesh:     gbbfx.Mesh,
-	vertices: [dynamic]gbbfx.VertexData,
+	dev:      ^gfx.Device,
+	font:     gfx.Font,
+	pipeline: gfx.Pipeline_Handle,
+	material: gfx.Material,
+	sampler:  gfx.Sampler_Handle,
+	mesh:     gfx.Mesh,
+	vertices: [dynamic]gfx.VertexData,
 	spans:    [dynamic]Draw_Span,
 	visible:  bool,
 }
 
 // microui's text callbacks carry no user data; the editor is a singleton in
 // practice, so they read this.
-g_active_font: ^gbbfx.Font
+g_active_font: ^gfx.Font
 
-editor_init :: proc(dev: ^gbbfx.Device, ed: ^Editor, font_path := "static/fonts/andale-mono.ttf") -> bool {
-	font, ok := gbbfx.font_create(dev, font_path)
+editor_init :: proc(dev: ^gfx.Device, ed: ^Editor, font_path := "static/fonts/andale-mono.ttf") -> bool {
+	font, ok := gfx.font_create(dev, font_path)
 	if !ok do return false
 	ed.dev = dev
 	ed.font = font
@@ -49,29 +49,29 @@ editor_init :: proc(dev: ^gbbfx.Device, ed: ^Editor, font_path := "static/fonts/
 
 	mu.init(&ed.ctx)
 	ed.ctx.text_width = proc(font: mu.Font, text: string) -> i32 {
-		return i32(gbbfx.font_text_width(g_active_font, text))
+		return i32(gfx.font_text_width(g_active_font, text))
 	}
 	ed.ctx.text_height = proc(font: mu.Font) -> i32 {
 		return g_active_font.line_height
 	}
 
-	ed.pipeline = defaults.create_textured_overlay_pipeline(dev)
-	ed.sampler = gbbfx.gfx_sampler_create(dev)
-	ed.material = gbbfx.material_create(ed.pipeline)
-	defaults.bind_textured_material(&ed.material, ed.font.texture, ed.sampler)
+	ed.pipeline = default.create_textured_overlay_pipeline(dev)
+	ed.sampler = gfx.gfx_sampler_create(dev)
+	ed.material = gfx.material_create(ed.pipeline)
+	default.bind_textured_material(&ed.material, ed.font.texture, ed.sampler)
 
-	dummy := [6]gbbfx.VertexData{}
-	ed.mesh = gbbfx.mesh_create_unindexed(dev, dummy[:])
-	gbbfx.mesh_upload(&dev.renderer, &ed.mesh)
+	dummy := [6]gfx.VertexData{}
+	ed.mesh = gfx.mesh_create_unindexed(dev, dummy[:])
+	gfx.mesh_upload(&dev.renderer, &ed.mesh)
 	return true
 }
 
-editor_destroy :: proc(dev: ^gbbfx.Device, ed: ^Editor) {
-	gbbfx.font_destroy(dev, &ed.font)
-	gbbfx.mesh_destroy(dev, &ed.mesh)
-	gbbfx.material_destroy(&ed.material)
-	gbbfx.gfx_sampler_destroy(dev, ed.sampler)
-	gbbfx.gfx_pipeline_destroy(dev, ed.pipeline)
+editor_destroy :: proc(dev: ^gfx.Device, ed: ^Editor) {
+	gfx.font_destroy(dev, &ed.font)
+	gfx.mesh_destroy(dev, &ed.mesh)
+	gfx.material_destroy(&ed.material)
+	gfx.gfx_sampler_destroy(dev, ed.sampler)
+	gfx.gfx_pipeline_destroy(dev, ed.pipeline)
 	delete(ed.vertices)
 	delete(ed.spans)
 	ed^ = {}
@@ -203,22 +203,22 @@ push_quad :: proc(
 	uv01 := [2]f32{uv0.x, uv1.y}
 	append(
 		&ed.vertices,
-		gbbfx.VertexData{position = p0, color = color, uv = uv00},
-		gbbfx.VertexData{position = p1, color = color, uv = uv10},
-		gbbfx.VertexData{position = p2, color = color, uv = uv11},
-		gbbfx.VertexData{position = p0, color = color, uv = uv00},
-		gbbfx.VertexData{position = p2, color = color, uv = uv11},
-		gbbfx.VertexData{position = p3, color = color, uv = uv01},
+		gfx.VertexData{position = p0, color = color, uv = uv00},
+		gfx.VertexData{position = p1, color = color, uv = uv10},
+		gfx.VertexData{position = p2, color = color, uv = uv11},
+		gfx.VertexData{position = p0, color = color, uv = uv00},
+		gfx.VertexData{position = p2, color = color, uv = uv11},
+		gfx.VertexData{position = p3, color = color, uv = uv01},
 	)
 }
 
 color01 :: proc(color: mu.Color) -> [4]f32 {
-	// microui colors are sRGB bytes; the swapchain is linear (see gbbfx/color.odin).
-	return gbbfx.color_srgb_to_linear({f32(color.r), f32(color.g), f32(color.b), f32(color.a)} / 255)
+	// microui colors are sRGB bytes; the swapchain is linear (see engine/gfx/color.odin).
+	return gfx.color_srgb_to_linear({f32(color.r), f32(color.g), f32(color.b), f32(color.a)} / 255)
 }
 
 push_glyph :: proc(ed: ^Editor, ch: rune, x, y: ^f32, color: [4]f32) {
-	quad, ok := gbbfx.font_glyph_quad(&ed.font, ch, x, y)
+	quad, ok := gfx.font_glyph_quad(&ed.font, ch, x, y)
 	if !ok do return
 	push_quad(
 		ed,
@@ -285,8 +285,8 @@ editor_build :: proc(ed: ^Editor) {
 				ed,
 				f32(c.rect.x), f32(c.rect.y),
 				f32(c.rect.x + c.rect.w), f32(c.rect.y + c.rect.h),
-				{gbbfx.FONT_WHITE_U, gbbfx.FONT_WHITE_V},
-				{gbbfx.FONT_WHITE_U, gbbfx.FONT_WHITE_V},
+				{gfx.FONT_WHITE_U, gfx.FONT_WHITE_V},
+				{gfx.FONT_WHITE_U, gfx.FONT_WHITE_V},
 				color01(c.color),
 			)
 		case ^mu.Command_Text:
@@ -321,8 +321,8 @@ push_viewport_quad :: proc(
 // post-processing because the post chain finished before this pass.
 editor_draw :: proc(
 	ed: ^Editor,
-	dev: ^gbbfx.Device,
-	viewport_texture: gbbfx.Texture_Handle,
+	dev: ^gfx.Device,
+	viewport_texture: gfx.Texture_Handle,
 	viewport_rect: mu.Rect,
 ) {
 	if !ed.visible do return
@@ -333,14 +333,14 @@ editor_draw :: proc(
 	if len(ed.vertices) == 0 do return
 
 	renderer := &dev.renderer
-	gbbfx.mesh_update_unindexed(renderer, &ed.mesh, ed.vertices[:])
+	gfx.mesh_update_unindexed(renderer, &ed.mesh, ed.vertices[:])
 
-	gbbfx.renderer_begin_present_pass(renderer)
+	gfx.renderer_begin_present_pass(renderer)
 	pass := renderer.pass
-	pipeline := gbbfx.gfx_pipeline_get(dev, ed.pipeline)
+	pipeline := gfx.gfx_pipeline_get(dev, ed.pipeline)
 	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-	gbbfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &ed.material)
-	gbbfx.gfx_pipeline_bind_draw(
+	gfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &ed.material)
+	gfx.gfx_pipeline_bind_draw(
 		dev,
 		ed.pipeline,
 		dev.command_buffer,
@@ -351,21 +351,21 @@ editor_draw :: proc(
 		},
 	)
 	bound := Span_Texture.ATLAS
-	viewport_texture_resource := gbbfx.gfx_texture_get(dev, viewport_texture)
-	sampler := gbbfx.gfx_sampler_get(dev, ed.sampler)
-	vertex_buffer := gbbfx.gfx_buffer_get(dev, ed.mesh.vertex_buffer)
+	viewport_texture_resource := gfx.gfx_texture_get(dev, viewport_texture)
+	sampler := gfx.gfx_sampler_get(dev, ed.sampler)
+	vertex_buffer := gfx.gfx_buffer_get(dev, ed.mesh.vertex_buffer)
 	for span in ed.spans {
 		if span.texture != bound {
 			if span.texture == .VIEWPORT {
 				goose_sdl.bind_sampler(
 					pass,
-					defaults.DEFAULT_TEXTURED_FRAGMENT_TEX,
-					defaults.DEFAULT_TEXTURED_FRAGMENT_TEX_SAMPLER,
+					default.DEFAULT_TEXTURED_FRAGMENT_TEX,
+					default.DEFAULT_TEXTURED_FRAGMENT_TEX_SAMPLER,
 					viewport_texture_resource.handle,
 					sampler.handle,
 				)
 			} else {
-				gbbfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &ed.material)
+				gfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &ed.material)
 			}
 			bound = span.texture
 		}
@@ -379,5 +379,5 @@ editor_draw :: proc(
 		)
 		sdl.DrawGPUPrimitives(pass, span.count, 1, span.start, 0)
 	}
-	gbbfx.renderer_end_pass(renderer)
+	gfx.renderer_end_pass(renderer)
 }

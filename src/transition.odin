@@ -8,8 +8,7 @@ import "core:log"
 import "core:math"
 import "core:math/linalg"
 import engine "engine"
-import gbbfx "gbbfx"
-import scenekit "scenekit"
+import gfx "engine/gfx"
 import sdl "vendor:sdl3"
 
 Transition_Phase :: enum {
@@ -23,29 +22,29 @@ Transition :: struct {
 	request:  engine.Scene_Request,
 	target:   int, // SCENES index
 	elapsed:  f32,
-	mesh:     gbbfx.Mesh,
-	vertices: [dynamic]gbbfx.VertexData,
+	mesh:     gfx.Mesh,
+	vertices: [dynamic]gfx.VertexData,
 	draw:     bool,
 }
 
 transition: Transition
 
 // Call before stats_create so the overlay draws under the stats panel.
-transition_create :: proc(dev: ^gbbfx.Device) {
-	dummy := [6]gbbfx.VertexData{}
-	transition.mesh = gbbfx.mesh_create_unindexed(dev, dummy[:])
-	gbbfx.mesh_upload(&dev.renderer, &transition.mesh)
-	gbbfx.renderer_add_pass(&dev.renderer, .After_Post, {name = "transition", run = transition_draw})
+transition_create :: proc(dev: ^gfx.Device) {
+	dummy := [6]gfx.VertexData{}
+	transition.mesh = gfx.mesh_create_unindexed(dev, dummy[:])
+	gfx.mesh_upload(&dev.renderer, &transition.mesh)
+	gfx.renderer_add_pass(&dev.renderer, .After_Post, {name = "transition", run = transition_draw})
 }
 
 // Passes are cleared by stats_destroy.
-transition_destroy :: proc(dev: ^gbbfx.Device) {
-	gbbfx.mesh_destroy(dev, &transition.mesh)
+transition_destroy :: proc(dev: ^gfx.Device) {
+	gfx.mesh_destroy(dev, &transition.mesh)
 }
 
 // Runs at the top of a tick. Returns true when it swapped the scene (the caller
 // must skip ticking the old one).
-transition_tick :: proc(dev: ^gbbfx.Device, scene: ^scenekit.Scene, delta_time: f32) -> bool {
+transition_tick :: proc(dev: ^gfx.Device, scene: ^engine.Scene, delta_time: f32) -> bool {
 	transition.draw = false
 	if transition.phase == .None {
 		request, ok := engine.take_scene_request()
@@ -89,27 +88,27 @@ transition_tick :: proc(dev: ^gbbfx.Device, scene: ^scenekit.Scene, delta_time: 
 }
 
 transition_quad :: proc(x0, x1, y0, y1: f32, color: [4]f32) {
-	uv := [2]f32{gbbfx.FONT_WHITE_U, gbbfx.FONT_WHITE_V}
+	uv := [2]f32{gfx.FONT_WHITE_U, gfx.FONT_WHITE_V}
 	p0, p1, p2, p3 := [3]f32{x0, y1, 0}, [3]f32{x1, y1, 0}, [3]f32{x1, y0, 0}, [3]f32{x0, y0, 0}
-	append(&transition.vertices, gbbfx.VertexData{position = p0, color = color, uv = uv}, {position = p1, color = color, uv = uv}, {position = p2, color = color, uv = uv}, {position = p0, color = color, uv = uv}, {position = p2, color = color, uv = uv}, {position = p3, color = color, uv = uv})
+	append(&transition.vertices, gfx.VertexData{position = p0, color = color, uv = uv}, {position = p1, color = color, uv = uv}, {position = p2, color = color, uv = uv}, {position = p0, color = color, uv = uv}, {position = p2, color = color, uv = uv}, {position = p3, color = color, uv = uv})
 }
 
 // Triangle fan of `sides` points around the centre, radius r in NDC (x scaled by aspect).
 transition_polygon :: proc(sides: int, r, aspect, rotation: f32, color: [4]f32) {
-	uv := [2]f32{gbbfx.FONT_WHITE_U, gbbfx.FONT_WHITE_V}
+	uv := [2]f32{gfx.FONT_WHITE_U, gfx.FONT_WHITE_V}
 	point :: proc(i, sides: int, r, aspect, rotation: f32) -> [3]f32 {
 		a := rotation + f32(i) / f32(sides) * 2 * math.PI
 		return {math.cos(a) * r / aspect, math.sin(a) * r, 0}
 	}
 	for i in 0 ..< sides {
 		append(&transition.vertices,
-			gbbfx.VertexData{position = {0, 0, 0}, color = color, uv = uv},
-			gbbfx.VertexData{position = point(i, sides, r, aspect, rotation), color = color, uv = uv},
-			gbbfx.VertexData{position = point(i + 1, sides, r, aspect, rotation), color = color, uv = uv})
+			gfx.VertexData{position = {0, 0, 0}, color = color, uv = uv},
+			gfx.VertexData{position = point(i, sides, r, aspect, rotation), color = color, uv = uv},
+			gfx.VertexData{position = point(i + 1, sides, r, aspect, rotation), color = color, uv = uv})
 	}
 }
 
-transition_build :: proc(dev: ^gbbfx.Device, progress: f32) {
+transition_build :: proc(dev: ^gfx.Device, progress: f32) {
 	out := transition.phase == .Out
 	// cover: 0 = nothing, 1 = whole screen, in both phases.
 	cover := progress if out else 1 - progress
@@ -155,20 +154,20 @@ transition_build :: proc(dev: ^gbbfx.Device, progress: f32) {
 		transition.draw = false
 		return
 	}
-	gbbfx.mesh_update_unindexed(&dev.renderer, &transition.mesh, transition.vertices[:])
+	gfx.mesh_update_unindexed(&dev.renderer, &transition.mesh, transition.vertices[:])
 	transition.draw = true
 }
 
-transition_draw :: proc(ctx: ^gbbfx.Pass_Ctx, _: rawptr) {
+transition_draw :: proc(ctx: ^gfx.Pass_Ctx, _: rawptr) {
 	if !transition.draw do return
 	dev := ctx.dev
-	gbbfx.renderer_begin_overlay_pass(ctx.renderer, ctx.color)
+	gfx.renderer_begin_overlay_pass(ctx.renderer, ctx.color)
 	pass := ctx.renderer.pass
 	target := 0 if ctx.color == ctx.renderer.scene_color else 1 // pipeline format must match the target
-	pipeline := gbbfx.gfx_pipeline_get(dev, stats.pipelines[target])
+	pipeline := gfx.gfx_pipeline_get(dev, stats.pipelines[target])
 	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-	gbbfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &stats.materials[target])
-	gbbfx.gfx_pipeline_bind_draw(
+	gfx.gfx_pipeline_bind_material(dev, pass, dev.command_buffer, &stats.materials[target])
+	gfx.gfx_pipeline_bind_draw(
 		dev,
 		stats.pipelines[target],
 		dev.command_buffer,
@@ -178,8 +177,8 @@ transition_draw :: proc(ctx: ^gbbfx.Pass_Ctx, _: rawptr) {
 			material = &stats.materials[target],
 		},
 	)
-	vertex_buffer := gbbfx.gfx_buffer_get(dev, transition.mesh.vertex_buffer)
+	vertex_buffer := gfx.gfx_buffer_get(dev, transition.mesh.vertex_buffer)
 	sdl.BindGPUVertexBuffers(pass, 0, &(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}), 1)
 	sdl.DrawGPUPrimitives(pass, u32(len(transition.vertices)), 1, 0, 0)
-	gbbfx.renderer_end_pass(ctx.renderer)
+	gfx.renderer_end_pass(ctx.renderer)
 }

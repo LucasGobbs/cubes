@@ -1,0 +1,819 @@
+package gfx
+
+import "core:math/linalg"
+import "core:log"
+import "core:mem"
+import "core:slice"
+import "core:time"
+import loader "loader"
+import sdl "vendor:sdl3"
+
+// Sample count of the MSAA mode (4x is supported by every SDL GPU backend).
+MSAA_SAMPLES :: sdl.GPUSampleCount._4
+
+// Skinned instances per frame; each owns MAX_JOINTS palette matrices.
+MAX_SKINNED_INSTANCES :: 64
+
+Renderer :: struct {
+	// Device owns native resources and must outlive Renderer.
+	dev:             ^Device,
+
+	// Valid only between begin/end pass.
+	pass:            ^sdl.GPURenderPass,
+	view_projection: matrix[4, 4]f32,
+
+	// Renderer-owned resources live for exactly the renderer lifetime.
+	uploader:        Uploader,
+	camera:          Camera,
+	draw_items:      [dynamic]DrawItem,
+
+	// The scene pass renders here instead of the swapchain, so post
+	// processing can run before renderer_present blits to the screen.
+	// Always 1x: with MSAA on it is the resolve target, so everything that
+	// reads the scene (blur, overlay, present) is unaffected by MSAA.
+	scene_color:     Texture_Handle,
+	// Depth buffer matching scene_color's size and sample count. Reverse-Z:
+	// cleared to 0 (far), pipelines compare GREATER (see camera_perspective).
+	// Resize all targets together with renderer_resize_targets.
+	scene_depth:     Texture_Handle,
+	// MSAA: scene pass renders into scene_color_msaa (generation 0 when off)
+	// and resolves into scene_color. Toggle with renderer_set_msaa.
+	scene_color_msaa: Texture_Handle,
+	msaa_enabled:    bool,
+	msaa_supported:  bool, // device can do MSAA_SAMPLES for color and depth
+
+	// Instancing: per-frame transform storage for instanced runs, uploaded
+	// between prepare and the pass. offsets are indexed by draw item.
+	// previous is a copy of the last uploaded transforms; prepare skips the
+	// upload (and its GPU stall) when nothing changed.
+	instance_buffer: Buffer_Handle,
+	instance_transforms: [dynamic]matrix[4, 4]f32,
+	instance_offsets:    [dynamic]u32,
+	instance_previous:   [dynamic]matrix[4, 4]f32,
+
+	// Skinned instances use their own arrays: palette index is
+	// (instance + first_instance) * MAX_JOINTS, so they cannot share the static
+	// indexing. Palettes animate every frame, so they upload unconditionally.
+	skinned_buffer:     Buffer_Handle,
+	palette_buffer:     Buffer_Handle,
+	skinned_transforms: [dynamic]matrix[4, 4]f32,
+	palettes:           [dynamic]matrix[4, 4]f32,
+
+	// Number of GPU draws issued in the last flush (HUD/profiling).
+	draw_calls:      int,
+	// Set once the skinned cap was exceeded; the error is logged a single time.
+	skinned_overflow_logged: bool,
+	// GPU triangles submitted in the last flush.
+	triangles:       int,
+	// Last flush: instanced draws, instances they drew, pipeline and material binds.
+	instanced_draws: int,
+	instance_count:  int,
+	pipeline_binds:  int,
+	material_binds:  int,
+	// Linear rgb fog color + view distance (a <= 0 = off). Set per frame by the scene.
+	fog:             [4]f32,
+	// CPU time of the last frame's prepare and flush (benchmark mode reads these).
+	prepare_time:    time.Duration,
+	flush_time:      time.Duration,
+
+	// Cached only during an active pass.
+	bound_pipeline:  Pipeline_Handle,
+	bound_material:  ^Material,
+	pass_msaa:       bool, // the open pass is multisampled
+
+	// Post-processing: passes per slot (rgraph.odin), transient textures from the pool.
+	passes:          [Pass_Slot][dynamic]Render_Pass,
+	pool:            Texture_Pool,
+	post_sampler:    Sampler_Handle,
+	post_format:     sdl.GPUTextureFormat,
+}
+
+// Layers render in declaration order inside the pass: everything in WORLD
+// draws before SKYBOX, SKYBOX before TRANSPARENT, TRANSPARENT before UI. The
+// skybox draws after opaque geometry so the depth test skips covered pixels.
+// Pair higher layers with depth-test-off pipelines when draw order must win
+// over the depth buffer.
+Render_Layer :: enum u8 {
+	WORLD        = 10,
+	SKYBOX       = 15,
+	TRANSPARENT  = 20,
+	POST_PROCESS = 30,
+	UI           = 40,
+}
+
+DrawItem :: struct {
+	// Borrowed. Assets must outlive this item.
+	mesh:      ^Mesh,
+	material:  ^Material,
+
+	// Copied because every scene instance has its own transform.
+	transform: matrix[4, 4]f32,
+	layer:     Render_Layer,
+	// Skinned items only: the pose sampled for this instance (borrowed).
+	pose:      ^Pose,
+}
+
+Renderer_Load_Desc :: struct {
+	// .glb/.gltf; the base color texture comes from the file.
+	model_path: string,
+	pipeline:   Pipeline_Handle,
+}
+
+renderer_create :: proc(dev: ^Device) -> Renderer {
+	renderer := Renderer {
+		dev    = dev,
+		camera = camera_create(
+			position = Vec3{0, 0, 3},
+			target = {},
+			projection = camera_perspective(gfx_aspect_ratio(dev)),
+		),
+	}
+	renderer.uploader.dev = dev
+	renderer.instance_buffer = gfx_buffer_create(
+		dev,
+		u32(64 * size_of(matrix[4, 4]f32)),
+		.GRAPHICS_STORAGE_READ,
+	)
+	renderer.skinned_buffer = gfx_buffer_create(
+		dev,
+		u32(MAX_SKINNED_INSTANCES * size_of(matrix[4, 4]f32)),
+		.GRAPHICS_STORAGE_READ,
+	)
+	renderer.palette_buffer = gfx_buffer_create(
+		dev,
+		u32(MAX_SKINNED_INSTANCES * loader.MAX_JOINTS * size_of(matrix[4, 4]f32)),
+		.GRAPHICS_STORAGE_READ,
+	)
+	renderer.scene_color = gfx_texture_create_with_usage(
+		dev,
+		u32(dev.window_size.x),
+		u32(dev.window_size.y),
+		sdl.GetGPUSwapchainTextureFormat(dev.gpu, dev.window),
+		{.COLOR_TARGET, .SAMPLER},
+	)
+	renderer.scene_depth = gfx_texture_create_with_usage(
+		dev,
+		u32(dev.window_size.x),
+		u32(dev.window_size.y),
+		.D32_FLOAT,
+		{.DEPTH_STENCIL_TARGET},
+	)
+	color_format := sdl.GetGPUSwapchainTextureFormat(dev.gpu, dev.window)
+	renderer.msaa_supported =
+		sdl.GPUTextureSupportsSampleCount(dev.gpu, color_format, MSAA_SAMPLES) &&
+		sdl.GPUTextureSupportsSampleCount(dev.gpu, .D32_FLOAT, MSAA_SAMPLES)
+	post_usage := sdl.GPUTextureUsageFlags{.COMPUTE_STORAGE_WRITE, .SAMPLER, .COLOR_TARGET}
+	for format in ([?]sdl.GPUTextureFormat{.R16G16B16A16_FLOAT, .R8G8B8A8_UNORM}) {
+		if sdl.GPUTextureSupportsFormat(dev.gpu, format, .D2, post_usage) {
+			renderer.post_format = format
+			break
+		}
+	}
+	assert(renderer.post_format != .INVALID, "no texture format supports compute write + sampler + color target")
+	renderer.post_sampler = gfx_sampler_create(dev, SAMPLER_LINEAR_CLAMP)
+	return renderer
+}
+
+// Turns MSAA on or off by rebuilding the scene depth (and the multisampled
+// color target). Returns the resulting state: false when asked to enable on a
+// device without support. Waits for GPU idle; call between frames, outside a
+// pass. Pipelines need no rebuild: each carries both variants.
+renderer_set_msaa :: proc(renderer: ^Renderer, enabled: bool) -> bool {
+	assert(renderer.pass == nil)
+	enabled := enabled && renderer.msaa_supported
+	if enabled == renderer.msaa_enabled do return enabled
+
+	dev := renderer.dev
+	_ = sdl.WaitForGPUIdle(dev.gpu)
+	size := gfx_texture_get(dev, renderer.scene_color)
+	width, height := size.width, size.height
+	gfx_texture_destroy(dev, renderer.scene_depth)
+	gfx_texture_destroy(dev, renderer.scene_color_msaa)
+	renderer.scene_color_msaa = {}
+
+	samples := MSAA_SAMPLES if enabled else sdl.GPUSampleCount._1
+	renderer.scene_depth = gfx_texture_create_with_usage(
+		dev,
+		width,
+		height,
+		.D32_FLOAT,
+		{.DEPTH_STENCIL_TARGET},
+		samples,
+	)
+	if enabled {
+		renderer.scene_color_msaa = gfx_texture_create_with_usage(
+			dev,
+			width,
+			height,
+			size.format,
+			{.COLOR_TARGET},
+			samples,
+		)
+	}
+	renderer.msaa_enabled = enabled
+	return enabled
+}
+
+renderer_destroy :: proc(renderer: ^Renderer) {
+	assert(renderer.pass == nil)
+	gfx_buffer_destroy(renderer.dev, renderer.instance_buffer)
+	gfx_buffer_destroy(renderer.dev, renderer.skinned_buffer)
+	gfx_buffer_destroy(renderer.dev, renderer.palette_buffer)
+	delete(renderer.instance_transforms)
+	delete(renderer.instance_offsets)
+	delete(renderer.instance_previous)
+	delete(renderer.skinned_transforms)
+	delete(renderer.palettes)
+	gfx_texture_destroy(renderer.dev, renderer.scene_color)
+	gfx_texture_destroy(renderer.dev, renderer.scene_depth)
+	gfx_texture_destroy(renderer.dev, renderer.scene_color_msaa)
+	delete(renderer.pool.entries)
+	for slot in Pass_Slot do delete(renderer.passes[slot])
+	uploader_destroy(&renderer.uploader)
+	delete(renderer.draw_items)
+	renderer^ = {}
+}
+
+// Resizes the scene color, depth and MSAA color targets together (they must match).
+// Waits for GPU idle; call between frames.
+renderer_resize_targets :: proc(renderer: ^Renderer, width, height: u32) {
+	gfx_texture_resize(renderer.dev, &renderer.scene_color, width, height)
+	gfx_texture_resize(renderer.dev, &renderer.scene_depth, width, height)
+	if renderer.msaa_enabled {
+		gfx_texture_resize(renderer.dev, &renderer.scene_color_msaa, width, height)
+	}
+}
+
+renderer_load :: proc(renderer: ^Renderer, desc: Renderer_Load_Desc) -> Model {
+	assert(len(desc.model_path) > 0)
+	assert(Resource_Handle(desc.pipeline).generation != 0)
+	imported, ok := loader.model_import_from_gltf(desc.model_path)
+	assert(ok, "renderer_load: model import failed")
+	defer loader.model_import_destroy(&imported)
+	model := model_create(renderer.dev, &imported, desc.pipeline)
+	model_upload_to_gpu(&model, &renderer.uploader)
+	return model
+}
+
+renderer_unload :: proc(renderer: ^Renderer, model: ^Model) {
+	model_destroy(renderer.dev, model)
+}
+
+renderer_begin_frame :: proc(renderer: ^Renderer) {
+	uploader_collect(&renderer.uploader) // frees staging of uploads the GPU has finished
+	_ = gfx_begin_frame(renderer.dev)
+}
+
+renderer_end_frame :: proc(renderer: ^Renderer) {
+	assert(renderer.pass == nil)
+	gfx_end_frame(renderer.dev)
+}
+
+// Left/right/bottom/top planes (xyz = inward unit normal, w = offset) from a
+// view-projection matrix (Gribb-Hartmann). Near/far are skipped: reverse-Z,
+// infinite far, and a near-plane miss costs nothing.
+frustum_planes :: proc(vp: matrix[4, 4]f32) -> (planes: [4][4]f32) {
+	row :: proc(m: matrix[4, 4]f32, r: int) -> [4]f32 {
+		return {m[r, 0], m[r, 1], m[r, 2], m[r, 3]}
+	}
+	r0, r1, r3 := row(vp, 0), row(vp, 1), row(vp, 3)
+	planes = {r3 + r0, r3 - r0, r3 + r1, r3 - r1}
+	for &plane in planes do plane /= linalg.length(plane.xyz)
+	return
+}
+
+// World-space bounding sphere of a mesh instance. Radius 0 = bounds unknown.
+renderable_sphere :: proc(mesh: ^Mesh, transform: matrix[4, 4]f32) -> (center: Vec3, radius: f32) {
+	center = (transform * [4]f32{mesh.center.x, mesh.center.y, mesh.center.z, 1}).xyz
+	scale := max(
+		linalg.length(Vec3{transform[0, 0], transform[1, 0], transform[2, 0]}),
+		linalg.length(Vec3{transform[0, 1], transform[1, 1], transform[2, 1]}),
+		linalg.length(Vec3{transform[0, 2], transform[1, 2], transform[2, 2]}),
+	)
+	radius = mesh.radius * scale
+	return
+}
+
+// True when the mesh's world-space bounding sphere is fully outside a side plane.
+renderable_culled :: proc(
+	planes: ^[4][4]f32,
+	mesh: ^Mesh,
+	transform: matrix[4, 4]f32,
+) -> bool {
+	if mesh.radius <= 0 do return false
+	center, radius := renderable_sphere(mesh, transform)
+	for plane in planes {
+		if linalg.dot(plane.xyz, center) + plane.w < -radius do return true
+	}
+	return false
+}
+
+// True when the mesh's world-space bounding sphere lies entirely beyond `distance` from `eye`.
+renderable_beyond :: proc(eye: Vec3, mesh: ^Mesh, transform: matrix[4, 4]f32, distance: f32) -> bool {
+	if mesh.radius <= 0 do return false
+	center, radius := renderable_sphere(mesh, transform)
+	return linalg.distance(eye, center) - radius > distance
+}
+
+Extract_View :: struct {
+	planes:        [4][4]f32,
+	view_distance: f32,
+}
+
+renderer_begin_extract :: proc(renderer: ^Renderer) -> Extract_View {
+	// fog.a doubles as view distance (<= 0 = off): geometry past it is fully fogged, so skipping it is invisible.
+	return {planes = frustum_planes(camera_view_projection(&renderer.camera)), view_distance = renderer.fog.a}
+}
+
+renderer_submit_entity :: proc(renderer: ^Renderer, view: ^Extract_View, entity: ^Entity) {
+	for &component in entity.components {
+		#partial switch renderable in &component {
+		case Renderable:
+			if renderable.cull && renderable_culled(&view.planes, renderable.mesh, entity.transform) do continue
+			if renderable.cull && view.view_distance > 0 && renderable_beyond(renderer.camera.position, renderable.mesh, entity.transform, view.view_distance) do continue
+			renderer_submit(
+				renderer,
+				renderable.mesh,
+				renderable.material,
+				entity.transform,
+				renderable.layer,
+				renderable.pose,
+			)
+		}
+	}
+}
+
+renderer_extract_scene :: proc(renderer: ^Renderer, scene: ^Scene) {
+	view := renderer_begin_extract(renderer)
+	for &entity in scene.entities do renderer_submit_entity(renderer, &view, &entity)
+}
+
+renderer_draw_submitted :: proc(renderer: ^Renderer) {
+	start := time.tick_now()
+	renderer_prepare(renderer)
+	renderer.prepare_time = time.tick_since(start)
+	renderer_begin_pass(renderer, camera_view_projection(&renderer.camera))
+	start = time.tick_now()
+	renderer_flush(renderer)
+	renderer.flush_time = time.tick_since(start)
+	renderer_end_pass(renderer)
+}
+
+renderer_render_scene :: proc(renderer: ^Renderer, scene: ^Scene) {
+	assert(renderer.dev.frame_open)
+	if renderer.dev.swapchain == nil do return
+	renderer_extract_scene(renderer, scene)
+	renderer_draw_submitted(renderer)
+}
+
+Extract_Proc :: #type proc(renderer: ^Renderer, user: rawptr)
+
+// Whole frame: extract, draw, post-process, present. Draws nothing when the
+// swapchain is unavailable (minimized window).
+renderer_render_frame :: proc(renderer: ^Renderer, extract: Extract_Proc, user: rawptr) {
+	renderer_begin_frame(renderer)
+	if renderer.dev.swapchain != nil {
+		extract(renderer, user)
+		renderer_draw_submitted(renderer)
+		final := renderer_run_post(renderer)
+		renderer_present(renderer, final)
+	}
+	renderer_end_frame(renderer)
+	free_all(context.temp_allocator)
+}
+
+// Sorts the frame's draw items, gathers per-instance transforms for
+// instanced pipelines, and uploads them — all before the pass opens, since
+// the upload submits its own command buffer.
+renderer_prepare :: proc(renderer: ^Renderer) {
+	renderer_sort_draw_items(renderer.draw_items[:])
+	clear(&renderer.instance_transforms)
+	clear(&renderer.instance_offsets)
+	clear(&renderer.skinned_transforms)
+	clear(&renderer.palettes)
+	renderer.draw_calls = 0
+	renderer.triangles = 0
+	renderer.instanced_draws, renderer.instance_count = 0, 0
+	renderer.pipeline_binds, renderer.material_binds = 0, 0
+	i := 0
+	for i < len(renderer.draw_items) {
+		item := renderer.draw_items[i]
+		pipeline := gfx_pipeline_get(renderer.dev, item.material.pipeline)
+		if pipeline.skinned {
+			assert(item.pose != nil, "skinned draw item without pose")
+			if len(renderer.skinned_transforms) >= MAX_SKINNED_INSTANCES {
+				// Dropped before runs/offsets are built so both stay aligned with the uploaded buffers.
+				if !renderer.skinned_overflow_logged {
+					log.errorf("too many skinned instances (max %d)", MAX_SKINNED_INSTANCES)
+					renderer.skinned_overflow_logged = true
+				}
+				ordered_remove(&renderer.draw_items, i)
+				continue
+			}
+			append(&renderer.instance_offsets, u32(len(renderer.skinned_transforms)))
+			append(&renderer.skinned_transforms, item.transform)
+			append(&renderer.palettes, ..item.pose.palette[:])
+		} else if pipeline.instanced {
+			append(&renderer.instance_offsets, u32(len(renderer.instance_transforms)))
+			append(&renderer.instance_transforms, item.transform)
+		} else {
+			append(&renderer.instance_offsets, 0)
+		}
+		i += 1
+	}
+	renderer_upload_skinned_instances(renderer)
+	if len(renderer.instance_transforms) == 0 do return
+	current := slice.to_bytes(renderer.instance_transforms[:])
+	if len(renderer.instance_transforms) == len(renderer.instance_previous) &&
+	   mem.compare(current, slice.to_bytes(renderer.instance_previous[:])) == 0 {
+		return // static scene: the buffer on the GPU is already correct
+	}
+	clear(&renderer.instance_previous)
+	append(&renderer.instance_previous, ..renderer.instance_transforms[:])
+	renderer.instance_buffer = gfx_buffer_stage(
+		renderer.dev,
+		renderer.instance_buffer,
+		renderer.instance_transforms[:],
+		.GRAPHICS_STORAGE_READ,
+	)
+	uploader_begin(&renderer.uploader)
+	uploader_upload_buffer(&renderer.uploader, renderer.instance_buffer)
+	uploader_flush(&renderer.uploader)
+	gfx_buffer_get(renderer.dev, renderer.instance_buffer)._temporary_raw_data = nil
+}
+
+renderer_upload_skinned_instances :: proc(renderer: ^Renderer) {
+	if len(renderer.skinned_transforms) == 0 do return
+	renderer.skinned_buffer = gfx_buffer_stage(
+		renderer.dev,
+		renderer.skinned_buffer,
+		renderer.skinned_transforms[:],
+		.GRAPHICS_STORAGE_READ,
+	)
+	renderer.palette_buffer = gfx_buffer_stage(
+		renderer.dev,
+		renderer.palette_buffer,
+		renderer.palettes[:],
+		.GRAPHICS_STORAGE_READ,
+	)
+	uploader_begin(&renderer.uploader)
+	uploader_upload_buffer(&renderer.uploader, renderer.skinned_buffer)
+	uploader_upload_buffer(&renderer.uploader, renderer.palette_buffer)
+	uploader_flush(&renderer.uploader)
+	gfx_buffer_get(renderer.dev, renderer.skinned_buffer)._temporary_raw_data = nil
+	gfx_buffer_get(renderer.dev, renderer.palette_buffer)._temporary_raw_data = nil
+}
+
+renderer_bind_static_instances :: proc(renderer: ^Renderer) {
+	instance_buffer := gfx_buffer_get(renderer.dev, renderer.instance_buffer)
+	sdl.BindGPUVertexStorageBuffers(renderer.pass, 0, &(instance_buffer.handle), 1)
+}
+
+renderer_begin_pass :: proc(renderer: ^Renderer, view_projection: matrix[4, 4]f32) {
+	assert(renderer.pass == nil)
+	assert(renderer.dev.command_buffer != nil)
+	assert(renderer.dev.swapchain != nil)
+
+	color_target := sdl.GPUColorTargetInfo {
+		texture     = gfx_texture_get(renderer.dev, renderer.scene_color).handle,
+		load_op     = .CLEAR,
+		clear_color = sdl.FColor(color_srgb_to_linear({0.2, 0.2, 0.5, 1})),
+		store_op    = .STORE,
+	}
+	if renderer.msaa_enabled {
+		// Draw into the multisampled texture; at pass end the samples are
+		// averaged into scene_color and the multisampled data is dropped.
+		color_target.resolve_texture = color_target.texture
+		color_target.texture = gfx_texture_get(renderer.dev, renderer.scene_color_msaa).handle
+		color_target.store_op = .RESOLVE
+	}
+	depth_target := sdl.GPUDepthStencilTargetInfo {
+		texture     = gfx_texture_get(renderer.dev, renderer.scene_depth).handle,
+		load_op     = .CLEAR,
+		clear_depth = 0, // reverse-Z: 0 is the far plane
+		store_op    = .DONT_CARE,
+	}
+
+	renderer.pass = sdl.BeginGPURenderPass(
+		renderer.dev.command_buffer,
+		&color_target,
+		1,
+		&depth_target,
+	)
+	assert(renderer.pass != nil)
+	renderer.view_projection = view_projection
+	renderer.pass_msaa = renderer.msaa_enabled
+	renderer.bound_pipeline = {}
+	renderer.bound_material = nil
+}
+
+renderer_end_pass :: proc(renderer: ^Renderer) {
+	assert(renderer.pass != nil)
+	sdl.EndGPURenderPass(renderer.pass)
+	renderer.pass = nil
+	renderer.pass_msaa = false // overlay/present passes are always 1x
+	renderer.view_projection = {}
+	renderer.bound_pipeline = {}
+	renderer.bound_material = nil
+}
+
+// Overlay pass: a LOAD-op pass over an existing target with no depth
+// attachment and identity view-projection. For UI drawn on top of the
+// finished frame (pair with depth-less, blended pipelines). Close with
+// renderer_end_pass.
+renderer_begin_overlay_pass :: proc(renderer: ^Renderer, target: Texture_Handle) {
+	assert(renderer.pass == nil)
+	assert(renderer.dev.command_buffer != nil)
+	color_target := sdl.GPUColorTargetInfo {
+		texture = gfx_texture_get(renderer.dev, target).handle,
+		load_op = .LOAD,
+		store_op = .STORE,
+	}
+	renderer.pass = sdl.BeginGPURenderPass(renderer.dev.command_buffer, &color_target, 1, nil)
+	assert(renderer.pass != nil)
+	renderer.view_projection = linalg.MATRIX4F32_IDENTITY
+	renderer.bound_pipeline = {}
+	renderer.bound_material = nil
+}
+
+// Present pass: a CLEAR pass directly on the swapchain with identity
+// view-projection, for compositing the final frame (editor chrome +
+// viewport) without a blit. Close with renderer_end_pass.
+renderer_begin_present_pass :: proc(renderer: ^Renderer) {
+	assert(renderer.pass == nil)
+	assert(renderer.dev.command_buffer != nil)
+	assert(renderer.dev.swapchain != nil)
+	color_target := sdl.GPUColorTargetInfo {
+		texture     = renderer.dev.swapchain,
+		load_op     = .CLEAR,
+		clear_color = sdl.FColor(color_srgb_to_linear({0.08, 0.08, 0.1, 1})),
+		store_op    = .STORE,
+	}
+	renderer.pass = sdl.BeginGPURenderPass(renderer.dev.command_buffer, &color_target, 1, nil)
+	assert(renderer.pass != nil)
+	renderer.view_projection = linalg.MATRIX4F32_IDENTITY
+	renderer.bound_pipeline = {}
+	renderer.bound_material = nil
+}
+
+// Blits a texture (usually the scene color or a post-processing result) onto
+// the swapchain. Must run outside any pass, on the frame command buffer.
+renderer_present :: proc(renderer: ^Renderer, source: Texture_Handle) {
+	assert(renderer.pass == nil)
+	dev := renderer.dev
+	assert(dev.frame_open && dev.command_buffer != nil)
+	if dev.swapchain == nil do return
+	texture := gfx_texture_get(dev, source)
+	sdl.BlitGPUTexture(
+		dev.command_buffer,
+		{
+			source = {texture = texture.handle, w = texture.width, h = texture.height},
+			destination = {
+				texture = dev.swapchain,
+				w = u32(dev.window_size.x),
+				h = u32(dev.window_size.y),
+			},
+			load_op = .DONT_CARE,
+			filter = .NEAREST,
+		},
+	)
+}
+
+renderer_draw_item :: proc(renderer: ^Renderer, item: ^DrawItem) {
+	assert(renderer.pass != nil)
+	assert(item.mesh != nil && item.material != nil)
+	mesh := item.mesh
+	material := item.material
+	pipeline := gfx_pipeline_get(renderer.dev, material.pipeline)
+
+	if renderer.bound_pipeline != material.pipeline {
+		sdl.BindGPUGraphicsPipeline(renderer.pass, pipeline_native(pipeline, renderer.pass_msaa))
+		renderer.bound_pipeline = material.pipeline
+		renderer.pipeline_binds += 1
+		renderer.bound_material = nil
+	}
+	if renderer.bound_material != material {
+		gfx_pipeline_bind_material(
+			renderer.dev,
+			renderer.pass,
+			renderer.dev.command_buffer,
+			material,
+		)
+		renderer.bound_material = material
+		renderer.material_binds += 1
+	}
+
+	gfx_pipeline_bind_draw(
+		renderer.dev,
+		material.pipeline,
+		renderer.dev.command_buffer,
+		{
+			view_projection = renderer.view_projection,
+			camera_position = renderer.camera.position,
+			fog = renderer.fog,
+			model_transform = item.transform,
+			material = material,
+		},
+	)
+	mesh_draw(renderer.dev, mesh, renderer.pass)
+	renderer.draw_calls += 1
+	renderer.triangles += triangle_count(mesh)
+}
+
+// One instanced draw for a run of items sharing mesh and material. The
+// shader reads transforms from the instance storage buffer at
+// SV_InstanceID = first_instance + i.
+renderer_draw_instanced_run :: proc(
+	renderer: ^Renderer,
+	item: ^DrawItem,
+	count: int,
+	first_instance: u32,
+) {
+	assert(renderer.pass != nil)
+	mesh := item.mesh
+	material := item.material
+	pipeline := gfx_pipeline_get(renderer.dev, material.pipeline)
+
+	if renderer.bound_pipeline != material.pipeline {
+		sdl.BindGPUGraphicsPipeline(renderer.pass, pipeline_native(pipeline, renderer.pass_msaa))
+		renderer.bound_pipeline = material.pipeline
+		renderer.pipeline_binds += 1
+		renderer.bound_material = nil
+	}
+	if renderer.bound_material != material {
+		gfx_pipeline_bind_material(
+			renderer.dev,
+			renderer.pass,
+			renderer.dev.command_buffer,
+			material,
+		)
+		renderer.bound_material = material
+		renderer.material_binds += 1
+	}
+	gfx_pipeline_bind_draw(
+		renderer.dev,
+		material.pipeline,
+		renderer.dev.command_buffer,
+		{
+			view_projection = renderer.view_projection,
+			camera_position = renderer.camera.position,
+			fog = renderer.fog,
+			model_transform = {},
+			material = material,
+			first_instance = first_instance,
+		},
+	)
+	mesh_draw_instanced(renderer.dev, mesh, renderer.pass, u32(count), 0)
+	renderer.draw_calls += 1
+	renderer.instanced_draws += 1
+	renderer.instance_count += count
+	renderer.triangles += count * triangle_count(mesh)
+}
+
+triangle_count :: proc(mesh: ^Mesh) -> int {
+	n := mesh.num_indices
+	if n == 0 do n = mesh.num_vertices
+	return int(n) / 3
+}
+
+// Open submission path for scene-free experiments: call any number of times
+// before gfx_render/flush, outside an active pass.
+renderer_submit :: proc(
+	renderer: ^Renderer,
+	mesh: ^Mesh,
+	material: ^Material,
+	transform: matrix[4, 4]f32,
+	layer: Render_Layer = .WORLD,
+	pose: ^Pose = nil,
+) {
+	assert(renderer.pass == nil)
+	assert(mesh != nil && material != nil)
+	append_elem(
+		&renderer.draw_items,
+		DrawItem{mesh = mesh, material = material, transform = transform, layer = layer, pose = pose},
+	)
+}
+
+pipeline_handle_key :: proc(handle: Pipeline_Handle) -> u64 {
+	raw := Resource_Handle(handle)
+	return u64(raw.generation) << 32 | u64(raw.index)
+}
+
+draw_item_less :: proc(left, right: DrawItem) -> bool {
+	if left.layer != right.layer do return left.layer < right.layer
+	left_pipeline := pipeline_handle_key(left.material.pipeline)
+	right_pipeline := pipeline_handle_key(right.material.pipeline)
+	if left_pipeline != right_pipeline do return left_pipeline < right_pipeline
+	return uintptr(left.material) < uintptr(right.material)
+}
+
+// Sorting works on 16-byte (key, index) entries instead of moving whole
+// DrawItems in the comparator: material pointers are mapped to small dense
+// indices so the full order fits in one u64 (layer | pipeline | material).
+// Thousands of items sort in microseconds instead of milliseconds.
+Sort_Entry :: struct {
+	key:   u64,
+	index: u32,
+}
+
+renderer_sort_draw_items :: proc(items: []DrawItem) {
+	count := len(items)
+	if count < 2 do return
+
+	unique_materials := make([dynamic]^Material, 0, 16, context.temp_allocator)
+	entries := make([]Sort_Entry, count, context.temp_allocator)
+	for item, index in items {
+		material_index := -1
+		for material, i in unique_materials {
+			if material == item.material {
+				material_index = i
+				break
+			}
+		}
+		if material_index < 0 {
+			material_index = len(unique_materials)
+			append(&unique_materials, item.material)
+		}
+		pipeline := pipeline_handle_key(item.material.pipeline) & 0xFFFFFFFF
+		entries[index] = {
+			key   = u64(item.layer) << 56 | pipeline << 24 | u64(material_index) & 0xFFFFFF,
+			index = u32(index),
+		}
+	}
+	renderer_radix_sort(entries)
+
+	sorted := make([]DrawItem, count, context.temp_allocator)
+	for entry, index in entries do sorted[index] = items[entry.index]
+	copy(items, sorted)
+}
+
+// LSD radix over the 64-bit key: 8 stable counting passes, O(n) — a
+// comparison sort becomes the CPU wall around 100k draw items.
+renderer_radix_sort :: proc(entries: []Sort_Entry) {
+	count := len(entries)
+	if count < 2 do return
+	// Temp arena: freed by the frame's free_all, never delete()d.
+	scratch := make([]Sort_Entry, count, context.temp_allocator)
+	source := entries
+	destination := scratch
+	for pass in 0 ..< 8 {
+		shift := u64(pass * 8)
+		buckets: [256]int
+		for entry in source do buckets[(entry.key >> shift) & 0xFF] += 1
+		total := 0
+		for &bucket in buckets {
+			bucket, total = total, total + bucket
+		}
+		for entry in source {
+			digit := (entry.key >> shift) & 0xFF
+			destination[buckets[digit]] = entry
+			buckets[digit] += 1
+		}
+		source, destination = destination, source
+	}
+	if raw_data(source) != raw_data(entries) do copy(entries, source)
+}
+
+renderer_flush :: proc(renderer: ^Renderer) {
+	assert(renderer.pass != nil)
+	if len(renderer.instance_transforms) > 0 {
+		renderer_bind_static_instances(renderer)
+	}
+	index := 0
+	skinned_bound := false
+	for index < len(renderer.draw_items) {
+		item := &renderer.draw_items[index]
+		pipeline := gfx_pipeline_get(renderer.dev, item.material.pipeline)
+		if !pipeline.instanced {
+			renderer_draw_item(renderer, item)
+			index += 1
+			continue
+		}
+		if pipeline.skinned {
+			pipeline.bind_skinned_storage(
+				renderer.dev,
+				renderer.pass,
+				renderer.skinned_buffer,
+				renderer.palette_buffer,
+			)
+			skinned_bound = true
+		} else if skinned_bound {
+			renderer_bind_static_instances(renderer)
+			skinned_bound = false
+		}
+		run_end := index + 1
+		for run_end < len(renderer.draw_items) {
+			other := &renderer.draw_items[run_end]
+			if other.mesh != item.mesh || other.material != item.material do break
+			run_end += 1
+		}
+		renderer_draw_instanced_run(
+			renderer,
+			item,
+			run_end - index,
+			renderer.instance_offsets[index],
+		)
+		index = run_end
+	}
+	clear(&renderer.draw_items)
+}

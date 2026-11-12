@@ -2,7 +2,7 @@ package forest_naive
 
 import "core:math"
 import "core:math/linalg"
-import gbbfx "../../gbbfx"
+import gfx "../../engine/gfx"
 
 // Vertex counts per chunk (u16 index limit 65535; TREE_VERT_CAP guards the densest case).
 // Typical (biome ~0.5, ~9 trees of mixed species, 3 rocks, 3 bushes): ~2.5k verts.
@@ -83,7 +83,7 @@ tree_hash :: proc(a, b, c: u32) -> f32 {
 	return f32(h) / 4294967295.0
 }
 
-trees_chunk :: proc(cx, cz: int, verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32) {
+trees_chunk :: proc(cx, cz: int, verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32) {
 	x0, z0 := chunk_origin(cx, cz)
 	rng := Tree_Rng{state = u64(cx * CHUNKS_PER_SIDE + cz) * 0x9E3779B97F4A7C15 + 1}
 	biome := terrain_biome(x0 + CHUNK_SIZE / 2, z0 + CHUNK_SIZE / 2)
@@ -167,7 +167,7 @@ tree_pick_species :: proc(rng: ^Tree_Rng, biome: f32) -> Tree_Species {
 	return tree_rng_f32(rng) < 0.5 ? .Pine : .Broad
 }
 
-tree_emit_tree :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, biome: f32, rng: ^Tree_Rng) {
+tree_emit_tree :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, biome: f32, rng: ^Tree_Rng) {
 	switch tree_pick_species(rng, biome) {
 	case .Oak:
 		tree_emit_oak(verts, idx, base, false, rng)
@@ -181,7 +181,7 @@ tree_emit_tree :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, ba
 }
 
 // Thick trunk, two outward stubs, 5-7 blobs in a wide umbrella (~1.3:1 w:h).
-tree_emit_oak :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, autumn: bool, rng: ^Tree_Rng) {
+tree_emit_oak :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, autumn: bool, rng: ^Tree_Rng) {
 	s := tree_rng_range(rng, 0.8, 1.0)
 	h := tree_rng_range(rng, 3.0, 4.5) * s
 	bend := tree_rng_range(rng, -0.12, 0.12) * s
@@ -220,7 +220,7 @@ tree_emit_oak :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, bas
 }
 
 // Thin trunk, 5-6 drooping cone tiers shrinking upward. Tiers are kind 2 so tips sway.
-tree_emit_pine :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, rng: ^Tree_Rng) {
+tree_emit_pine :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, rng: ^Tree_Rng) {
 	s := tree_rng_range(rng, 0.8, 1.0)
 	h := tree_rng_range(rng, 6.0, 9.0) * s
 	tree_emit_trunk(verts, idx, base, 0.2 * s, h, 0, TREE_BARK_PINE)
@@ -236,7 +236,7 @@ tree_emit_pine :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, ba
 }
 
 // Very tall grey-brown trunk with a high crown of 4-5 blobs kept within 3 m of the trunk.
-tree_emit_broad :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, rng: ^Tree_Rng) {
+tree_emit_broad :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, rng: ^Tree_Rng) {
 	s := tree_rng_range(rng, 0.8, 1.0)
 	h := tree_rng_range(rng, 8.0, 11.0) * s
 	bend := tree_rng_range(rng, -0.1, 0.1) * s
@@ -255,13 +255,13 @@ tree_emit_broad :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, b
 	tree_emit_crown(verts, idx, blobs[:n])
 }
 
-tree_emit_rock :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, c: [3]f32, r: f32, rng: ^Tree_Rng) {
+tree_emit_rock :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, c: [3]f32, r: f32, rng: ^Tree_Rng) {
 	shade := tree_rng_range(rng, 0.85, 1.1)
 	tree_emit_blob(verts, idx, Tree_Blob{c = c, radii = {r, 0.6 * r, r}, color = TREE_ROCK * shade, rough = 0.2, seed = u32(rng.state)})
 }
 
 // Three rocks stacked upward, each 1.5..3 m radius.
-tree_emit_boulders :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, ground: [3]f32, rng: ^Tree_Rng) {
+tree_emit_boulders :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, ground: [3]f32, rng: ^Tree_Rng) {
 	prev := tree_rng_range(rng, 1.5, 3.0)
 	c := ground + {0, 0.2 * prev, 0}
 	tree_emit_rock(verts, idx, c, prev, rng)
@@ -273,14 +273,14 @@ tree_emit_boulders :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32
 	}
 }
 
-tree_emit_bush :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, ground: [3]f32, r: f32, rng: ^Tree_Rng) {
+tree_emit_bush :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, ground: [3]f32, r: f32, rng: ^Tree_Rng) {
 	c := ground + {0, 0.4 * r, 0}
 	shade := tree_rng_range(rng, 0.9, 1.1)
 	tree_emit_blob(verts, idx, Tree_Blob{c = c, radii = {r, 0.7 * r, r}, color = TREE_BUSH_LEAF * shade, kind = 2, wlo = c.y - 0.7 * r, whi = c.y + 0.7 * r})
 }
 
 // Shared canopy: every blob pivots normals on the crown centre (centroid lowered 20% of crown height).
-tree_emit_crown :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, blobs: []Tree_Blob) {
+tree_emit_crown :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, blobs: []Tree_Blob) {
 	lo, hi := f32(1e9), f32(-1e9)
 	sum: [3]f32
 	for b in blobs {
@@ -300,7 +300,7 @@ tree_emit_crown :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, b
 
 // Trunk along a slightly curved axis. Rings: buried flare, ground flare (1.6x, tapering within
 // 0.6 m), waist, then taper to 75%. Returns top centre for the crown.
-tree_emit_trunk :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, r, h, bend: f32, color: [3]f32) -> [3]f32 {
+tree_emit_trunk :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, r, h, bend: f32, color: [3]f32) -> [3]f32 {
 	ys := [3]f32{-0.5, 0, 0.6}
 	path: [7][3]f32
 	rad: [7]f32
@@ -322,7 +322,7 @@ tree_emit_trunk :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, b
 }
 
 // Tube along a polyline with per-ring radius; shade darkens toward the first ring.
-tree_tube :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, path: [][3]f32, rad: []f32, color: [3]f32) {
+tree_tube :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, path: [][3]f32, rad: []f32, color: [3]f32) {
 	first := u32(len(verts))
 	n := len(path)
 	for i in 0 ..< n {
@@ -337,7 +337,7 @@ tree_tube :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, path: [
 			dir := u * math.cos(a) + w * math.sin(a)
 			append(
 				verts,
-				gbbfx.VertexData {
+				gfx.VertexData {
 					position = path[i] + dir * rad[i],
 					color = {col.r, col.g, col.b, 1},
 					uv = {0, 0},
@@ -350,7 +350,7 @@ tree_tube :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, path: [
 }
 
 // Cone tier: ring at `base` lowered by droop, apex above. uv.x = base_w at ring, 1 at tip; kind 2.
-tree_emit_cone :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, radius, height, droop: f32, color: [3]f32, base_w: f32) {
+tree_emit_cone :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, radius, height, droop: f32, color: [3]f32, base_w: f32) {
 	first := u32(len(verts))
 	col := [4]f32{color.r, color.g, color.b, 1}
 	for k in 0 ..< TREE_SIDES {
@@ -358,7 +358,7 @@ tree_emit_cone :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, ba
 		dir := [3]f32{math.cos(a), 0, math.sin(a)}
 		append(
 			verts,
-			gbbfx.VertexData {
+			gfx.VertexData {
 				position = base + dir * radius - {0, droop, 0},
 				color = col,
 				uv = {base_w, 2},
@@ -366,7 +366,7 @@ tree_emit_cone :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, ba
 			},
 		)
 	}
-	append(verts, gbbfx.VertexData{position = base + {0, height, 0}, color = col, uv = {1, 2}, normal = {0, 1, 0}})
+	append(verts, gfx.VertexData{position = base + {0, height, 0}, color = col, uv = {1, 2}, normal = {0, 1, 0}})
 	apex := first + TREE_SIDES
 	for k in 0 ..< TREE_SIDES {
 		tree_add_tri(verts^, idx, first + u32(k), first + u32((k + 1) % TREE_SIDES), apex)
@@ -374,7 +374,7 @@ tree_emit_cone :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, ba
 }
 
 // Squashed UV sphere (BLOB_SEGS x BLOB_RINGS bands), optional radial jitter and crown-pivot normals.
-tree_emit_blob :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, b: Tree_Blob) {
+tree_emit_blob :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, b: Tree_Blob) {
 	first := u32(len(verts))
 	for r in 0 ..= BLOB_RINGS {
 		phi := math.PI * f32(r) / BLOB_RINGS
@@ -392,7 +392,7 @@ tree_emit_blob :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, b:
 			if b.whi > b.wlo do t = min(max((p.y - b.wlo) / (b.whi - b.wlo), 0), 1)
 			append(
 				verts,
-				gbbfx.VertexData {
+				gfx.VertexData {
 					position = p,
 					color = {b.color.r, b.color.g, b.color.b, 1},
 					uv = {t, b.kind},
@@ -406,7 +406,7 @@ tree_emit_blob :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, b:
 
 // Triangulates a rows x cols grid of vertices (cols wraps around). Winding is chosen per
 // triangle so it faces the averaged vertex normal.
-tree_grid :: proc(verts: [dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, first: u32, rows, cols: int) {
+tree_grid :: proc(verts: [dynamic]gfx.VertexData, idx: ^[dynamic]u32, first: u32, rows, cols: int) {
 	for r in 0 ..< rows - 1 {
 		for c in 0 ..< cols {
 			c1 := (c + 1) % cols
@@ -420,7 +420,7 @@ tree_grid :: proc(verts: [dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, first: u
 	}
 }
 
-tree_add_tri :: proc(verts: [dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, a, b, c: u32) {
+tree_add_tri :: proc(verts: [dynamic]gfx.VertexData, idx: ^[dynamic]u32, a, b, c: u32) {
 	pa, pb, pc := verts[a].position, verts[b].position, verts[c].position
 	n := verts[a].normal + verts[b].normal + verts[c].normal
 	j, k := b, c

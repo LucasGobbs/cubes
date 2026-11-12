@@ -2,15 +2,13 @@
 // constructors. Every scene has a JSON definition src/scenes/<name>/scene.json
 // (display name, start camera; data scenes also list their entities). A scene
 // with `make` is Odin code in src/scenes/<name>/; one without is run entirely
-// from its JSON by scenes/data. Shared plumbing lives in src/scenekit.
+// from its JSON by engine.data_scene. Shared plumbing lives in src/engine.
 package main
 
 import "core:log"
 import "core:strings"
 import engine "engine"
-import scenekit "scenekit"
 import benchmark "scenes/benchmark"
-import data_scene "scenes/data"
 import editor "scenes/editor"
 import forest_naive "scenes/forest_naive"
 import forest_instanced "scenes/forest_instanced"
@@ -22,7 +20,7 @@ import skinned "scenes/skinned"
 
 SceneEntry :: struct {
 	name: string,
-	make: proc() -> scenekit.Scene, // nil: the JSON alone defines the scene
+	make: proc() -> engine.Scene, // nil: the JSON alone defines the scene
 }
 
 SCENES := [?]SceneEntry {
@@ -42,11 +40,11 @@ scene_path :: proc(name: string) -> string {
 	return strings.concatenate({"src/scenes/", name, "/scene.json"}, context.temp_allocator)
 }
 
-scene_lookup :: proc(name: string) -> (scenekit.Scene, bool) {
+scene_lookup :: proc(name: string) -> (engine.Scene, bool) {
 	for entry in SCENES {
 		if entry.name != name do continue
 		path := scene_path(name)
-		if entry.make == nil do return data_scene.data_scene(strings.clone(path)), true
+		if entry.make == nil do return engine.data_scene(strings.clone(path)), true
 
 		scene := entry.make()
 		// Code scenes only borrow the name and camera; the file is not kept.
@@ -56,7 +54,7 @@ scene_lookup :: proc(name: string) -> (scenekit.Scene, bool) {
 			if file.def.name != "" do scene.name = strings.clone(file.def.name)
 			if camera, ok := file.def.camera.?; ok {
 				look_at, _ := camera.look_at.?
-				scene.start_camera = scenekit.Camera_Start{camera.position, look_at}
+				scene.start_camera = engine.Camera_Start{camera.position, look_at}
 			}
 		} else {
 			log.warnf("scene %q: no definition file, using built-in defaults", name)

@@ -10,7 +10,7 @@ BIN_DEBUG := main_debug
 GOOSE_BUILD         := $(GOOSE_DIR)/src/tools/build
 GOOSE_BUILD_BIN     := goose-build.bin
 GOOSE_MANIFEST      := shaders/goose.json
-GBBFX_DEFAULTS_MANIFEST := src/gbbfx/defaults/goose.json
+DEFAULT_MANIFEST := src/engine/default/goose.json
 
 RELEASE_FLAGS := -o:aggressive -microarch:native -no-bounds-check -disable-assert
 DEBUG_FLAGS   := -debug -o:none
@@ -20,8 +20,8 @@ EDITOR        ?= false
 EDITOR_DEFINE := -define:EDITOR=$(EDITOR)
 
 .PHONY: all build run run-optimized debug debug-optimized shaders default-shaders \
-        submodules test-glove test-glove-optimized test-gbbfx \
-        test-gbbfx-optimized test test-optimized compute editor example clean
+        submodules test-input test-input-optimized test-engine \
+        test-engine-optimized test test-optimized compute editor example clean
 all: build
 
 # Fail early with the fix instead of an Odin "package not found" error.
@@ -37,25 +37,25 @@ shaders: default-shaders $(GOOSE_BUILD_BIN)
 	./$(GOOSE_BUILD_BIN) --manifest $(GOOSE_MANIFEST) --slang $(SLANG)
 
 default-shaders: $(GOOSE_BUILD_BIN)
-	./$(GOOSE_BUILD_BIN) --manifest $(GBBFX_DEFAULTS_MANIFEST) --slang $(SLANG)
+	./$(GOOSE_BUILD_BIN) --manifest $(DEFAULT_MANIFEST) --slang $(SLANG)
 
 # goose's own tests run in the goose repo (make -C $(GOOSE_DIR) test).
-test-glove:
-	$(ODIN) test src/glove/tests
+test-input:
+	$(ODIN) test src/engine/input/tests
 
-test-glove-optimized:
-	$(ODIN) test src/glove/tests $(RELEASE_FLAGS)
+test-input-optimized:
+	$(ODIN) test src/engine/input/tests $(RELEASE_FLAGS)
 
-test-gbbfx: default-shaders
-	$(ODIN) test src/gbbfx
-	$(ODIN) test src/gbbfx/loader
-	$(ODIN) test src/gbbfx/sdl_gpu
+test-engine: default-shaders
+	$(ODIN) test src/engine/gfx
+	$(ODIN) test src/engine/gfx/loader
+	$(ODIN) test src/engine/gfx/sdl_gpu
 	$(ODIN) test src/engine
 
-test-gbbfx-optimized: default-shaders
-	$(ODIN) test src/gbbfx $(RELEASE_FLAGS)
-	$(ODIN) test src/gbbfx/loader $(RELEASE_FLAGS)
-	$(ODIN) test src/gbbfx/sdl_gpu $(RELEASE_FLAGS)
+test-engine-optimized: default-shaders
+	$(ODIN) test src/engine/gfx $(RELEASE_FLAGS)
+	$(ODIN) test src/engine/gfx/loader $(RELEASE_FLAGS)
+	$(ODIN) test src/engine/gfx/sdl_gpu $(RELEASE_FLAGS)
 	$(ODIN) test src/engine $(RELEASE_FLAGS)
 
 build: shaders
@@ -80,10 +80,10 @@ editor: debug
 compute: shaders
 	$(ODIN) run compute
 
-test: shaders test-glove test-gbbfx
+test: shaders test-input test-engine
 	$(ODIN) test $(SRC) -all-packages
 
-test-optimized: shaders test-glove-optimized test-gbbfx-optimized
+test-optimized: shaders test-input-optimized test-engine-optimized
 	$(ODIN) test $(SRC) -all-packages $(RELEASE_FLAGS)
 
 example: default-shaders
@@ -91,9 +91,9 @@ example: default-shaders
 
 clean:
 	rm -f $(BIN) $(BIN_DEBUG) $(GOOSE_BUILD_BIN)
-	rm -rf shaders/generated src/gbbfx/defaults/generated
+	rm -rf shaders/generated src/engine/default/generated
 	rm -f src/shader_parameters/*_shader_parameters.odin \
-		src/gbbfx/defaults/*_shader_parameters.odin
+		src/engine/default/*_shader_parameters.odin
 
 .PHONY: dist
 # Release bundle: binary + static assets. Shaders are embedded at build time,

@@ -1,0 +1,168 @@
+package gfx
+import "core:mem"
+import sdl "vendor:sdl3"
+// Uploader
+Uploader :: struct {
+	dev:            ^Device,
+
+	// Fences ready
+	free:           [dynamic]Staging,
+
+	// Recorded in the open copy pass, not yet submitted
+	pending:        [dynamic]Staging,
+	// Submitted; collect frees them once their fence signals
+	in_flight:      [dynamic]Staging,
+	command_buffer: ^sdl.GPUCommandBuffer,
+	pass:           ^sdl.GPUCopyPass,
+
+	// Mipmapped textures uploaded in the open batch; their chains are built
+	// between the copy pass and the submit (generation cannot run in a pass).
+	mip_targets:    [dynamic]^sdl.GPUTexture,
+}
+
+// Handles the lifecycle of a transfer buffer usign a Fence
+Staging :: struct {
+	buffer: ^sdl.GPUTransferBuffer,
+	size:   u32,
+
+	// Nil until the submit that consumed this buffer
+	fence:  ^sdl.GPUFence,
+}
+
+
+uploader_begin :: proc(uploader: ^Uploader) {
+	assert(uploader.pass == nil)
+	uploader.command_buffer = sdl.AcquireGPUCommandBuffer(uploader.dev.gpu)
+	uploader.pass = sdl.BeginGPUCopyPass(uploader.command_buffer)
+}
+
+uploader_upload_buffer :: proc(uploader: ^Uploader, handle: Buffer_Handle) {
+	destination := gfx_buffer_get(uploader.dev, handle)
+	data := destination._temporary_raw_data
+	staging := uploader_acquire_staging(uploader, u32(len(data)))
+
+	mapped := sdl.MapGPUTransferBuffer(uploader.dev.gpu, staging.buffer, false)
+	mem.copy(mapped, raw_data(data), len(data))
+	sdl.UnmapGPUTransferBuffer(uploader.dev.gpu, staging.buffer)
+
+	sdl.UploadToGPUBuffer(
+		uploader.pass,
+		{transfer_buffer = staging.buffer},
+		{buffer = destination.handle, size = u32(len(data))},
+		false,
+	)
+
+	append(&uploader.pending, staging)
+}
+
+
+// texture_transfer_buffer := sdl.CreateGPUTransferBuffer(
+// 	dev.gpu,
+// 	{usage = .UPLOAD, size = u32(pixels_byte_size)},
+// )
+// texture_transfer_mem := sdl.MapGPUTransferBuffer(dev.gpu, texture_transfer_buffer, false)
+// mem.copy(texture_transfer_mem, pixels, int(pixels_byte_size))
+
+
+uploader_upload_texture :: proc(uploader: ^Uploader, handle: Texture_Handle) {
+	destination := gfx_texture_get(uploader.dev, handle)
+	data := destination._temporary_raw_data
+	staging := uploader_acquire_staging(uploader, u32(len(data)))
+
+	mapped := sdl.MapGPUTransferBuffer(uploader.dev.gpu, staging.buffer, false)
+	mem.copy(mapped, raw_data(data), len(data))
+	sdl.UnmapGPUTransferBuffer(uploader.dev.gpu, staging.buffer)
+
+	sdl.UploadToGPUTexture(
+		uploader.pass,
+		{transfer_buffer = staging.buffer},
+		{texture = destination.handle, w = destination.width, h = destination.height, d = 1},
+		false,
+	)
+
+	if destination.mip_levels > 1 do append(&uploader.mip_targets, destination.handle)
+
+	append(&uploader.pending, staging)
+}
+
+uploader_generate_mips :: proc(up: ^Uploader) {
+	for texture in up.mip_targets do sdl.GenerateMipmapsForGPUTexture(up.command_buffer, texture)
+	clear(&up.mip_targets)
+}
+
+uploader_flush :: proc(up: ^Uploader) {
+	assert(len(up.pending) > 0) // a fence with no staging would never be released
+	sdl.EndGPUCopyPass(up.pass)
+	uploader_generate_mips(up)
+	fence := sdl.SubmitGPUCommandBufferAndAcquireFence(up.command_buffer)
+	for &s in up.pending {
+		s.fence = fence
+		append(&up.in_flight, s)
+	}
+	clear(&up.pending)
+	up.pass, up.command_buffer = nil, nil
+}
+
+uploader_flush_blocking :: proc(up: ^Uploader) {
+	sdl.EndGPUCopyPass(up.pass)
+	uploader_generate_mips(up)
+	fence := sdl.SubmitGPUCommandBufferAndAcquireFence(up.command_buffer)
+	fences := [1]^sdl.GPUFence{fence}
+	ok := sdl.WaitForGPUFences(up.dev.gpu, true, &fences[0], 1); assert(ok)
+	sdl.ReleaseGPUFence(up.dev.gpu, fence)
+	for &s in up.pending {
+		s.fence = nil
+		append(&up.free, s)
+	}
+	clear(&up.pending)
+	up.pass, up.command_buffer = nil, nil
+}
+
+uploader_collect :: proc(up: ^Uploader) {
+	for i := len(up.in_flight) - 1; i >= 0; i -= 1 {
+		s := up.in_flight[i]
+		if !sdl.QueryGPUFence(up.dev.gpu, s.fence) do continue
+		// Stagings of one submit share its fence; release it with the last of them.
+		shared := 0
+		for other in up.in_flight {
+			if other.fence == s.fence do shared += 1
+		}
+		if shared == 1 do sdl.ReleaseGPUFence(up.dev.gpu, s.fence)
+		s.fence = nil
+		append(&up.free, s)
+		unordered_remove(&up.in_flight, i)
+	}
+}
+uploader_acquire_staging :: proc(uploader: ^Uploader, size: u32) -> Staging {
+	for stage, idx in uploader.free {
+		if stage.size < size do continue
+		unordered_remove(&uploader.free, idx)
+		return stage
+	}
+	return Staging {
+		buffer = sdl.CreateGPUTransferBuffer(uploader.dev.gpu, {usage = .UPLOAD, size = size}),
+		size = size,
+	}
+}
+
+uploader_destroy :: proc(up: ^Uploader) {
+	assert(up.pass == nil)
+	assert(up.command_buffer == nil)
+	assert(len(up.pending) == 0)
+	_ = sdl.WaitForGPUIdle(up.dev.gpu) // in-flight uploads still read their staging
+	uploader_collect(up)
+	assert(len(up.in_flight) == 0)
+
+	for staging in up.free {
+		assert(staging.fence == nil)
+		if staging.buffer != nil {
+			sdl.ReleaseGPUTransferBuffer(up.dev.gpu, staging.buffer)
+		}
+	}
+
+	delete(up.free)
+	delete(up.pending)
+	delete(up.in_flight)
+	delete(up.mip_targets)
+	up^ = {}
+}

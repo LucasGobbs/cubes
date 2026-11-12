@@ -6,9 +6,8 @@
 package game
 
 import engine "../../engine"
-import gbbfx "../../gbbfx"
-import glove "../../glove"
-import scenekit "../../scenekit"
+import gfx "../../engine/gfx"
+import input "../../engine/input"
 import "core:log"
 import "core:math"
 import "core:math/linalg"
@@ -20,31 +19,31 @@ Game_State :: struct {
 	world:       engine.World,
 	player_type: engine.Entity_Type,
 	enemy_type:  engine.Entity_Type,
-	keys:        [4]glove.Button_Action, // up, down, left, right
+	keys:        [4]input.Button_Action, // up, down, left, right
 	spawn_timer: f32,
 	log_timer:   f32,
 }
 
-game_scene :: proc() -> scenekit.Scene {
+game_scene :: proc() -> engine.Scene {
 	return {name = "Game", create = game_create, tick = game_tick, destroy = game_destroy}
 }
 
-game_create :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) -> bool {
+game_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	state := new(Game_State)
 	demo.state = state
-	scenekit.scene_camera_reset(demo, dev) // restores full-window targets after the editor shrinks them
+	engine.scene_camera_reset(demo, dev) // restores full-window targets after the editor shrinks them
 
-	inputs := gbbfx.gfx_input(dev)
+	inputs := gfx.gfx_input(dev)
 	state.keys = {
-		glove.add_button(inputs, "game.up"),
-		glove.add_button(inputs, "game.down"),
-		glove.add_button(inputs, "game.left"),
-		glove.add_button(inputs, "game.right"),
+		input.add_button(inputs, "game.up"),
+		input.add_button(inputs, "game.down"),
+		input.add_button(inputs, "game.left"),
+		input.add_button(inputs, "game.right"),
 	}
-	glove.bind_key(inputs, state.keys[0], .W)
-	glove.bind_key(inputs, state.keys[1], .S)
-	glove.bind_key(inputs, state.keys[2], .A)
-	glove.bind_key(inputs, state.keys[3], .D)
+	input.bind_key(inputs, state.keys[0], .W)
+	input.bind_key(inputs, state.keys[1], .S)
+	input.bind_key(inputs, state.keys[2], .A)
+	input.bind_key(inputs, state.keys[3], .D)
 
 	state.world = engine.world_create(dev)
 	// Player first: its slot ticks before enemies, so enemies chase this frame's position.
@@ -58,22 +57,22 @@ game_create :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) -> bool {
 	state.enemy_type = engine.entity_register(&state.world, Enemy, enemy_create, enemy_tick, nil)
 	engine.world_spawn(
 		&state.world,
-		engine.Camera{look_at = gbbfx.Vec3{}},
+		engine.Camera{look_at = gfx.Vec3{}},
 		engine.Transform{position = {0, 6, 8}},
 	)
 	engine.entity_spawn(&state.world, state.player_type, Player{enemy = state.enemy_type})
 	return true
 }
 
-game_tick :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device, delta_time: f32) {
+game_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	state := cast(^Game_State)demo.state
-	inputs := gbbfx.gfx_input(dev)
+	inputs := gfx.gfx_input(dev)
 
-	move: gbbfx.Vec3
-	if glove.down(inputs, state.keys[0]) do move.z -= 1
-	if glove.down(inputs, state.keys[1]) do move.z += 1
-	if glove.down(inputs, state.keys[2]) do move.x -= 1
-	if glove.down(inputs, state.keys[3]) do move.x += 1
+	move: gfx.Vec3
+	if input.down(inputs, state.keys[0]) do move.z -= 1
+	if input.down(inputs, state.keys[1]) do move.z += 1
+	if input.down(inputs, state.keys[2]) do move.x -= 1
+	if input.down(inputs, state.keys[3]) do move.x += 1
 	player_id, player := engine.world_find_state(&state.world, state.player_type, Player)
 	player.input = move
 
@@ -105,14 +104,14 @@ game_tick :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device, delta_time: f32) {
 	engine.world_render(&state.world)
 }
 
-game_destroy :: proc(demo: ^scenekit.Scene, dev: ^gbbfx.Device) {
+game_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	state := cast(^Game_State)demo.state
 	engine.world_destroy(&state.world)
 	free(state)
 }
 
 // Turns the model's +Z toward the XZ direction (same convention as the benchmark dragons).
-game_facing :: proc(direction: gbbfx.Vec3) -> linalg.Quaternionf32 {
+game_facing :: proc(direction: gfx.Vec3) -> linalg.Quaternionf32 {
 	return linalg.quaternion_from_euler_angles_f32(
 		0,
 		math.atan2(direction.x, direction.z),

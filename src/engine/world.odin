@@ -1,4 +1,4 @@
-// Entity x component world on top of gbbfx. Spawn entities with components;
+// Entity x component world on top of gfx. Spawn entities with components;
 // models, pipelines, skins, camera and post-process passes are resolved here.
 //
 // Recipe (examples/hello_engine/main.odin):
@@ -31,10 +31,10 @@ import "core:math"
 import "core:math/linalg"
 import "core:mem"
 import "core:reflect"
-import gbbfx "../gbbfx"
-import defaults "../gbbfx/defaults"
+import gfx "gfx"
+import default "default"
 
-Vec3 :: gbbfx.Vec3
+Vec3 :: gfx.Vec3
 
 // Generation 0 is never a live slot, so the zero Entity_Id is always invalid.
 Entity_Id :: struct {
@@ -76,7 +76,7 @@ Bloom :: struct {
 
 // The first live entity with a Camera drives the renderer camera. Its position
 // comes from its Transform; look_at (a world point) overrides the Transform rotation.
-// fov_y 0 => gbbfx.CAMERA_FOV_Y. bloom and blur enable those post effects for the
+// fov_y 0 => gfx.CAMERA_FOV_Y. bloom and blur enable those post effects for the
 // frame; blur is a radius in texels, 0 => 4.
 Camera :: struct {
 	fov_y:   f32,
@@ -99,15 +99,15 @@ Component :: union {
 }
 
 World :: struct {
-	dev:      ^gbbfx.Device, // nil is fine for worlds that only hold Transforms (tests)
+	dev:      ^gfx.Device, // nil is fine for worlds that only hold Transforms (tests)
 	slots:    [dynamic]Slot,
 	free:     [dynamic]u32,
 	types:    [dynamic]Entity_Type_Info,
 	assets:   Assets,
 	updating: bool, // true while world_update ticks; spawns then wait one frame
 	// Effects are heap-allocated on first use: render passes point at them.
-	bloom:    ^defaults.Bloom,
-	blur:     ^defaults.Blur,
+	bloom:    ^default.Bloom,
+	blur:     ^default.Blur,
 }
 
 Slot :: struct {
@@ -115,13 +115,13 @@ Slot :: struct {
 	alive:      bool,
 	born:       bool, // spawned during the current world_update: skip its tick
 	components: [dynamic]Component,
-	entity:     gbbfx.Entity,
+	entity:     gfx.Entity,
 	type:       Entity_Type, // 0 when the entity has no registered type
 	state:      rawptr,
 }
 
 // Use world_create; a zero World has no asset cache.
-world_create :: proc(dev: ^gbbfx.Device) -> World {
+world_create :: proc(dev: ^gfx.Device) -> World {
 	return World{dev = dev, assets = {models = make(map[string]^Model_Asset)}}
 }
 
@@ -242,7 +242,7 @@ world_destroy_type :: proc(world: ^World, type: Entity_Type) {
 // Frees every entity, cached asset and effect. Clears the Post passes this world
 // may have set on the renderer. Compute pipelines are freed with the Device.
 world_destroy :: proc(world: ^World) {
-	if world.dev != nil do gbbfx.renderer_clear_passes(&world.dev.renderer, .Post)
+	if world.dev != nil do gfx.renderer_clear_passes(&world.dev.renderer, .Post)
 	for index := 0; index < len(world.slots); index += 1 {
 		slot := world.slots[index]
 		if slot.alive do world_destroy_entity(world, Entity_Id{u32(index), slot.generation})
@@ -274,21 +274,21 @@ world_update :: proc(world: ^World, dt: f32) {
 		slot.born = false
 		if !slot.alive do continue
 		sync_transform(&slot)
-		gbbfx.entity_tick_animation(&slot.entity, dt)
+		gfx.entity_tick_animation(&slot.entity, dt)
 	}
 	update_camera(world)
 }
 
 world_render :: proc(world: ^World) {
-	gbbfx.renderer_render_frame(&world.dev.renderer, world_extract, world)
+	gfx.renderer_render_frame(&world.dev.renderer, world_extract, world)
 }
 
 @(private = "file")
-world_extract :: proc(renderer: ^gbbfx.Renderer, user: rawptr) {
+world_extract :: proc(renderer: ^gfx.Renderer, user: rawptr) {
 	world := (^World)(user)
-	view := gbbfx.renderer_begin_extract(renderer)
+	view := gfx.renderer_begin_extract(renderer)
 	for &slot in world.slots {
-		if slot.alive do gbbfx.renderer_submit_entity(renderer, &view, &slot.entity)
+		if slot.alive do gfx.renderer_submit_entity(renderer, &view, &slot.entity)
 	}
 }
 
@@ -299,7 +299,7 @@ update_camera :: proc(world: ^World) {
 		camera := slot_component(&slot, Camera)
 		if camera == nil do continue
 		transform := slot_component(&slot, Transform)
-		cam := gbbfx.gfx_camera(world.dev)
+		cam := gfx.gfx_camera(world.dev)
 		cam.position = transform.position
 		if target, ok := camera.look_at.?; ok {
 			cam.yaw, cam.pitch = direction_angles(target - transform.position)
@@ -307,15 +307,15 @@ update_camera :: proc(world: ^World) {
 			forward := linalg.quaternion_mul_vector3(transform.rotation, Vec3{0, 0, -1})
 			cam.yaw, cam.pitch = direction_angles(forward)
 		}
-		gbbfx.camera_rotate(cam, 0, 0) // rebuilds direction, right and up from yaw/pitch
-		fov := camera.fov_y if camera.fov_y > 0 else gbbfx.CAMERA_FOV_Y
-		cam.projection = gbbfx.camera_perspective(gbbfx.gfx_aspect_ratio(world.dev), fov)
+		gfx.camera_rotate(cam, 0, 0) // rebuilds direction, right and up from yaw/pitch
+		fov := camera.fov_y if camera.fov_y > 0 else gfx.CAMERA_FOV_Y
+		cam.projection = gfx.camera_perspective(gfx.gfx_aspect_ratio(world.dev), fov)
 		set_effect_passes(world, camera)
 		return
 	}
 }
 
-// Yaw and pitch of a view direction, in gbbfx.Camera's convention. A zero
+// Yaw and pitch of a view direction, in gfx.Camera's convention. A zero
 // direction gives (0, 0).
 direction_angles :: proc(direction: Vec3) -> (yaw, pitch: f32) {
 	d := linalg.normalize0(direction)
@@ -326,34 +326,34 @@ direction_angles :: proc(direction: Vec3) -> (yaw, pitch: f32) {
 // Blur runs before bloom.
 @(private = "file")
 set_effect_passes :: proc(world: ^World, camera: ^Camera) {
-	passes: [2]gbbfx.Render_Pass
+	passes: [2]gfx.Render_Pass
 	count := 0
 	if radius, ok := camera.blur.?; ok {
 		if world.blur == nil {
-			world.blur = new(defaults.Blur)
-			world.blur^ = defaults.blur_create(world.dev)
+			world.blur = new(default.Blur)
+			world.blur^ = default.blur_create(world.dev)
 		}
 		world.blur.radius = radius if radius > 0 else 4
-		world.blur.radius = min(world.blur.radius, defaults.BLUR_MAX_RADIUS)
-		passes[count] = defaults.blur_pass(world.blur)
+		world.blur.radius = min(world.blur.radius, default.BLUR_MAX_RADIUS)
+		passes[count] = default.blur_pass(world.blur)
 		count += 1
 	}
 	if settings, ok := camera.bloom.?; ok {
 		if world.bloom == nil {
-			world.bloom = new(defaults.Bloom)
-			world.bloom^ = defaults.bloom_create(world.dev)
+			world.bloom = new(default.Bloom)
+			world.bloom^ = default.bloom_create(world.dev)
 		}
-		// Same values as defaults.bloom_create, applied to the existing pipelines.
+		// Same values as default.bloom_create, applied to the existing pipelines.
 		threshold := settings.threshold if settings.threshold > 0 else 0.8
 		world.bloom.threshold = threshold
 		world.bloom.knee = 0.5 * threshold
 		world.bloom.intensity = settings.intensity if settings.intensity > 0 else 0.6
 		world.bloom.radius = settings.radius if settings.radius > 0 else 6
-		world.bloom.radius = min(world.bloom.radius, defaults.BLUR_MAX_RADIUS)
-		passes[count] = defaults.bloom_pass(world.bloom)
+		world.bloom.radius = min(world.bloom.radius, default.BLUR_MAX_RADIUS)
+		passes[count] = default.bloom_pass(world.bloom)
 		count += 1
 	}
-	gbbfx.renderer_set_passes(&world.dev.renderer, .Post, passes[:count])
+	gfx.renderer_set_passes(&world.dev.renderer, .Post, passes[:count])
 }
 
 @(private = "file")
@@ -424,43 +424,43 @@ sync_transform :: proc(slot: ^Slot) {
 	slot.entity.position = transform.position
 	slot.entity.rotation = transform.rotation
 	slot.entity.scale = transform.scale
-	gbbfx.entity_rebuild_transform(&slot.entity)
+	gfx.entity_rebuild_transform(&slot.entity)
 }
 
 // Builds the renderable for a Model and applies an Animator. Idempotent: run
 // after every change to the slot's components.
 @(private = "file")
 slot_resolve :: proc(world: ^World, slot: ^Slot) {
-	if model := slot_component(slot, Model); model != nil && gbbfx.entity_renderable(&slot.entity) == nil {
+	if model := slot_component(slot, Model); model != nil && gfx.entity_renderable(&slot.entity) == nil {
 		assert(world.dev != nil, "engine: Model needs a world with a Device")
 		asset := asset_model(world, model.path)
 		if asset.skinned {
-			gbbfx.entity_add_skinned_renderable(&slot.entity, &asset.model.mesh, &asset.model.material, &asset.model.skin)
+			gfx.entity_add_skinned_renderable(&slot.entity, &asset.model.mesh, &asset.model.material, &asset.model.skin)
 		} else {
-			gbbfx.entity_add_renderable(&slot.entity, &asset.model.mesh, &asset.model.material)
+			gfx.entity_add_renderable(&slot.entity, &asset.model.mesh, &asset.model.material)
 		}
 	}
 
 	animator := slot_component(slot, Animator)
-	renderable := gbbfx.entity_renderable(&slot.entity)
+	renderable := gfx.entity_renderable(&slot.entity)
 	if animator == nil || renderable == nil do return
 	if renderable.skin == nil {
 		log.errorf("engine: Animator on a model without a skin")
 		return
 	}
-	if !gbbfx.entity_play_clip(&slot.entity, animator.clip) {
+	if !gfx.entity_play_clip(&slot.entity, animator.clip) {
 		// Rest pose until a valid clip is named.
 		log.errorf("engine: clip %q not found", animator.clip)
 		renderable.clip = -1
 		renderable.clip_time = 0
-		gbbfx.clip_sample(renderable.skin, -1, 0, renderable.pose)
+		gfx.clip_sample(renderable.skin, -1, 0, renderable.pose)
 	}
 }
 
 @(private = "file")
 remove_renderable :: proc(slot: ^Slot) {
 	for index in 0 ..< len(slot.entity.components) {
-		renderable, is_renderable := slot.entity.components[index].(gbbfx.Renderable)
+		renderable, is_renderable := slot.entity.components[index].(gfx.Renderable)
 		if !is_renderable do continue
 		if renderable.pose != nil do free(renderable.pose)
 		ordered_remove(&slot.entity.components, index)
@@ -470,7 +470,7 @@ remove_renderable :: proc(slot: ^Slot) {
 
 @(private = "file")
 destroy_slot :: proc(slot: ^Slot) {
-	gbbfx.entity_destroy(&slot.entity)
+	gfx.entity_destroy(&slot.entity)
 	delete(slot.components)
 	slot.components = nil
 	if slot.state != nil do free(slot.state)

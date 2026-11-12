@@ -3,7 +3,7 @@ package forest_naive
 import "core:math"
 import "core:math/linalg"
 import "core:testing"
-import gbbfx "../../gbbfx"
+import gfx "../../engine/gfx"
 
 // Tufts: ~0.5 clumps/m2, each clump scatters blades within 0.5 m so gaps show terrain.
 // Blade = 7 verts (3 rows of pairs + tip), 5 tris = 15 indices. Flower = stem blade + 6-vert fan head.
@@ -52,7 +52,7 @@ grass_rgba :: proc(c: [3]f32) -> [4]f32 {
 	return {c.x, c.y, c.z, 1}
 }
 
-grass_emit_blade :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, bl: Grass_Blade) {
+grass_emit_blade :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, bl: Grass_Blade) {
 	r := [3]f32{math.cos(bl.yaw), 0, math.sin(bl.yaw)}
 	f := [3]f32{math.cos(bl.lean), 0, math.sin(bl.lean)}
 	b := u32(len(verts))
@@ -62,26 +62,26 @@ grass_emit_blade :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, 
 		c := bl.base + [3]f32{0, bl.h * s, 0} + f * (bl.bend * bl.h * s * s)
 		hw := bl.w * 0.5 * rows[i]
 		col := grass_rgba(linalg.lerp(bl.root, bl.tip, s))
-		append(verts, gbbfx.VertexData{position = c - r * hw, color = col, uv = {s, bl.kind}, normal = bl.normal})
-		append(verts, gbbfx.VertexData{position = c + r * hw, color = col, uv = {s, bl.kind}, normal = bl.normal})
+		append(verts, gfx.VertexData{position = c - r * hw, color = col, uv = {s, bl.kind}, normal = bl.normal})
+		append(verts, gfx.VertexData{position = c + r * hw, color = col, uv = {s, bl.kind}, normal = bl.normal})
 	}
 	tc := bl.base + [3]f32{0, bl.h, 0} + f * (bl.bend * bl.h)
-	append(verts, gbbfx.VertexData{position = tc, color = grass_rgba(bl.tip), uv = {1, bl.kind}, normal = bl.normal})
+	append(verts, gfx.VertexData{position = tc, color = grass_rgba(bl.tip), uv = {1, bl.kind}, normal = bl.normal})
 	tris := [GRASS_BLADE_INDICES]u32{0, 1, 3, 0, 3, 2, 2, 3, 5, 2, 5, 4, 4, 5, 6}
 	for i in tris do append(idx, b + i)
 }
 
 // Flat fan head: centre + 5 rim points on a plane tilted toward the stem lean.
-grass_emit_head :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, centre: [3]f32, yaw, radius: f32, petal, normal: [3]f32) {
+grass_emit_head :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, centre: [3]f32, yaw, radius: f32, petal, normal: [3]f32) {
 	e1 := [3]f32{math.cos(yaw), 0, math.sin(yaw)}
 	e2 := [3]f32{-math.sin(yaw), 0, math.cos(yaw)} * 0.8 + [3]f32{0, 0.6, 0}
 	b := u32(len(verts))
 	col := grass_rgba(petal)
-	append(verts, gbbfx.VertexData{position = centre, color = col, uv = {1, 1}, normal = normal})
+	append(verts, gfx.VertexData{position = centre, color = col, uv = {1, 1}, normal = normal})
 	for k in 0 ..< 5 {
 		a := f32(k) * 2 * math.PI / 5
 		p := centre + e1 * (math.cos(a) * radius) + e2 * (math.sin(a) * radius)
-		append(verts, gbbfx.VertexData{position = p, color = col, uv = {1, 1}, normal = normal})
+		append(verts, gfx.VertexData{position = p, color = col, uv = {1, 1}, normal = normal})
 	}
 	for k in 0 ..< 5 {
 		append(idx, b)
@@ -90,7 +90,7 @@ grass_emit_head :: proc(verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32, c
 	}
 }
 
-grass_chunk :: proc(cx, cz: int, lod: int, verts: ^[dynamic]gbbfx.VertexData, idx: ^[dynamic]u32) {
+grass_chunk :: proc(cx, cz: int, lod: int, verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32) {
 	assert(lod == 0 || lod == 1, "grass_chunk: lod must be 0 or 1")
 	blades_per_clump := GRASS_BLADES_LOD0 if lod == 0 else GRASS_BLADES_LOD1
 	width_scale: f32 = 1 if lod == 0 else 2.2
@@ -164,7 +164,7 @@ grass_chunk :: proc(cx, cz: int, lod: int, verts: ^[dynamic]gbbfx.VertexData, id
 
 @(test)
 grass_chunk_budget :: proc(t: ^testing.T) {
-	verts: [dynamic]gbbfx.VertexData
+	verts: [dynamic]gfx.VertexData
 	idx: [dynamic]u32
 	defer delete(verts)
 	defer delete(idx)
