@@ -57,7 +57,7 @@ platform_scene :: proc() -> scenekit.Scene {
 platform_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Platform_State)
 	demo.state = state
-	scenekit.camera_reset(gfx, {24, 18, 34}, {2, 2, -1})
+	scenekit.scene_camera_reset(demo, gfx, {24, 18, 34}, {2, 2, -1})
 
 	state.fly_camera = scenekit.fly_camera_create(gfx, "platform")
 	state.pipeline = defaults.create_textured_pipeline(gfx)

@@ -47,7 +47,7 @@ ed_event_hook :: proc(event: ^sdl.Event, user_data: rawptr) {
 ed_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Editor_State)
 	demo.state = state
-	scenekit.camera_reset(gfx)
+	scenekit.scene_camera_reset(demo, gfx)
 
 	state.fly_camera = scenekit.fly_camera_create(gfx, "editor")
 

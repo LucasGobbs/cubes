@@ -5,13 +5,13 @@
 // input. Per-entity logic lives in game_player.odin and game_enemy.odin.
 package game
 
-import "core:log"
-import "core:math"
-import "core:math/linalg"
 import engine "../../engine"
 import gbbfx "../../gbbfx"
 import glove "../../glove"
 import scenekit "../../scenekit"
+import "core:log"
+import "core:math"
+import "core:math/linalg"
 
 GAME_ENEMY_MAX :: 5
 GAME_SPAWN_INTERVAL :: 2 // seconds
@@ -32,7 +32,7 @@ game_scene :: proc() -> scenekit.Scene {
 game_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Game_State)
 	demo.state = state
-	scenekit.camera_reset(gfx) // restores full-window targets after the editor shrinks them
+	scenekit.scene_camera_reset(demo, gfx) // restores full-window targets after the editor shrinks them
 
 	inputs := gbbfx.gfx_input(gfx)
 	state.keys = {
@@ -48,7 +48,13 @@ game_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 
 	state.world = engine.world_create(gfx)
 	// Player first: its slot ticks before enemies, so enemies chase this frame's position.
-	state.player_type = engine.entity_register(&state.world, Player, player_create, player_tick, nil)
+	state.player_type = engine.entity_register(
+		&state.world,
+		Player,
+		player_create,
+		player_tick,
+		nil,
+	)
 	state.enemy_type = engine.entity_register(&state.world, Enemy, enemy_create, enemy_tick, nil)
 	engine.world_spawn(
 		&state.world,
@@ -76,7 +82,10 @@ game_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) {
 		state.spawn_timer = 0
 		if engine.world_count(&state.world, state.enemy_type) < GAME_ENEMY_MAX {
 			engine.entity_spawn(&state.world, state.enemy_type, Enemy{player = state.player_type})
-			log.infof("game: enemy spawned, %d alive", engine.world_count(&state.world, state.enemy_type))
+			log.infof(
+				"game: enemy spawned, %d alive",
+				engine.world_count(&state.world, state.enemy_type),
+			)
 		}
 	}
 
@@ -104,5 +113,10 @@ game_destroy :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) {
 
 // Turns the model's +Z toward the XZ direction (same convention as the benchmark dragons).
 game_facing :: proc(direction: gbbfx.Vec3) -> linalg.Quaternionf32 {
-	return linalg.quaternion_from_euler_angles_f32(0, math.atan2(direction.x, direction.z), 0, .XYZ)
+	return linalg.quaternion_from_euler_angles_f32(
+		0,
+		math.atan2(direction.x, direction.z),
+		0,
+		.XYZ,
+	)
 }

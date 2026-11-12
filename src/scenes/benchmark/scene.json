@@ -1,0 +1,4 @@
+{
+  "name": "Benchmark",
+  "camera": { "position": [0, 8, 20], "look_at": [0, 0, 0] }
+}

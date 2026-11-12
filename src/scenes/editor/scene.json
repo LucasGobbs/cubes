@@ -1,0 +1,4 @@
+{
+  "name": "Editor",
+  "camera": { "position": [0, 0, 3], "look_at": [0, 0, 0] }
+}

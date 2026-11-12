@@ -34,7 +34,7 @@ models_scene :: proc() -> scenekit.Scene {
 models_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Models_State)
 	demo.state = state
-	scenekit.camera_reset(gfx, {0, 2, 4})
+	scenekit.scene_camera_reset(demo, gfx, {0, 2, 4})
 
 	state.fly_camera = scenekit.fly_camera_create(gfx, "models")
 

@@ -29,6 +29,12 @@
       "fragment": "pixelMain"
     },
     {
+      "name": "forest_instanced",
+      "source": "shaders/forest_instanced.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
       "name": "compute_demo",
       "source": "shaders/compute.slang",
       "compute": "computeMain"

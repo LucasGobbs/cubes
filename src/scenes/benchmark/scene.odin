@@ -117,7 +117,7 @@ benchmark_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Benchmark_State)
 	state.fog_on = true // haze by default so boats and dragons share the sea's horizon blend
 	demo.state = state
-	scenekit.camera_reset(gfx, {0, 8, 20})
+	scenekit.scene_camera_reset(demo, gfx, {0, 8, 20})
 	// Uncapped: the point of this scene is measuring real frame cost.
 	gbbfx.gfx_set_present_mode(gfx, .IMMEDIATE)
 
@@ -436,7 +436,7 @@ benchmark_tick :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx, delta_time: f32) 
 		)
 		sdl.DrawGPUPrimitives(pass, u32(len(state.text_vertices)), 1, 0, 0)
 		gbbfx.renderer_end_pass(renderer)
-		gbbfx.renderer_present(renderer, renderer.scene_color)
+		gbbfx.renderer_present(renderer, gbbfx.renderer_run_post(renderer)) // run_post: global overlays (F1 stats)
 	}
 	gbbfx.gfx_end_frame(gfx)
 }

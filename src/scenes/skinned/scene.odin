@@ -24,7 +24,7 @@ skinned_scene :: proc() -> scenekit.Scene {
 skinned_create :: proc(demo: ^scenekit.Scene, gfx: ^gbbfx.Gfx) -> bool {
 	state := new(Skinned_State)
 	demo.state = state
-	scenekit.camera_reset(gfx, {0, 1.0, 1.9}, {0, 0.8, 0})
+	scenekit.scene_camera_reset(demo, gfx, {0, 1.0, 1.9}, {0, 0.8, 0})
 
 	state.pipeline = defaults.create_textured_skinned_pipeline(gfx)
 	state.sampler = gbbfx.gfx_sampler_create(gfx, gbbfx.SAMPLER_TRILINEAR)

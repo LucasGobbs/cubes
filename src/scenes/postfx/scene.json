@@ -1,0 +1,15 @@
+{
+  "name": "Postfx",
+  "assets": {
+    "models": ["static/models/rigged_cesiumman.glb"],
+    "textures": ["static/muddy_ground.jpg"]
+  },
+  "camera": {
+    "position": [0, 1, 1.9],
+    "look_at": [0, 0.8, 0],
+    "bloom": { "threshold": 0.5, "intensity": 1.5, "radius": 12 }
+  },
+  "entities": [
+    { "name": "hero", "model": "static/models/rigged_cesiumman.glb", "clip": "clip_0" }
+  ]
+}

@@ -9,6 +9,7 @@ import "core:fmt"
 import "core:log"
 import "core:os"
 import "core:strconv"
+import engine "engine"
 import gbbfx "gbbfx"
 import scenekit "scenekit"
 import glove "glove"
@@ -63,6 +64,10 @@ main :: proc() {
 	// sdl.FlashWindow(gfx.window, .UNTIL_FOCUSED)
 	// sdl.ShowSimpleMessageBox({.ERROR}, "Couldn't initialize SDL!", "Error", nil)
 	defer gbbfx.gfx_destroy(&gfx, rawptr(&scene), scene_destroy)
+	defer {
+		transition_destroy(&gfx)
+		stats_destroy(&gfx) // runs first (LIFO), while the device is alive
+	}
 	gbbfx.gfx_update(&gfx, rawptr(&scene), scene_tick)
 	if bench.seconds > 0 do bench_report(&bench, &gfx, scene.name)
 }
@@ -78,6 +83,8 @@ scene_create :: proc(gfx: ^gbbfx.Gfx, raw_scene: rawptr) -> bool {
 		action = glove.add_button(inputs, SCENES[index].name)
 		glove.bind_key(inputs, action, glove.Key(int(glove.Key._1) + index))
 	}
+	transition_create(gfx)
+	stats_create(gfx)
 	scene_input_mark = glove.system_mark(inputs)
 	return scene.create(scene, gfx)
 }
@@ -96,10 +103,11 @@ scene_tick :: proc(gfx: ^gbbfx.Gfx, delta_time: f32, raw_scene: rawptr) {
 	}
 	for action, index in switch_actions {
 		if index != current_scene && glove.pressed(inputs, action) {
-			scene_switch(gfx, scene, index)
-			return
+			engine.change_scene(SCENES[index].name, .Fade, 0.5)
 		}
 	}
+	if transition_tick(gfx, scene, delta_time) do return
+	stats_tick(gfx, delta_time, scene.name)
 	scene.tick(scene, gfx, delta_time)
 
 	scene.fps_timer += delta_time
@@ -128,7 +136,7 @@ scene_switch :: proc(gfx: ^gbbfx.Gfx, scene: ^scenekit.Scene, index: int) {
 	_ = sdl.WaitForGPUIdle(gfx.gpu) // the old scene's buffers may still be in flight
 	scene_destroy(gfx, rawptr(scene))
 	glove.system_rewind(gbbfx.gfx_input(gfx), scene_input_mark)
-	gbbfx.gfx_set_present_mode(gfx, .VSYNC) // the benchmark scene uncaps it
+	gbbfx.gfx_set_present_mode(gfx, .IMMEDIATE)
 
 	next, _ := scene_lookup(SCENES[index].name)
 	scene^ = next
