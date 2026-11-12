@@ -15,6 +15,7 @@ Scene :: struct {
 	create:    proc(scene: ^Scene, ctx: ^Context) -> bool,
 	tick:      proc(scene: ^Scene, ctx: ^Context, delta_time: f32),
 	destroy:   proc(scene: ^Scene, ctx: ^Context),
+	fixed_tick: proc(scene: ^Scene, ctx: ^Context, dt: f32), // optional; fixed-rate step, see Config.fixed_hz
 
 	// Host bookkeeping; scenes don't touch this.
 	fps_timer: f32,

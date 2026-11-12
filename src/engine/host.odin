@@ -23,10 +23,13 @@ Config :: struct {
 	after_frame: proc(ctx: ^Context, scene_name: string, dt: f32, user: rawptr), // may call request_quit
 	before_exit: proc(ctx: ^Context, scene_name: string, user: rawptr), // after the loop, before teardown
 	user:        rawptr,
+	fixed_hz:          f32, // Scene.fixed_tick rate; 0 = 60
+	max_fixed_updates: int, // steps per frame cap; 0 = 5
 }
 
 @(private) host_config: Config
 @(private) host_scene: Scene
+@(private) fixed_accumulator: f32
 @(private) switch_count: int
 @(private) quit_action, msaa_action: input.Button_Action
 @(private) switch_actions: [MAX_SCENE_KEYS]input.Button_Action
@@ -112,6 +115,13 @@ host_tick :: proc(ctx: ^Context, delta_time: f32) {
 	}
 	if transition_tick(ctx, scene, delta_time) do return
 	stats_tick(ctx, delta_time, scene.name)
+	if scene.fixed_tick != nil {
+		hz := host_config.fixed_hz > 0 ? host_config.fixed_hz : 60
+		max_steps := host_config.max_fixed_updates > 0 ? host_config.max_fixed_updates : 5
+		steps: int
+		steps, ctx.blend = fixed_steps(&fixed_accumulator, delta_time, 1 / hz, max_steps)
+		for _ in 0 ..< steps do scene.fixed_tick(scene, ctx, 1 / hz)
+	}
 	scene.tick(scene, ctx, delta_time)
 
 	scene.fps_timer += delta_time
@@ -137,6 +147,7 @@ host_scene_switch :: proc(ctx: ^Context, scene: ^Scene, index: int) {
 	_ = sdl.WaitForGPUIdle(ctx.gfx.gpu) // the old scene's buffers may still be in flight
 	host_scene_destroy(ctx, scene)
 	input.system_rewind(&ctx.input, scene_input_mark)
+	fixed_accumulator = 0
 	gfx.set_present_mode(&ctx.gfx, .IMMEDIATE)
 
 	next, _ := scene_lookup(host_config.scenes, host_config.scenes[index].name)
