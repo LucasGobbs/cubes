@@ -70,9 +70,10 @@ BOAT_DRAFT :: 0.1 // boat origin height above sea level at rest
 
 // Boat rest position in x/z and yaw; tick sets its height and tilt from the sea.
 Boat_Slot :: struct {
-	entity: int,
-	x, z:   f32,
-	yaw:    linalg.Quaternionf32,
+	draw:  int,
+	x, z:  f32,
+	yaw:   linalg.Quaternionf32,
+	scale: f32,
 }
 
 Benchmark_State :: struct {
@@ -80,7 +81,7 @@ Benchmark_State :: struct {
 	sampler:          gfx.Sampler_Handle,
 	models:           [BOAT_COUNT]gfx.Model,
 	dragon:           gfx.Model,
-	scene:            gfx.Scene,
+	draws:            [dynamic]gfx.Draw,
 	skybox:           default.Skybox,
 	sea_pipeline:     gfx.Pipeline_Handle,
 	sea_material:     gfx.Material,
@@ -169,21 +170,14 @@ benchmark_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	return true
 }
 
-// Rebuilds the entity list at a new per-model instance count. Models stay
-// loaded; only scene entities are recreated.
+// Rebuilds the draw list at a new per-model instance count. Models stay
+// loaded; only the draws are recreated.
 benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 	state.per_model = per_model
-	gfx.scene_destroy(&state.scene)
-	state.scene = {}
+	clear(&state.draws)
 	clear(&state.boats)
-	default.skybox_add_to_scene(&state.scene, &state.skybox)
-	sea := gfx.scene_add_entity(&state.scene)
-	gfx.entity_add_renderable(
-		gfx.scene_entity(&state.scene, sea),
-		&state.sea_mesh,
-		&state.sea_material,
-		.WORLD,
-	)
+	append(&state.draws, default.skybox_draw(&state.skybox))
+	append(&state.draws, gfx.draw_make(&state.sea_mesh, &state.sea_material, layer = .WORLD))
 	for &model in state.models {
 		for _ in 0 ..< per_model {
 			position := gfx.Vec3 {
@@ -199,20 +193,22 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 			)
 			scale := 0.25 + rand.float32_range(0, 0.2)
 			if rand.float32() < 0.12 do scale *= rand.float32_range(2, 4) // a few big ships among the small boats
-			index := gfx.scene_add_model(&state.scene, &model, position, {scale, scale, scale}, yaw)
-			append(&state.boats, Boat_Slot{entity = index, x = position.x, z = position.z, yaw = yaw})
+			append(&state.draws, gfx.draw_model(&model, position, {scale, scale, scale}, yaw))
+			append(&state.boats, Boat_Slot{draw = len(state.draws) - 1, x = position.x, z = position.z, yaw = yaw, scale = scale})
 		}
 	}
 	// Dragons ring the fleet, facing its centre, independent of the per-model count.
 	for index in 0 ..< DRAGON_COUNT {
 		angle := f32(index) / DRAGON_COUNT * linalg.TAU
 		scale := f32(DRAGON_SCALE)
-		gfx.scene_add_model(
-			&state.scene,
-			&state.dragon,
-			{math.cos(angle) * DRAGON_RING_RADIUS, 0, FLEET_CENTER_Z + math.sin(angle) * DRAGON_RING_RADIUS},
-			{scale, scale, scale},
-			linalg.quaternion_from_euler_angles_f32(0, -angle - linalg.PI / 2, 0, .XYZ),
+		append(
+			&state.draws,
+			gfx.draw_model(
+				&state.dragon,
+				{math.cos(angle) * DRAGON_RING_RADIUS, 0, FLEET_CENTER_Z + math.sin(angle) * DRAGON_RING_RADIUS},
+				{scale, scale, scale},
+				linalg.quaternion_from_euler_angles_f32(0, -angle - linalg.PI / 2, 0, .XYZ),
+			),
 		)
 	}
 }
@@ -340,15 +336,16 @@ benchmark_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 		flat := gfx.Vec3{boat.x, SEA_Y, boat.z}
 		h, grad := sea_surface_height(flat.xz, state.sea_time, linalg.distance(camera, flat))
 		normal := linalg.normalize(gfx.Vec3{-grad.x, 1, -grad.y})
-		gfx.entity_set_position(
-			gfx.scene_entity(&state.scene, boat.entity),
-			{boat.x, SEA_Y + h + BOAT_DRAFT, boat.z},
-		)
 		tilt := linalg.quaternion_angle_axis_f32(
 			math.acos(clamp(normal.y, -1, 1)),
 			linalg.normalize0(linalg.cross(gfx.Vec3{0, 1, 0}, normal)),
 		)
-		gfx.entity_set_rotation(gfx.scene_entity(&state.scene, boat.entity), tilt * boat.yaw)
+		gfx.draw_set_transform(
+			&state.draws[boat.draw],
+			{boat.x, SEA_Y + h + BOAT_DRAFT, boat.z},
+			tilt * boat.yaw,
+			{boat.scale, boat.scale, boat.scale},
+		)
 	}
 
 	// FPS and draws refresh once per second so the text stays readable.
@@ -409,7 +406,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 
 	// Frame flow: scene -> offscreen, text into the offscreen, blit out.
 	gfx.renderer_begin_frame(&dev.renderer)
-	gfx.renderer_render_scene(&dev.renderer, &state.scene)
+	gfx.renderer_render_draws(&dev.renderer, state.draws[:])
 	if dev.swapchain != nil {
 		renderer := &dev.renderer
 		gfx.renderer_begin_overlay_pass(renderer, renderer.scene_color)
@@ -443,7 +440,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 
 benchmark_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	state := cast(^Benchmark_State)demo.state
-	gfx.scene_destroy(&state.scene)
+	delete(state.draws)
 	default.skybox_destroy(dev, &state.skybox)
 	gfx.mesh_destroy(dev, &state.sea_mesh)
 	gfx.material_destroy(&state.sea_material)

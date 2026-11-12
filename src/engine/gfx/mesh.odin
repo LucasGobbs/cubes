@@ -86,7 +86,7 @@ mesh_set_bounds :: proc(mesh: ^Mesh, vertices: []$V) {
 // Replaces the mesh contents and re-uploads. Buffers are reused while they
 // are large enough and grown (with a GPU idle wait) when they are not, so
 // this is safe to call every frame. Upload is blocking; call outside an
-// active pass, e.g. in the tick before gfx_render.
+// active pass, e.g. in the tick before render.
 mesh_update :: proc(
 	renderer: ^Renderer,
 	mesh: ^Mesh,

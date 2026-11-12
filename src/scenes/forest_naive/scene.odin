@@ -40,7 +40,7 @@ Chunk :: struct {
 Forest_State :: struct {
 	pipeline:   gfx.Pipeline_Handle,
 	material:   gfx.Material,
-	scene:      gfx.Scene,
+	draws:      [dynamic]gfx.Draw,
 	skybox:     default.Skybox,
 	bloom:      default.Bloom,
 	fly_camera: default.Fly_Camera,
@@ -78,7 +78,7 @@ forest_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	state.material = gfx.material_create(state.pipeline)
 
 	state.skybox = default.skybox_create(dev, default.SKYBOX_PATH)
-	default.skybox_add_to_scene(&state.scene, &state.skybox)
+	append(&state.draws, default.skybox_draw(&state.skybox))
 
 	state.bloom = default.bloom_create(dev, 0.95, 0.2, 5)
 	gfx.renderer_set_passes(&dev.renderer, .Post, []gfx.Render_Pass{default.bloom_pass(&state.bloom)})
@@ -116,7 +116,7 @@ forest_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	dev.renderer.fog = {FOG_COLOR.r, FOG_COLOR.g, FOG_COLOR.b, FOG_DISTANCE}
 	forest_stream(state, dev, BUILD_PER_FRAME, BUILD_RADIUS)
 	flare_update(dev, &state.flare, SUN_DIRECTION)
-	gfx.gfx_render(dev, &state.scene)
+	gfx.render(dev, state.draws[:])
 }
 
 // Bakes missing meshes for chunks near the camera (nearest-first is not
@@ -141,9 +141,8 @@ forest_stream :: proc(state: ^Forest_State, dev: ^gfx.Device, budget: int, radiu
 		}
 
 		if chunk.grass_entity >= 0 {
-			// Out of range: collapse the entity so it costs no fragments.
-			entity := gfx.scene_entity(&state.scene, chunk.grass_entity)
-			gfx.entity_set_scale(entity, distance > GRASS_MAX ? {0, 0, 0} : {1, 1, 1})
+			// Out of range: hide the draw so it costs no fragments.
+			state.draws[chunk.grass_entity].hidden = distance > GRASS_MAX
 		}
 		if distance > GRASS_MAX do continue
 
@@ -159,12 +158,10 @@ forest_stream :: proc(state: ^Forest_State, dev: ^gfx.Device, budget: int, radiu
 		}
 		chunk.grass_lod = lod
 		if chunk.grass_entity < 0 {
-			chunk.grass_entity = gfx.scene_add_entity(&state.scene)
-			entity := gfx.scene_entity(&state.scene, chunk.grass_entity)
-			gfx.entity_set_position(entity, {ox, 0, oz})
-			gfx.entity_add_renderable(entity, &chunk.grass_mesh[lod], &state.material)
+			append(&state.draws, gfx.draw_make(&chunk.grass_mesh[lod], &state.material, {ox, 0, oz}))
+			chunk.grass_entity = len(state.draws) - 1
 		} else {
-			gfx.entity_renderable(gfx.scene_entity(&state.scene, chunk.grass_entity)).mesh = &chunk.grass_mesh[lod]
+			state.draws[chunk.grass_entity].mesh = &chunk.grass_mesh[lod]
 		}
 	}
 }
@@ -177,9 +174,7 @@ forest_build_static :: proc(state: ^Forest_State, dev: ^gfx.Device, chunk: ^Chun
 	chunk.static_mesh = forest_upload(dev, &chunk.static_data, indices[:], ox, oz)
 	chunk.static_built = true
 
-	entity := gfx.scene_entity(&state.scene, gfx.scene_add_entity(&state.scene))
-	gfx.entity_set_position(entity, {ox, 0, oz})
-	gfx.entity_add_renderable(entity, &chunk.static_mesh, &state.material)
+	append(&state.draws, gfx.draw_make(&chunk.static_mesh, &state.material, {ox, 0, oz}))
 }
 
 forest_build_grass :: proc(state: ^Forest_State, dev: ^gfx.Device, chunk: ^Chunk, cx, cz, lod: int) {
@@ -214,7 +209,7 @@ forest_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	state := cast(^Forest_State)demo.state
 	gfx.renderer_clear_passes(&dev.renderer, .Post)
 	flare_destroy(dev, &state.flare)
-	gfx.scene_destroy(&state.scene)
+	delete(state.draws)
 	default.skybox_destroy(dev, &state.skybox)
 	for &chunk in state.chunks {
 		if chunk.static_built do gfx.mesh_destroy(dev, &chunk.static_mesh)

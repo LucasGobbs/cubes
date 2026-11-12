@@ -325,29 +325,6 @@ renderer_begin_extract :: proc(renderer: ^Renderer) -> Extract_View {
 	return {planes = frustum_planes(camera_view_projection(&renderer.camera)), view_distance = renderer.fog.a}
 }
 
-renderer_submit_entity :: proc(renderer: ^Renderer, view: ^Extract_View, entity: ^Entity) {
-	for &component in entity.components {
-		#partial switch renderable in &component {
-		case Renderable:
-			if renderable.cull && renderable_culled(&view.planes, renderable.mesh, entity.transform) do continue
-			if renderable.cull && view.view_distance > 0 && renderable_beyond(renderer.camera.position, renderable.mesh, entity.transform, view.view_distance) do continue
-			renderer_submit(
-				renderer,
-				renderable.mesh,
-				renderable.material,
-				entity.transform,
-				renderable.layer,
-				renderable.pose,
-			)
-		}
-	}
-}
-
-renderer_extract_scene :: proc(renderer: ^Renderer, scene: ^Scene) {
-	view := renderer_begin_extract(renderer)
-	for &entity in scene.entities do renderer_submit_entity(renderer, &view, &entity)
-}
-
 renderer_draw_submitted :: proc(renderer: ^Renderer) {
 	start := time.tick_now()
 	renderer_prepare(renderer)
@@ -357,13 +334,6 @@ renderer_draw_submitted :: proc(renderer: ^Renderer) {
 	renderer_flush(renderer)
 	renderer.flush_time = time.tick_since(start)
 	renderer_end_pass(renderer)
-}
-
-renderer_render_scene :: proc(renderer: ^Renderer, scene: ^Scene) {
-	assert(renderer.dev.frame_open)
-	if renderer.dev.swapchain == nil do return
-	renderer_extract_scene(renderer, scene)
-	renderer_draw_submitted(renderer)
 }
 
 Extract_Proc :: #type proc(renderer: ^Renderer, user: rawptr)
@@ -676,8 +646,7 @@ triangle_count :: proc(mesh: ^Mesh) -> int {
 	return int(n) / 3
 }
 
-// Open submission path for scene-free experiments: call any number of times
-// before gfx_render/flush, outside an active pass.
+// Low-level submission: call any number of times before render, outside a pass.
 renderer_submit :: proc(
 	renderer: ^Renderer,
 	mesh: ^Mesh,
@@ -699,18 +668,9 @@ pipeline_handle_key :: proc(handle: Pipeline_Handle) -> u64 {
 	return u64(raw.generation) << 32 | u64(raw.index)
 }
 
-draw_item_less :: proc(left, right: DrawItem) -> bool {
-	if left.layer != right.layer do return left.layer < right.layer
-	left_pipeline := pipeline_handle_key(left.material.pipeline)
-	right_pipeline := pipeline_handle_key(right.material.pipeline)
-	if left_pipeline != right_pipeline do return left_pipeline < right_pipeline
-	return uintptr(left.material) < uintptr(right.material)
-}
-
 // Sorting works on 16-byte (key, index) entries instead of moving whole
-// DrawItems in the comparator: material pointers are mapped to small dense
-// indices so the full order fits in one u64 (layer | pipeline | material).
-// Thousands of items sort in microseconds instead of milliseconds.
+// DrawItems in the comparator. Material and mesh pointers map to small dense
+// indices so the order fits one u64: layer | pipeline | material | mesh.
 Sort_Entry :: struct {
 	key:   u64,
 	index: u32,
@@ -721,22 +681,15 @@ renderer_sort_draw_items :: proc(items: []DrawItem) {
 	if count < 2 do return
 
 	unique_materials := make([dynamic]^Material, 0, 16, context.temp_allocator)
+	unique_meshes := make([dynamic]^Mesh, 0, 16, context.temp_allocator)
 	entries := make([]Sort_Entry, count, context.temp_allocator)
 	for item, index in items {
-		material_index := -1
-		for material, i in unique_materials {
-			if material == item.material {
-				material_index = i
-				break
-			}
-		}
-		if material_index < 0 {
-			material_index = len(unique_materials)
-			append(&unique_materials, item.material)
-		}
-		pipeline := pipeline_handle_key(item.material.pipeline) & 0xFFFFFFFF
+		material_index := dense_index(&unique_materials, item.material)
+		mesh_index := dense_index(&unique_meshes, item.mesh)
+		pipeline := u64(Resource_Handle(item.material.pipeline).index)
+		assert(material_index < 1 << 20 && mesh_index < 1 << 20 && pipeline < 1 << 16)
 		entries[index] = {
-			key   = u64(item.layer) << 56 | pipeline << 24 | u64(material_index) & 0xFFFFFF,
+			key   = u64(item.layer) << 56 | pipeline << 40 | u64(material_index) << 20 | u64(mesh_index),
 			index = u32(index),
 		}
 	}
@@ -745,6 +698,15 @@ renderer_sort_draw_items :: proc(items: []DrawItem) {
 	sorted := make([]DrawItem, count, context.temp_allocator)
 	for entry, index in entries do sorted[index] = items[entry.index]
 	copy(items, sorted)
+}
+
+@(private = "file")
+dense_index :: proc(seen: ^[dynamic]$T, value: T) -> int {
+	for v, i in seen {
+		if v == value do return i
+	}
+	append(seen, value)
+	return len(seen) - 1
 }
 
 // LSD radix over the 64-bit key: 8 stable counting passes, O(n) — a

@@ -38,7 +38,7 @@ Platform_State :: struct {
 	// CPU vertex data must outlive mesh upload; kept until destroy.
 	solids:    [dynamic]Proto_Solid,
 	meshes:    [dynamic]^gfx.Mesh,
-	scene:     gfx.Scene,
+	draws:     [dynamic]gfx.Draw,
 	skybox:    default.Skybox,
 	fly_camera: default.Fly_Camera,
 	player:    int,
@@ -69,7 +69,7 @@ platform_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	}
 
 	state.skybox = default.skybox_create(dev, default.SKYBOX_PATH)
-	default.skybox_add_to_scene(&state.scene, &state.skybox)
+	append(&state.draws, default.skybox_draw(&state.skybox))
 
 	// Ground covers the whole field (x -24..24, z -14..14) with a pit at x -4..0, z -2..2.
 	proto_box(state, dev, {-14, -1, 0}, {10, 1, 14}, .Ground)
@@ -79,7 +79,7 @@ platform_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 
 	// Ramp turned on Y so it climbs diagonally across the ground.
 	ramp := proto_piece(state, dev, {{-6, 0}, {0, 0}, {0, 4}}, 4, {-8, 0, 0}, .Ramp)
-	gfx.entity_set_rotation_euler(gfx.scene_entity(&state.scene, ramp), 0, 0.6, 0)
+	gfx.draw_set_transform(&state.draws[ramp], {-8, 0, 0}, linalg.quaternion_from_euler_angles_f32(0, 0.6, 0, .XYZ), {1, 1, 1})
 
 	// Trapezoid step set back in depth.
 	proto_piece(state, dev, {{-1.5, 0}, {1.5, 0}, {0.8, 3}, {-0.8, 3}}, 2, {4, 0, -5}, .Trapezoid)
@@ -115,14 +115,14 @@ platform_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	f = f * f * (3 - 2 * f)
 	pos := PLAYER_PATH[i] + (PLAYER_PATH[(i + 1) % n] - PLAYER_PATH[i]) * f
 	pos.y += 1.0 * math.sin(f * math.PI)
-	gfx.entity_set_position(gfx.scene_entity(&state.scene, state.player), pos)
+	gfx.draw_set_transform(&state.draws[state.player], pos, linalg.QUATERNIONF32_IDENTITY, {1, 1, 1})
 
-	gfx.gfx_render(dev, &state.scene)
+	gfx.render(dev, state.draws[:])
 }
 
 platform_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	state := cast(^Platform_State)demo.state
-	gfx.scene_destroy(&state.scene)
+	delete(state.draws)
 	default.skybox_destroy(dev, &state.skybox)
 	for mesh in state.meshes {
 		gfx.mesh_destroy(dev, mesh)
@@ -171,11 +171,8 @@ proto_piece :: proc(
 	gfx.mesh_upload(&dev.renderer, mesh)
 	append(&state.meshes, mesh)
 
-	index := gfx.scene_add_entity(&state.scene)
-	entity := gfx.scene_entity(&state.scene, index)
-	gfx.entity_set_position(entity, at)
-	gfx.entity_add_renderable(entity, mesh, &state.materials[material])
-	return index
+	append(&state.draws, gfx.draw_make(mesh, &state.materials[material], at))
+	return len(state.draws) - 1
 }
 
 // Extrudes a convex polygon along Z: two caps and one quad per edge.

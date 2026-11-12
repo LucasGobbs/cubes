@@ -7,6 +7,9 @@ import default "../../engine/default"
 import input "../../engine/input"
 import engine "../../engine"
 
+SPIN_SHIP_POSITION :: [3]f32{-2.5, -0.5, -10}
+SHIP_SCALE :: [3]f32{0.4, 0.4, 0.4}
+
 Simple_State :: struct {
 	textured_pipeline: gfx.Pipeline_Handle,
 	unlit_pipeline:    gfx.Pipeline_Handle,
@@ -16,7 +19,7 @@ Simple_State :: struct {
 	quad_mesh:         gfx.Mesh,
 	quad_vertices:     [4]gfx.VertexData,
 	quad_indices:      [6]u16,
-	scene:             gfx.Scene,
+	draws:             [dynamic]gfx.Draw,
 	skybox:            default.Skybox,
 	spinning:          int,
 	rotation:          f32,
@@ -55,15 +58,11 @@ simple_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	default.set_unlit_color(&state.unlit_model.material, {0.2, 0.8, 0.9, 1})
 
 	state.skybox = default.skybox_create(dev, default.SKYBOX_PATH)
-	default.skybox_add_to_scene(&state.scene, &state.skybox)
+	append(&state.draws, default.skybox_draw(&state.skybox))
 
-	state.spinning = gfx.scene_add_model(
-		&state.scene,
-		&state.textured_model,
-		{-2.5, -0.5, -10},
-		{0.4, 0.4, 0.4},
-	)
-	gfx.scene_add_model(&state.scene, &state.unlit_model, {2.5, -0.5, -10}, {0.4, 0.4, 0.4})
+	append(&state.draws, gfx.draw_model(&state.textured_model, SPIN_SHIP_POSITION, SHIP_SCALE))
+	state.spinning = len(state.draws) - 1
+	append(&state.draws, gfx.draw_model(&state.unlit_model, {2.5, -0.5, -10}, SHIP_SCALE))
 
 	// Raw geometry: animated quad through the unlit pipeline.
 	state.quad_vertices = {
@@ -75,10 +74,10 @@ simple_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	state.quad_indices = {0, 1, 2, 2, 3, 0}
 	state.quad_mesh = gfx.mesh_create(dev, state.quad_vertices[:], state.quad_indices[:])
 	gfx.mesh_upload(&dev.renderer, &state.quad_mesh)
-	quad := gfx.scene_add_entity(&state.scene)
-	quad_entity := gfx.scene_entity(&state.scene, quad)
-	gfx.entity_set_position(quad_entity, {0, 1.2, -8})
-	gfx.entity_add_renderable(quad_entity, &state.quad_mesh, &state.unlit_model.material, .UI)
+	append(
+		&state.draws,
+		gfx.draw_make(&state.quad_mesh, &state.unlit_model.material, {0, 1.2, -8}, layer = .UI),
+	)
 	return true
 }
 
@@ -88,11 +87,11 @@ simple_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	default.fly_camera_tick(&state.fly_camera, dev, delta_time)
 
 	state.rotation += linalg.to_radians(f32(60)) * delta_time
-	gfx.entity_set_rotation_euler(
-		gfx.scene_entity(&state.scene, state.spinning),
-		0,
-		state.rotation,
-		0,
+	gfx.draw_set_transform(
+		&state.draws[state.spinning],
+		SPIN_SHIP_POSITION,
+		linalg.quaternion_from_euler_angles_f32(0, state.rotation, 0, .XYZ),
+		SHIP_SCALE,
 	)
 
 	state.quad_vertices[2].position.y = 1 + 0.5 * linalg.sin(dev.time * 2)
@@ -104,12 +103,12 @@ simple_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 		state.quad_indices[:],
 	)
 
-	gfx.gfx_render(dev, &state.scene)
+	gfx.render(dev, state.draws[:])
 }
 
 simple_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	state := cast(^Simple_State)demo.state
-	gfx.scene_destroy(&state.scene)
+	delete(state.draws)
 	default.skybox_destroy(dev, &state.skybox)
 	gfx.mesh_destroy(dev, &state.quad_mesh)
 	gfx.model_unload(dev, &state.textured_model)

@@ -28,7 +28,7 @@ Editor_State :: struct {
 	ui:                editor.Ui_State,
 	editor:            ^editor.Editor,
 	tint:              [4]f32,
-	scene:             gfx.Scene,
+	draws:             [dynamic]gfx.Draw,
 	center_entity:     int,
 	rotation_speed:    f32,
 	rotation:          f32,
@@ -68,16 +68,12 @@ ed_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	default.set_unlit_color(&state.unlit_model.material, {0.15, 0.85, 0.3, 1})
 
 	state.skybox = default.skybox_create(dev, default.SKYBOX_PATH)
-	default.skybox_add_to_scene(&state.scene, &state.skybox)
+	append(&state.draws, default.skybox_draw(&state.skybox))
 
-	gfx.scene_add_model(&state.scene, &state.textured_model, {-5, -.5, -12}, {0.4, 0.4, 0.4})
-	state.center_entity = gfx.scene_add_model(
-		&state.scene,
-		&state.textured_model,
-		{0, -.5, -12},
-		{0.4, 0.4, 0.4},
-	)
-	gfx.scene_add_model(&state.scene, &state.unlit_model, {5, -.5, -12}, {0.4, 0.4, 0.4})
+	append(&state.draws, gfx.draw_model(&state.textured_model, {-5, -.5, -12}, {0.4, 0.4, 0.4}))
+	state.center_entity = len(state.draws)
+	append(&state.draws, gfx.draw_model(&state.textured_model, {0, -.5, -12}, {0.4, 0.4, 0.4}))
+	append(&state.draws, gfx.draw_model(&state.unlit_model, {5, -.5, -12}, {0.4, 0.4, 0.4}))
 
 	// One material shared by any number of entities; the editor edits
 	// state.tint live.
@@ -85,11 +81,10 @@ ed_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	state.tint = {0.95, 0.85, 0.2, 1}
 	default.set_unlit_color(&state.shared_material, state.tint)
 
-	shared_ship := gfx.scene_add_entity(&state.scene)
-	shared_ship_entity := gfx.scene_entity(&state.scene, shared_ship)
-	gfx.entity_set_position(shared_ship_entity, {0, 1.2, -12})
-	gfx.entity_set_scale(shared_ship_entity, {0.4, 0.4, 0.4})
-	gfx.entity_add_renderable(shared_ship_entity, &state.unlit_model.mesh, &state.shared_material)
+	append(
+		&state.draws,
+		gfx.draw_make(&state.unlit_model.mesh, &state.shared_material, {0, 1.2, -12}, scale = {0.4, 0.4, 0.4}),
+	)
 
 	state.quad_vertices = {
 		{position = {-1, -1, 0}, color = {1, 1, 1, 1}, uv = {0, 0}},
@@ -100,10 +95,7 @@ ed_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	state.quad_indices = {0, 1, 2, 2, 3, 0}
 	state.quad_mesh = gfx.mesh_create(dev, state.quad_vertices[:], state.quad_indices[:])
 	gfx.mesh_upload(&dev.renderer, &state.quad_mesh)
-	quad := gfx.scene_add_entity(&state.scene)
-	quad_entity := gfx.scene_entity(&state.scene, quad)
-	gfx.entity_set_position(quad_entity, {0, 1.2, -8})
-	gfx.entity_add_renderable(quad_entity, &state.quad_mesh, &state.shared_material, .UI)
+	append(&state.draws, gfx.draw_make(&state.quad_mesh, &state.shared_material, {0, 1.2, -8}, layer = .UI))
 
 	// Post-processing: separable gaussian blur over scene_color, run by the
 	// renderer after the scene (renderer_run_post).
@@ -135,7 +127,7 @@ ed_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 			.XYZ,
 		)
 		scale := 0.25 + rand.float32_range(0, 0.2)
-		gfx.scene_add_model(&state.scene, &state.textured_model, position, {scale, scale, scale}, yaw)
+		append(&state.draws, gfx.draw_model(&state.textured_model, position, {scale, scale, scale}, yaw))
 	}
 
 	state.rotation_speed = linalg.to_radians(f32(90))
@@ -181,17 +173,17 @@ ed_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	gfx.mesh_update(&dev.renderer, &state.quad_mesh, state.quad_vertices[:], state.quad_indices[:])
 
 	state.rotation += state.rotation_speed * delta_time
-	gfx.entity_set_rotation_euler(
-		gfx.scene_entity(&state.scene, state.center_entity),
-		0,
-		state.rotation,
-		0,
+	gfx.draw_set_transform(
+		&state.draws[state.center_entity],
+		{0, -.5, -12},
+		linalg.quaternion_from_euler_angles_f32(0, state.rotation, 0, .XYZ),
+		{0.4, 0.4, 0.4},
 	)
 
 	// Frame flow: scene -> offscreen, post passes -> final, editor overlay
 	// (or plain present) -> swapchain.
 	gfx.renderer_begin_frame(&dev.renderer)
-	gfx.renderer_render_scene(&dev.renderer, &state.scene)
+	gfx.renderer_render_draws(&dev.renderer, state.draws[:])
 	if dev.swapchain != nil {
 		final := gfx.renderer_run_post(&dev.renderer)
 		when gfx.EDITOR {
@@ -211,7 +203,7 @@ ed_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	state := cast(^Editor_State)demo.state
 	gfx.gfx_set_event_hook(dev, nil, nil)
 	_ = sdl.SetWindowRelativeMouseMode(dev.window, true)
-	gfx.scene_destroy(&state.scene)
+	delete(state.draws)
 	default.skybox_destroy(dev, &state.skybox)
 	when gfx.EDITOR {
 		editor.editor_destroy(dev, state.editor)

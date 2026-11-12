@@ -115,7 +115,8 @@ Slot :: struct {
 	alive:      bool,
 	born:       bool, // spawned during the current world_update: skip its tick
 	components: [dynamic]Component,
-	entity:     gfx.Entity,
+	draw:       gfx.Draw,
+	playback:   Maybe(gfx.Playback), // skinned Models only
 	type:       Entity_Type, // 0 when the entity has no registered type
 	state:      rawptr,
 }
@@ -274,7 +275,7 @@ world_update :: proc(world: ^World, dt: f32) {
 		slot.born = false
 		if !slot.alive do continue
 		sync_transform(&slot)
-		gfx.entity_tick_animation(&slot.entity, dt)
+		if playback, ok := &slot.playback.(gfx.Playback); ok do gfx.playback_tick(playback, dt)
 	}
 	update_camera(world)
 }
@@ -288,7 +289,7 @@ world_extract :: proc(renderer: ^gfx.Renderer, user: rawptr) {
 	world := (^World)(user)
 	view := gfx.renderer_begin_extract(renderer)
 	for &slot in world.slots {
-		if slot.alive do gfx.renderer_submit_entity(renderer, &view, &slot.entity)
+		if slot.alive && slot.draw.mesh != nil do gfx.renderer_submit_draw(renderer, &view, &slot.draw)
 	}
 }
 
@@ -417,60 +418,55 @@ normalize_transform :: proc(transform: ^Transform) {
 	if transform.scale == {} do transform.scale = {1, 1, 1}
 	if transform.rotation == (linalg.Quaternionf32{}) do transform.rotation = linalg.QUATERNIONF32_IDENTITY
 }
-
 @(private = "file")
 sync_transform :: proc(slot: ^Slot) {
 	transform := slot_component(slot, Transform)
-	slot.entity.position = transform.position
-	slot.entity.rotation = transform.rotation
-	slot.entity.scale = transform.scale
-	gfx.entity_rebuild_transform(&slot.entity)
+	slot.draw.transform = gfx.transform_trs(transform.position, transform.rotation, transform.scale)
 }
 
-// Builds the renderable for a Model and applies an Animator. Idempotent: run
+// Builds the draw for a Model and applies an Animator. Idempotent: run
 // after every change to the slot's components.
 @(private = "file")
 slot_resolve :: proc(world: ^World, slot: ^Slot) {
-	if model := slot_component(slot, Model); model != nil && gfx.entity_renderable(&slot.entity) == nil {
+	if model := slot_component(slot, Model); model != nil && slot.draw.mesh == nil {
 		assert(world.dev != nil, "engine: Model needs a world with a Device")
 		asset := asset_model(world, model.path)
+		slot.draw = gfx.draw_make(&asset.model.mesh, &asset.model.material)
+		slot.draw.cull = !asset.skinned
+		sync_transform(slot)
 		if asset.skinned {
-			gfx.entity_add_skinned_renderable(&slot.entity, &asset.model.mesh, &asset.model.material, &asset.model.skin)
-		} else {
-			gfx.entity_add_renderable(&slot.entity, &asset.model.mesh, &asset.model.material)
+			playback := gfx.playback_create(&asset.model.skin)
+			slot.draw.pose = playback.pose
+			slot.playback = playback
 		}
 	}
 
 	animator := slot_component(slot, Animator)
-	renderable := gfx.entity_renderable(&slot.entity)
-	if animator == nil || renderable == nil do return
-	if renderable.skin == nil {
+	if animator == nil || slot.draw.mesh == nil do return
+	playback, has_skin := &slot.playback.(gfx.Playback)
+	if !has_skin {
 		log.errorf("engine: Animator on a model without a skin")
 		return
 	}
-	if !gfx.entity_play_clip(&slot.entity, animator.clip) {
+	if !gfx.playback_play(playback, animator.clip) {
 		// Rest pose until a valid clip is named.
 		log.errorf("engine: clip %q not found", animator.clip)
-		renderable.clip = -1
-		renderable.clip_time = 0
-		gfx.clip_sample(renderable.skin, -1, 0, renderable.pose)
+		playback.clip = -1
+		playback.time = 0
+		gfx.clip_sample(playback.skin, -1, 0, playback.pose)
 	}
 }
 
 @(private = "file")
 remove_renderable :: proc(slot: ^Slot) {
-	for index in 0 ..< len(slot.entity.components) {
-		renderable, is_renderable := slot.entity.components[index].(gfx.Renderable)
-		if !is_renderable do continue
-		if renderable.pose != nil do free(renderable.pose)
-		ordered_remove(&slot.entity.components, index)
-		return
-	}
+	if playback, ok := &slot.playback.(gfx.Playback); ok do gfx.playback_destroy(playback)
+	slot.playback = nil
+	slot.draw = {}
 }
 
 @(private = "file")
 destroy_slot :: proc(slot: ^Slot) {
-	gfx.entity_destroy(&slot.entity)
+	remove_renderable(slot)
 	delete(slot.components)
 	slot.components = nil
 	if slot.state != nil do free(slot.state)

@@ -13,8 +13,8 @@ Skinned_State :: struct {
 	pipeline: gfx.Pipeline_Handle,
 	sampler:  gfx.Sampler_Handle,
 	model:    gfx.Model,
-	scene:    gfx.Scene,
-	entity:   int,
+	draws:    [dynamic]gfx.Draw,
+	playback: gfx.Playback,
 }
 
 skinned_scene :: proc() -> engine.Scene {
@@ -40,27 +40,27 @@ skinned_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 		state.sampler,
 	)
 
-	state.entity = gfx.scene_add_entity(&state.scene)
-	entity := gfx.scene_entity(&state.scene, state.entity)
-	gfx.entity_add_skinned_renderable(
-		entity,
-		&state.model.mesh,
-		&state.model.material,
-		&state.model.skin,
-	)
-	if !gfx.entity_play_clip(entity, SKINNED_CLIP) do return false
+	state.playback = gfx.playback_create(&state.model.skin)
+	if !gfx.playback_play(&state.playback, SKINNED_CLIP) do return false
+
+	// Skinned meshes have no bounds (see mesh_set_bounds), so culling stays off.
+	draw := gfx.draw_make(&state.model.mesh, &state.model.material)
+	draw.cull = false
+	draw.pose = state.playback.pose
+	append(&state.draws, draw)
 	return true
 }
 
 skinned_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	state := cast(^Skinned_State)demo.state
-	gfx.scene_tick_animations(&state.scene, delta_time)
-	gfx.gfx_render(dev, &state.scene)
+	gfx.playback_tick(&state.playback, delta_time)
+	gfx.render(dev, state.draws[:])
 }
 
 skinned_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	state := cast(^Skinned_State)demo.state
-	gfx.scene_destroy(&state.scene)
+	delete(state.draws)
+	gfx.playback_destroy(&state.playback)
 	gfx.model_unload(dev, &state.model)
 	gfx.sampler_destroy(dev, state.sampler)
 	gfx.pipeline_destroy(dev, state.pipeline)

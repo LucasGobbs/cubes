@@ -168,16 +168,6 @@ gfx_request_quit :: proc(dev: ^Device) {
 	dev.running = false
 }
 
-// Simple frame: scene -> offscreen -> post passes (renderer_set_passes) -> blit
-// to screen. For a frame with your own steps, compose renderer_begin_frame,
-// renderer_render_scene, renderer_run_post, renderer_present and renderer_end_frame.
-scene_extract_proc :: proc(r: ^Renderer, user: rawptr) {
-	renderer_extract_scene(r, (^Scene)(user))
-}
-
-gfx_render :: proc(dev: ^Device, scene: ^Scene) {
-	renderer_render_frame(&dev.renderer, scene_extract_proc, scene)
-}
 end_frame :: proc(dev: ^Device) {
 	assert(dev.frame_open && dev.command_buffer != nil)
 	ok := sdl.SubmitGPUCommandBuffer(dev.command_buffer); assert(ok)

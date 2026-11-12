@@ -2,6 +2,7 @@
 // rotating at its own speed.
 package models
 
+import "core:math/linalg"
 import gfx "../../engine/gfx"
 import default "../../engine/default"
 import engine "../../engine"
@@ -13,6 +14,8 @@ MODEL_PATHS :: [4]string {
 	"static/models/sea/ship-small-ghost.glb",
 }
 
+MODEL_SCALE :: [3]f32{0.5, 0.5, 0.5}
+
 Models_State :: struct {
 	pipeline:        gfx.Pipeline_Handle,
 	sampler:         gfx.Sampler_Handle,
@@ -20,15 +23,20 @@ Models_State :: struct {
 	ground_texture:  gfx.Texture_Handle,
 	ground_material: gfx.Material,
 	ground_mesh:     gfx.Mesh,
-	scene:           gfx.Scene,
+	draws:           [dynamic]gfx.Draw,
 	skybox:          default.Skybox,
-	entities:        [4]int,
+	model_draws:     [4]int,
 	rotation:        f32,
 	fly_camera:      default.Fly_Camera,
 }
 
 models_scene :: proc() -> engine.Scene {
 	return {name = "Models", create = models_create, tick = models_tick, destroy = models_destroy}
+}
+
+// Models sit in a row along x, all at z = -16.
+models_position :: proc(index: int) -> [3]f32 {
+	return {(f32(index) - 1.5) * 8, 0, -16}
 }
 
 models_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
@@ -48,18 +56,16 @@ models_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 			state.pipeline,
 			state.sampler,
 		)
-		x := (f32(index) - 1.5) * 8
-		state.entities[index] = gfx.scene_add_model(
-			&state.scene,
-			&state.models[index],
-			{x, 0, -16},
-			{0.5, 0.5, 0.5},
+		append(
+			&state.draws,
+			gfx.draw_model(&state.models[index], models_position(index), MODEL_SCALE),
 		)
+		state.model_draws[index] = len(state.draws) - 1
 	}
 
 	// Ground plane: raw quad, tiled mud texture.
 	state.skybox = default.skybox_create(dev, default.SKYBOX_PATH)
-	default.skybox_add_to_scene(&state.scene, &state.skybox)
+	append(&state.draws, default.skybox_draw(&state.skybox))
 
 	state.ground_texture = gfx.texture_load(dev, "static/muddy_ground.jpg")
 	state.ground_material = gfx.material_create(state.pipeline)
@@ -74,9 +80,7 @@ models_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	ground_indices := [6]u16{0, 2, 1, 0, 3, 2}
 	state.ground_mesh = gfx.mesh_create(dev, ground_vertices[:], ground_indices[:])
 	gfx.mesh_upload(&dev.renderer, &state.ground_mesh)
-	ground := gfx.scene_add_entity(&state.scene)
-	ground_entity := gfx.scene_entity(&state.scene, ground)
-	gfx.entity_add_renderable(ground_entity, &state.ground_mesh, &state.ground_material)
+	append(&state.draws, gfx.draw_make(&state.ground_mesh, &state.ground_material))
 	return true
 }
 
@@ -86,20 +90,25 @@ models_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	default.fly_camera_tick(&state.fly_camera, dev, delta_time)
 
 	state.rotation += delta_time
-	for entity, index in state.entities {
-		gfx.entity_set_rotation_euler(
-			gfx.scene_entity(&state.scene, entity),
-			0,
-			state.rotation * (0.4 + 0.3 * f32(index)),
-			0,
+	for draw, index in state.model_draws {
+		gfx.draw_set_transform(
+			&state.draws[draw],
+			models_position(index),
+			linalg.quaternion_from_euler_angles_f32(
+				0,
+				state.rotation * (0.4 + 0.3 * f32(index)),
+				0,
+				.XYZ,
+			),
+			MODEL_SCALE,
 		)
 	}
-	gfx.gfx_render(dev, &state.scene)
+	gfx.render(dev, state.draws[:])
 }
 
 models_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	state := cast(^Models_State)demo.state
-	gfx.scene_destroy(&state.scene)
+	delete(state.draws)
 	default.skybox_destroy(dev, &state.skybox)
 	gfx.mesh_destroy(dev, &state.ground_mesh)
 	gfx.material_destroy(&state.ground_material)

@@ -1,7 +1,7 @@
 // Forest (instanced): same world, terrain, grass and look as forest_naive, but
 // trees, rocks and bushes are not baked into the ground meshes. A fixed set of
-// variant meshes (trees.odin) is uploaded once, and every placed tree is an
-// entity pointing at one of them; the renderer collapses identical
+// variant meshes (trees.odin) is uploaded once, and every placed tree is a
+// draw pointing at one of them; the renderer collapses identical
 // (mesh, material) items into one instanced draw per variant, with transforms
 // from its instance storage buffer (shaders/forest_instanced.slang).
 // Ground is merged into clusters (terrain 64 m, grass 32 m) so the frame costs
@@ -44,7 +44,7 @@ Terrain_Cluster :: struct {
 }
 
 Grass_Item :: struct {
-	entity:   int,
+	draw:     int,
 	instance: Grass_Instance,
 }
 
@@ -57,20 +57,16 @@ Grass_Cluster :: struct {
 Forest_State :: struct {
 	pipeline:         gfx.Pipeline_Handle,
 	material:         gfx.Material,
-	scene:            gfx.Scene,
+	draws:            [dynamic]gfx.Draw,
 	skybox:           default.Skybox,
 	bloom:            default.Bloom,
 	fly_camera:       default.Fly_Camera,
 	variant_data:     [VARIANT_COUNT]Variant_Data,
 	variant_mesh:     [VARIANT_COUNT]gfx.Mesh,
-	// The renderer sorts by (pipeline, material) only, so each variant needs its
-	// own material for its instances to end up adjacent and form one run.
-	variant_material: [VARIANT_COUNT]gfx.Material,
 	terrain:          [TERRAIN_SIDE * TERRAIN_SIDE]Terrain_Cluster,
 	grass:            [GRASS_SIDE * GRASS_SIDE]Grass_Cluster,
 	tuft_data:        [TUFT_COUNT]Variant_Data,
 	tuft_mesh:        [TUFT_COUNT]gfx.Mesh,
-	tuft_material:    [TUFT_COUNT]gfx.Material, // one per variant, see variant_material
 	grass_scratch:    [dynamic]Grass_Instance,
 	placements:       [dynamic]Instance, // scratch, reused per chunk
 	time:             f32,
@@ -109,17 +105,15 @@ forest_create :: proc(demo: ^engine.Scene, dev: ^gfx.Device) -> bool {
 	for &data, index in state.variant_data {
 		state.variant_mesh[index] = gfx.mesh_create(dev, data.verts[:], data.idx[:])
 		gfx.mesh_upload(&dev.renderer, &state.variant_mesh[index])
-		state.variant_material[index] = gfx.material_create(state.pipeline)
 	}
 	state.tuft_data = tufts_build()
 	for &data, index in state.tuft_data {
 		state.tuft_mesh[index] = gfx.mesh_create(dev, data.verts[:], data.idx[:])
 		gfx.mesh_upload(&dev.renderer, &state.tuft_mesh[index])
-		state.tuft_material[index] = gfx.material_create(state.pipeline)
 	}
 
 	state.skybox = default.skybox_create(dev, default.SKYBOX_PATH)
-	default.skybox_add_to_scene(&state.scene, &state.skybox)
+	append(&state.draws, default.skybox_draw(&state.skybox))
 
 	state.bloom = default.bloom_create(dev, 0.95, 0.2, 5)
 	gfx.renderer_set_passes(&dev.renderer, .Post, []gfx.Render_Pass{default.bloom_pass(&state.bloom)})
@@ -156,7 +150,7 @@ forest_tick :: proc(demo: ^engine.Scene, dev: ^gfx.Device, delta_time: f32) {
 	dev.renderer.fog = {fog.r, fog.g, fog.b, FOG_DISTANCE}
 	forest_stream(state, dev, BUILD_BUDGET, BUILD_RADIUS)
 	naive.flare_update(dev, &state.flare, naive.SUN_DIRECTION)
-	gfx.gfx_render(dev, &state.scene)
+	gfx.render(dev, state.draws[:])
 }
 
 // Distance from the camera to a cluster centre; span in chunks, (i, j) cluster index.
@@ -169,7 +163,7 @@ cluster_distance :: proc(camera: [3]f32, i, j, span: int) -> (distance, ox, oz: 
 
 // Builds missing ground clusters near the camera and picks each grass LOD.
 // `budget` counts work units per call (a terrain cluster is TERRAIN_COST).
-// shortcut: built clusters are never freed (tree entities included); add
+// shortcut: built clusters are never freed (tree draws included); add
 // eviction with a GPU idle wait if memory matters.
 forest_stream :: proc(state: ^Forest_State, dev: ^gfx.Device, budget: int, radius: f32) {
 	budget := budget
@@ -216,21 +210,17 @@ forest_build_terrain :: proc(state: ^Forest_State, dev: ^gfx.Device, cluster: ^T
 	cluster.mesh = forest_upload(dev, &cluster.data, ox, oz)
 	cluster.built = true
 
-	entity := gfx.scene_entity(&state.scene, gfx.scene_add_entity(&state.scene))
-	gfx.entity_set_position(entity, {ox, 0, oz})
-	gfx.entity_add_renderable(entity, &cluster.mesh, &state.material)
+	append(&state.draws, gfx.draw_make(&cluster.mesh, &state.material, {ox, 0, oz}))
 
-	// One entity per tree/rock/bush, sharing the variant meshes.
+	// One draw per tree/rock/bush, sharing the variant meshes.
 	for instance in state.placements {
-		tree := gfx.scene_entity(&state.scene, gfx.scene_add_entity(&state.scene))
-		gfx.entity_set_position(tree, instance.position)
-		gfx.entity_set_rotation(tree, linalg.quaternion_angle_axis_f32(instance.yaw, {0, 1, 0}))
-		gfx.entity_set_scale(tree, {instance.scale, instance.scale, instance.scale})
-		gfx.entity_add_renderable(tree, &state.variant_mesh[instance.variant], &state.variant_material[instance.variant])
+		rotation := linalg.quaternion_angle_axis_f32(instance.yaw, {0, 1, 0})
+		scale := instance.scale
+		append(&state.draws, gfx.draw_make(&state.variant_mesh[instance.variant], &state.material, instance.position, rotation, {scale, scale, scale}))
 	}
 }
 
-// One entity per grass clump/flower, sharing the tuft meshes. Created hidden;
+// One draw per grass clump/flower, sharing the tuft meshes. Created hidden;
 // grass_apply_lod shows them.
 forest_build_grass :: proc(state: ^Forest_State, cluster: ^Grass_Cluster, i, j: int) {
 	clear(&state.grass_scratch)
@@ -240,31 +230,24 @@ forest_build_grass :: proc(state: ^Forest_State, cluster: ^Grass_Cluster, i, j: 
 		}
 	}
 	for instance in state.grass_scratch {
-		handle := gfx.scene_add_entity(&state.scene)
-		entity := gfx.scene_entity(&state.scene, handle)
-		gfx.entity_set_position(entity, instance.position)
-		gfx.entity_set_rotation(entity, linalg.quaternion_angle_axis_f32(instance.yaw, {0, 1, 0}))
-		gfx.entity_set_scale(entity, {0, 0, 0})
-		gfx.entity_add_renderable(entity, &state.tuft_mesh[instance.lod1], &state.tuft_material[instance.lod1])
-		append(&cluster.items, Grass_Item{handle, instance})
+		rotation := linalg.quaternion_angle_axis_f32(instance.yaw, {0, 1, 0})
+		scale := instance.scale
+		draw := gfx.draw_make(&state.tuft_mesh[instance.lod1], &state.material, instance.position, rotation, {scale, scale, scale})
+		draw.hidden = true
+		append(&state.draws, draw)
+		append(&cluster.items, Grass_Item{len(state.draws) - 1, instance})
 	}
 	cluster.built = true
 }
 
-// want: 0 hidden (scale 0, costs no fragments), 1 near LOD, 2 far LOD.
+// want: 0 hidden (skipped on submit), 1 near LOD, 2 far LOD.
 grass_apply_lod :: proc(state: ^Forest_State, cluster: ^Grass_Cluster, want: int) {
 	for item in cluster.items {
-		entity := gfx.scene_entity(&state.scene, item.entity)
-		if want == 0 {
-			gfx.entity_set_scale(entity, {0, 0, 0})
-			continue
-		}
+		draw := &state.draws[item.draw]
+		draw.hidden = want == 0
+		if want == 0 do continue
 		variant := item.instance.lod0 if want == 1 else item.instance.lod1
-		renderable := gfx.entity_renderable(entity)
-		renderable.mesh = &state.tuft_mesh[variant]
-		renderable.material = &state.tuft_material[variant]
-		s := item.instance.scale
-		gfx.entity_set_scale(entity, {s, s, s})
+		draw.mesh = &state.tuft_mesh[variant]
 	}
 	cluster.state = want
 }
@@ -290,7 +273,7 @@ forest_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 	state := cast(^Forest_State)demo.state
 	gfx.renderer_clear_passes(&dev.renderer, .Post)
 	naive.flare_destroy(dev, &state.flare)
-	gfx.scene_destroy(&state.scene)
+	delete(state.draws)
 	default.skybox_destroy(dev, &state.skybox)
 	for &cluster in state.terrain {
 		if cluster.built do gfx.mesh_destroy(dev, &cluster.mesh)
@@ -309,10 +292,8 @@ forest_destroy :: proc(demo: ^engine.Scene, dev: ^gfx.Device) {
 		gfx.mesh_destroy(dev, &state.tuft_mesh[index])
 		delete(state.tuft_data[index].verts)
 		delete(state.tuft_data[index].idx)
-		gfx.material_destroy(&state.tuft_material[index])
 	}
 	gfx.material_destroy(&state.material)
-	for &material in state.variant_material do gfx.material_destroy(&material)
 	gfx.pipeline_destroy(dev, state.pipeline)
 	free(state)
 }

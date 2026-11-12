@@ -102,52 +102,30 @@ renderer_orders_layers_before_pipelines :: proc(t: ^testing.T) {
 }
 
 @(test)
-entity_holds_shared_renderable :: proc(t: ^testing.T) {
-	mesh: Mesh
-	material := Material {
-		pipeline = Pipeline_Handle(Resource_Handle{index = 1, generation = 1}),
-	}
-
-	scene: Scene
-	defer scene_destroy(&scene)
-	first := scene_add_entity(&scene)
-	second := scene_add_entity(&scene)
-	entity_add_renderable(scene_entity(&scene, first), &mesh, &material)
-	entity_add_renderable(scene_entity(&scene, second), &mesh, &material, .UI)
-
-	first_renderable := entity_renderable(scene_entity(&scene, first))
-	second_renderable := entity_renderable(scene_entity(&scene, second))
-	testing.expect(t, first_renderable != nil && second_renderable != nil)
-	testing.expect(t, first_renderable.mesh == &mesh)
-	testing.expect(t, first_renderable.material == second_renderable.material)
-	testing.expect_value(t, first_renderable.layer, Render_Layer.WORLD)
-	testing.expect_value(t, second_renderable.layer, Render_Layer.UI)
+transform_trs_matches_trs_composition :: proc(t: ^testing.T) {
+	m := transform_trs({1, 2, 3}, linalg.QUATERNIONF32_IDENTITY, {2, 2, 2})
+	testing.expect_value(t, m[0, 3], f32(1))
+	testing.expect_value(t, m[1, 3], f32(2))
+	testing.expect_value(t, m[2, 3], f32(3))
+	testing.expect_value(t, m[0, 0], f32(2))
 }
 
 @(test)
-entity_transform_rebuilds_from_trs :: proc(t: ^testing.T) {
-	scene: Scene
-	defer scene_destroy(&scene)
-	entity := scene_entity(&scene, scene_add_entity(&scene))
+renderer_splits_runs_by_mesh :: proc(t: ^testing.T) {
+	pipeline := Pipeline_Handle(Resource_Handle{index = 0, generation = 1})
+	material := Material {
+		pipeline = pipeline,
+	}
+	mesh_a, mesh_b: Mesh
 
-	testing.expect_value(t, entity.transform, linalg.MATRIX4F32_IDENTITY)
-	testing.expect_value(t, entity.scale, Vec3{1, 1, 1})
+	// Same material, two meshes: the sort must make one run per mesh.
+	items := [3]DrawItem {
+		{material = &material, mesh = &mesh_b},
+		{material = &material, mesh = &mesh_a},
+		{material = &material, mesh = &mesh_b},
+	}
+	renderer_sort_draw_items(items[:])
 
-	entity_set_position(entity, {1, 2, 3})
-	entity_set_scale(entity, {2, 2, 2})
-	entity_set_rotation_euler(entity, 0, linalg.to_radians(f32(90)), 0)
-
-	expected_rotation := linalg.quaternion_from_euler_angles_f32(
-		0,
-		linalg.to_radians(f32(90)),
-		0,
-		.XYZ,
-	)
-	expected :=
-		linalg.matrix4_translate_f32({1, 2, 3}) *
-		linalg.matrix4_from_quaternion(expected_rotation) *
-		linalg.matrix4_scale_f32({2, 2, 2})
-	testing.expect_value(t, entity.transform, expected)
-	testing.expect_value(t, entity.position, Vec3{1, 2, 3})
-	testing.expect_value(t, entity.rotation, expected_rotation)
+	testing.expect(t, items[0].mesh == items[1].mesh)
+	testing.expect(t, items[1].mesh != items[2].mesh)
 }

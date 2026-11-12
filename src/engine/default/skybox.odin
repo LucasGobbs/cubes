@@ -4,8 +4,8 @@ import gfx "../gfx"
 import "core:math/linalg"
 
 // Owns everything a skybox needs: pipeline, panorama texture, sampler, the
-// fullscreen triangle and its material. Add it to a scene with
-// skybox_add_to_scene; it draws on Render_Layer.SKYBOX behind all geometry.
+// fullscreen triangle and its material. Submit skybox_draw() each frame; it
+// draws on Render_Layer.SKYBOX behind all geometry.
 Skybox :: struct {
 	pipeline: gfx.Pipeline_Handle,
 	texture:  gfx.Texture_Handle,
@@ -62,16 +62,9 @@ skybox_create :: proc(dev: ^gfx.Device, path: string) -> Skybox {
 	return skybox
 }
 
-// Returns the entity index. The entity's transform is ignored by the shader.
-skybox_add_to_scene :: proc(scene: ^gfx.Scene, skybox: ^Skybox) -> int {
-	index := gfx.scene_add_entity(scene)
-	gfx.entity_add_renderable(
-		gfx.scene_entity(scene, index),
-		&skybox.mesh,
-		&skybox.material,
-		.SKYBOX,
-	)
-	return index
+// Submit each frame (e.g. in a Draw list). The transform is ignored by the shader.
+skybox_draw :: proc(skybox: ^Skybox) -> gfx.Draw {
+	return gfx.Draw{mesh = &skybox.mesh, material = &skybox.material, layer = .SKYBOX}
 }
 
 skybox_destroy :: proc(dev: ^gfx.Device, skybox: ^Skybox) {
