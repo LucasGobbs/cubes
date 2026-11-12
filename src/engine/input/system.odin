@@ -22,7 +22,7 @@ system_destroy :: proc(system: ^System) {
 	system^ = {}
 }
 
-button :: proc(system: ^System, name: string) -> Button_Action {
+button :: proc(system: ^System, name: string, key := Key.UNKNOWN) -> Button_Action {
 	assert(system.allocator.procedure != nil)
 	context.allocator = system.allocator
 	owned_name, err := strings.clone(name)
@@ -30,6 +30,7 @@ button :: proc(system: ^System, name: string) -> Button_Action {
 
 	action := Button_Action(len(system.button_actions))
 	append_elem(&system.button_actions, Button_Action_Data{name = owned_name})
+	if key != .UNKNOWN do bind_key(system, action, key)
 	return action
 }
 
@@ -43,6 +44,24 @@ add_axis_2d :: proc(system: ^System, name: string) -> Axis_2D_Action {
 	append_elem(
 		&system.axis_2d_actions,
 		Axis_2D_Action_Data{name = owned_name, owner_binding = -1},
+	)
+	return action
+}
+
+// Declares a 2D movement action with named keys. Value: x = right - left,
+// y = up - down, each in {-1, 0, 1}. Diagonals are not normalized (length
+// sqrt(2)); use add_axis_2d + bind_button_axis_2d with normalize = true for that.
+// Opposite keys held together cancel to 0.
+move_2d :: proc(
+	system: ^System,
+	name: string,
+	up, down, left, right: Key,
+) -> Axis_2D_Action {
+	action := add_axis_2d(system, name)
+	bind_button_axis_2d(
+		system,
+		action,
+		{up = up, down = down, left = left, right = right, normalize = false},
 	)
 	return action
 }

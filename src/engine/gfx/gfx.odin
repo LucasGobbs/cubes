@@ -28,7 +28,7 @@ Device :: struct {
 }
 
 create :: proc(
-	dev: ^Device,
+	gfx_ctx: ^Device,
 	title: string = "cubes",
 	width: int = 1280,
 	height: int = 780,
@@ -67,105 +67,105 @@ create :: proc(
 	ok = sdl.GetWindowSize(window, &window_size.x, &window_size.y); assert(ok)
 	ok = sdl.SetWindowRelativeMouseMode(window, !cursor); assert(ok)
 	ok = sdl.SetWindowMouseGrab(window, !cursor); assert(ok)
-	dev.window = window
-	dev.gpu = gpu
-	dev.window_size = window_size
-	dev.renderer = renderer_create(dev)
-	_ = renderer_set_msaa(&dev.renderer, true) // on by default where supported
+	gfx_ctx.window = window
+	gfx_ctx.gpu = gpu
+	gfx_ctx.window_size = window_size
+	gfx_ctx.renderer = renderer_create(gfx_ctx)
+	_ = renderer_set_msaa(&gfx_ctx.renderer, true) // on by default where supported
 	return true
 }
 
-begin_frame :: proc(dev: ^Device) -> bool {
-	dev.command_buffer = sdl.AcquireGPUCommandBuffer(dev.gpu)
-	assert(dev.command_buffer != nil)
-	dev.frame_open = true
+begin_frame :: proc(gfx_ctx: ^Device) -> bool {
+	gfx_ctx.command_buffer = sdl.AcquireGPUCommandBuffer(gfx_ctx.gpu)
+	assert(gfx_ctx.command_buffer != nil)
+	gfx_ctx.frame_open = true
 	ok := sdl.WaitAndAcquireGPUSwapchainTexture(
-		dev.command_buffer,
-		dev.window,
-		&dev.swapchain,
+		gfx_ctx.command_buffer,
+		gfx_ctx.window,
+		&gfx_ctx.swapchain,
 		nil,
 		nil,
 	); assert(ok)
-	return dev.swapchain != nil
+	return gfx_ctx.swapchain != nil
 }
 
-aspect_ratio :: proc(dev: ^Device) -> f32 {
-	return f32(dev.window_size.x) / f32(dev.window_size.y)
+aspect_ratio :: proc(gfx_ctx: ^Device) -> f32 {
+	return f32(gfx_ctx.window_size.x) / f32(gfx_ctx.window_size.y)
 }
 
 // Present mode: .VSYNC (SDL default, caps FPS at display refresh),
 // .IMMEDIATE (uncapped, may tear), .MAILBOX (uncapped without tearing where
 // supported). Falls back to vsync when the driver rejects the mode.
 // Keeps whatever composition create() managed to set (SDR_LINEAR when supported).
-swapchain_composition :: proc(dev: ^Device) -> sdl.GPUSwapchainComposition {
-	if sdl.WindowSupportsGPUSwapchainComposition(dev.gpu, dev.window, .SDR_LINEAR) do return .SDR_LINEAR
+swapchain_composition :: proc(gfx_ctx: ^Device) -> sdl.GPUSwapchainComposition {
+	if sdl.WindowSupportsGPUSwapchainComposition(gfx_ctx.gpu, gfx_ctx.window, .SDR_LINEAR) do return .SDR_LINEAR
 	return .SDR
 }
 
-set_present_mode :: proc(dev: ^Device, mode: sdl.GPUPresentMode) {
-	if sdl.WindowSupportsGPUPresentMode(dev.gpu, dev.window, mode) {
-		_ = sdl.SetGPUSwapchainParameters(dev.gpu, dev.window, swapchain_composition(dev), mode)
+set_present_mode :: proc(gfx_ctx: ^Device, mode: sdl.GPUPresentMode) {
+	if sdl.WindowSupportsGPUPresentMode(gfx_ctx.gpu, gfx_ctx.window, mode) {
+		_ = sdl.SetGPUSwapchainParameters(gfx_ctx.gpu, gfx_ctx.window, swapchain_composition(gfx_ctx), mode)
 	}
 }
 
-camera :: proc(dev: ^Device) -> ^Camera {
-	return &dev.renderer.camera
+camera :: proc(gfx_ctx: ^Device) -> ^Camera {
+	return &gfx_ctx.renderer.camera
 }
 
-model_load :: proc(dev: ^Device, desc: Renderer_Load_Desc) -> Model {
-	return renderer_load(&dev.renderer, desc)
+model_load :: proc(gfx_ctx: ^Device, desc: Renderer_Load_Desc) -> Model {
+	return renderer_load(&gfx_ctx.renderer, desc)
 }
 
-model_unload :: proc(dev: ^Device, model: ^Model) {
-	renderer_unload(&dev.renderer, model)
+model_unload :: proc(gfx_ctx: ^Device, model: ^Model) {
+	renderer_unload(&gfx_ctx.renderer, model)
 }
 
-end_frame :: proc(dev: ^Device) {
-	assert(dev.frame_open && dev.command_buffer != nil)
-	ok := sdl.SubmitGPUCommandBuffer(dev.command_buffer); assert(ok)
-	dev.command_buffer, dev.swapchain, dev.frame_open = nil, nil, false
+end_frame :: proc(gfx_ctx: ^Device) {
+	assert(gfx_ctx.frame_open && gfx_ctx.command_buffer != nil)
+	ok := sdl.SubmitGPUCommandBuffer(gfx_ctx.command_buffer); assert(ok)
+	gfx_ctx.command_buffer, gfx_ctx.swapchain, gfx_ctx.frame_open = nil, nil, false
 }
 
-destroy :: proc(dev: ^Device) {
-	assert(dev.command_buffer == nil)
-	assert(!dev.frame_open)
-	renderer_destroy(&dev.renderer)
-	for slot, index in dev.pipeline_handles.slots {
-		if slot.alive do pipeline_destroy(dev, Pipeline_Handle(Resource_Handle{u32(index), slot.generation}))
+destroy :: proc(gfx_ctx: ^Device) {
+	assert(gfx_ctx.command_buffer == nil)
+	assert(!gfx_ctx.frame_open)
+	renderer_destroy(&gfx_ctx.renderer)
+	for slot, index in gfx_ctx.pipeline_handles.slots {
+		if slot.alive do pipeline_destroy(gfx_ctx, Pipeline_Handle(Resource_Handle{u32(index), slot.generation}))
 	}
-	for slot, index in dev.compute_pipeline_handles.slots {
-		if slot.alive do compute_pipeline_destroy(dev, Compute_Pipeline_Handle(Resource_Handle{u32(index), slot.generation}))
+	for slot, index in gfx_ctx.compute_pipeline_handles.slots {
+		if slot.alive do compute_pipeline_destroy(gfx_ctx, Compute_Pipeline_Handle(Resource_Handle{u32(index), slot.generation}))
 	}
-	for slot, index in dev.sampler_handles.slots {
-		if slot.alive do sampler_destroy(dev, Sampler_Handle(Resource_Handle{u32(index), slot.generation}))
+	for slot, index in gfx_ctx.sampler_handles.slots {
+		if slot.alive do sampler_destroy(gfx_ctx, Sampler_Handle(Resource_Handle{u32(index), slot.generation}))
 	}
-	for slot, index in dev.texture_handles.slots {
-		if slot.alive do texture_destroy(dev, Texture_Handle(Resource_Handle{u32(index), slot.generation}))
+	for slot, index in gfx_ctx.texture_handles.slots {
+		if slot.alive do texture_destroy(gfx_ctx, Texture_Handle(Resource_Handle{u32(index), slot.generation}))
 	}
-	for slot, index in dev.buffer_handles.slots {
-		if slot.alive do buffer_destroy(dev, Buffer_Handle(Resource_Handle{u32(index), slot.generation}))
+	for slot, index in gfx_ctx.buffer_handles.slots {
+		if slot.alive do buffer_destroy(gfx_ctx, Buffer_Handle(Resource_Handle{u32(index), slot.generation}))
 	}
-	delete(dev.pipelines)
-	delete(dev.compute_pipelines)
-	delete(dev.samplers)
-	delete(dev.textures)
-	delete(dev.buffers)
-	handle_pool_destroy(&dev.pipeline_handles)
-	handle_pool_destroy(&dev.compute_pipeline_handles)
-	handle_pool_destroy(&dev.sampler_handles)
-	handle_pool_destroy(&dev.texture_handles)
-	handle_pool_destroy(&dev.buffer_handles)
+	delete(gfx_ctx.pipelines)
+	delete(gfx_ctx.compute_pipelines)
+	delete(gfx_ctx.samplers)
+	delete(gfx_ctx.textures)
+	delete(gfx_ctx.buffers)
+	handle_pool_destroy(&gfx_ctx.pipeline_handles)
+	handle_pool_destroy(&gfx_ctx.compute_pipeline_handles)
+	handle_pool_destroy(&gfx_ctx.sampler_handles)
+	handle_pool_destroy(&gfx_ctx.texture_handles)
+	handle_pool_destroy(&gfx_ctx.buffer_handles)
 
-	if dev.gpu != nil && dev.window != nil {
-		sdl.ReleaseWindowFromGPUDevice(dev.gpu, dev.window)
+	if gfx_ctx.gpu != nil && gfx_ctx.window != nil {
+		sdl.ReleaseWindowFromGPUDevice(gfx_ctx.gpu, gfx_ctx.window)
 	}
-	if dev.gpu != nil {
-		sdl.DestroyGPUDevice(dev.gpu)
+	if gfx_ctx.gpu != nil {
+		sdl.DestroyGPUDevice(gfx_ctx.gpu)
 	}
-	if dev.window != nil {
-		sdl.DestroyWindow(dev.window)
+	if gfx_ctx.window != nil {
+		sdl.DestroyWindow(gfx_ctx.window)
 	}
 
 	sdl.Quit()
-	dev^ = {}
+	gfx_ctx^ = {}
 }

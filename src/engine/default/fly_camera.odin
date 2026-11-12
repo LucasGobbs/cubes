@@ -20,7 +20,7 @@ Fly_Camera :: struct {
 	look_velocity: [2]f32,
 }
 
-fly_camera_create :: proc(dev: ^gfx.Device, inp: ^input.System, prefix: string) -> Fly_Camera {
+fly_camera_create :: proc(gfx_ctx: ^gfx.Device, inp: ^input.System, prefix: string) -> Fly_Camera {
 	fly_camera := Fly_Camera {
 		move_action  = input.add_axis_2d(inp, fmt.tprintf("{}.move", prefix)),
 		boost_action = input.button(inp, fmt.tprintf("{}.boost", prefix)),
@@ -47,7 +47,7 @@ fly_camera_create :: proc(dev: ^gfx.Device, inp: ^input.System, prefix: string) 
 // C toggles smooth mode: movement and look ease in and out, for recording walkthroughs.
 fly_camera_tick :: proc(
 	fly_camera: ^Fly_Camera,
-	dev: ^gfx.Device,
+	gfx_ctx: ^gfx.Device,
 	inp: ^input.System,
 	delta_time: f32,
 	look := true,
@@ -58,7 +58,7 @@ fly_camera_tick :: proc(
 	ease: f32 = 1
 	if fly_camera.smooth do ease = 1 - math.exp(-SMOOTH_RATE * delta_time)
 
-	camera := gfx.camera(dev)
+	camera := gfx.camera(gfx_ctx)
 	look_target: [2]f32
 	if look do look_target = input.mouse_delta(inp)
 	fly_camera.look_velocity += (look_target - fly_camera.look_velocity) * ease

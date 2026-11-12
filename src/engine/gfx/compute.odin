@@ -9,36 +9,36 @@ Compute_Pipeline :: struct {
 }
 
 compute_pipeline_create :: proc(
-	dev: ^Device,
+	gfx_ctx: ^Device,
 	parameters: goose.ComputeParameters,
 ) -> Compute_Pipeline_Handle {
 	resource := Compute_Pipeline {
-		handle = goose_sdl.create_compute_pipeline(dev.gpu, parameters),
+		handle = goose_sdl.create_compute_pipeline(gfx_ctx.gpu, parameters),
 	}
 	assert(resource.handle != nil)
-	handle := Compute_Pipeline_Handle(handle_pool_acquire(&dev.compute_pipeline_handles))
+	handle := Compute_Pipeline_Handle(handle_pool_acquire(&gfx_ctx.compute_pipeline_handles))
 	index := Resource_Handle(handle).index
-	if int(index) == len(dev.compute_pipelines) {
-		append(&dev.compute_pipelines, resource)
+	if int(index) == len(gfx_ctx.compute_pipelines) {
+		append(&gfx_ctx.compute_pipelines, resource)
 	} else {
-		dev.compute_pipelines[index] = resource
+		gfx_ctx.compute_pipelines[index] = resource
 	}
 	return handle
 }
 
-compute_pipeline_get :: proc(dev: ^Device, handle: Compute_Pipeline_Handle) -> ^Compute_Pipeline {
+compute_pipeline_get :: proc(gfx_ctx: ^Device, handle: Compute_Pipeline_Handle) -> ^Compute_Pipeline {
 	raw := Resource_Handle(handle)
-	assert(handle_pool_contains(&dev.compute_pipeline_handles, raw), "stale compute pipeline handle")
-	return &dev.compute_pipelines[raw.index]
+	assert(handle_pool_contains(&gfx_ctx.compute_pipeline_handles, raw), "stale compute pipeline handle")
+	return &gfx_ctx.compute_pipelines[raw.index]
 }
 
-compute_pipeline_destroy :: proc(dev: ^Device, handle: Compute_Pipeline_Handle) {
+compute_pipeline_destroy :: proc(gfx_ctx: ^Device, handle: Compute_Pipeline_Handle) {
 	raw := Resource_Handle(handle)
-	if !handle_pool_contains(&dev.compute_pipeline_handles, raw) do return
-	resource := &dev.compute_pipelines[raw.index]
-	if resource.handle != nil do sdl.ReleaseGPUComputePipeline(dev.gpu, resource.handle)
+	if !handle_pool_contains(&gfx_ctx.compute_pipeline_handles, raw) do return
+	resource := &gfx_ctx.compute_pipelines[raw.index]
+	if resource.handle != nil do sdl.ReleaseGPUComputePipeline(gfx_ctx.gpu, resource.handle)
 	resource^ = {}
-	assert(handle_pool_release(&dev.compute_pipeline_handles, raw))
+	assert(handle_pool_release(&gfx_ctx.compute_pipeline_handles, raw))
 }
 
 // Dispatches compute work on the frame command buffer (between begin_frame
@@ -46,7 +46,7 @@ compute_pipeline_destroy :: proc(dev: ^Device, handle: Compute_Pipeline_Handle) 
 // textures are bound when the pass begins; sampled textures bind with a
 // sampler after the pipeline.
 compute_dispatch :: proc(
-	dev: ^Device,
+	gfx_ctx: ^Device,
 	pipeline: Compute_Pipeline_Handle,
 	write_textures: []Texture_Handle,
 	sampled_textures: []Texture_Handle,
@@ -54,7 +54,7 @@ compute_dispatch :: proc(
 	groups: [3]u32,
 	uniform_data: []byte = nil,
 ) {
-	assert(dev.frame_open && dev.command_buffer != nil)
+	assert(gfx_ctx.frame_open && gfx_ctx.command_buffer != nil)
 
 	rw_bindings := make(
 		[]sdl.GPUStorageTextureReadWriteBinding,
@@ -62,10 +62,10 @@ compute_dispatch :: proc(
 		context.temp_allocator,
 	)
 	for handle, index in write_textures {
-		rw_bindings[index] = {texture = texture_get(dev, handle).handle}
+		rw_bindings[index] = {texture = texture_get(gfx_ctx, handle).handle}
 	}
 	pass := sdl.BeginGPUComputePass(
-		dev.command_buffer,
+		gfx_ctx.command_buffer,
 		raw_data(rw_bindings),
 		u32(len(rw_bindings)),
 		nil,
@@ -73,9 +73,9 @@ compute_dispatch :: proc(
 	)
 	assert(pass != nil)
 
-	sdl.BindGPUComputePipeline(pass, compute_pipeline_get(dev, pipeline).handle)
+	sdl.BindGPUComputePipeline(pass, compute_pipeline_get(gfx_ctx, pipeline).handle)
 	if len(uniform_data) > 0 {
-		sdl.PushGPUComputeUniformData(dev.command_buffer, 0, raw_data(uniform_data), u32(len(uniform_data)))
+		sdl.PushGPUComputeUniformData(gfx_ctx.command_buffer, 0, raw_data(uniform_data), u32(len(uniform_data)))
 	}
 
 	if len(sampled_textures) > 0 {
@@ -86,8 +86,8 @@ compute_dispatch :: proc(
 		)
 		for handle, index in sampled_textures {
 			bindings[index] = {
-				texture = texture_get(dev, handle).handle,
-				sampler = sampler_get(dev, sampler).handle,
+				texture = texture_get(gfx_ctx, handle).handle,
+				sampler = sampler_get(gfx_ctx, sampler).handle,
 			}
 		}
 		sdl.BindGPUComputeSamplers(pass, 0, raw_data(bindings), u32(len(bindings)))

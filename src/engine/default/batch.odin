@@ -87,55 +87,55 @@ Batch :: struct {
 
 // Creates GPU resources only. Call batch_register once the Batch sits at its
 // final address: the pass keeps a pointer to it.
-batch_create :: proc(dev: ^gfx.Device) -> Batch {
+batch_create :: proc(gfx_ctx: ^gfx.Device) -> Batch {
 	b: Batch
-	b.white = gfx.texture_create_rgba8(dev, 1, 1, false, false)
-	white := gfx.texture_get(dev, b.white)
+	b.white = gfx.texture_create_rgba8(gfx_ctx, 1, 1, false, false)
+	white := gfx.texture_get(gfx_ctx, b.white)
 	white._temporary_raw_data = []u8{255, 255, 255, 255}
-	gfx.uploader_begin(&dev.renderer.uploader)
-	gfx.uploader_upload_texture(&dev.renderer.uploader, b.white)
-	gfx.uploader_flush_blocking(&dev.renderer.uploader)
+	gfx.uploader_begin(&gfx_ctx.renderer.uploader)
+	gfx.uploader_upload_texture(&gfx_ctx.renderer.uploader, b.white)
+	gfx.uploader_flush_blocking(&gfx_ctx.renderer.uploader)
 	white._temporary_raw_data = nil
 
-	b.sampler = gfx.sampler_create(dev, gfx.SAMPLER_NEAREST_CLAMP)
-	b.pipeline = create_textured_overlay_pipeline(dev)
+	b.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_NEAREST_CLAMP)
+	b.pipeline = create_textured_overlay_pipeline(gfx_ctx)
 	b.material = gfx.material_create(b.pipeline)
 	bind_textured_material(&b.material, b.white, b.sampler)
 	// Empty buffer of full capacity: no temp data, so mesh_update_unindexed reuses it.
 	b.mesh = gfx.Mesh {
-		vertex_buffer = gfx.buffer_create(dev, u32(BATCH_INITIAL_VERTICES * size_of(gfx.VertexData)), .VERTEX),
+		vertex_buffer = gfx.buffer_create(gfx_ctx, u32(BATCH_INITIAL_VERTICES * size_of(gfx.VertexData)), .VERTEX),
 	}
 	return b
 }
 
 // Adds the batch pass to the After_Scene slot. `b` must not move afterwards.
-batch_register :: proc(dev: ^gfx.Device, b: ^Batch) {
-	gfx.renderer_add_pass(&dev.renderer, .After_Scene, {name = "batch", run = batch_draw, user = b})
+batch_register :: proc(gfx_ctx: ^gfx.Device, b: ^Batch) {
+	gfx.renderer_add_pass(&gfx_ctx.renderer, .After_Scene, {name = "batch", run = batch_draw, user = b})
 }
 
-batch_destroy :: proc(dev: ^gfx.Device, b: ^Batch) {
-	for pass, index in dev.renderer.passes[.After_Scene] {
+batch_destroy :: proc(gfx_ctx: ^gfx.Device, b: ^Batch) {
+	for pass, index in gfx_ctx.renderer.passes[.After_Scene] {
 		if pass.user == rawptr(b) {
-			ordered_remove(&dev.renderer.passes[.After_Scene], index)
+			ordered_remove(&gfx_ctx.renderer.passes[.After_Scene], index)
 			break
 		}
 	}
-	gfx.mesh_destroy(dev, &b.mesh)
+	gfx.mesh_destroy(gfx_ctx, &b.mesh)
 	gfx.material_destroy(&b.material)
-	gfx.pipeline_destroy(dev, b.pipeline)
-	gfx.sampler_destroy(dev, b.sampler)
-	gfx.texture_destroy(dev, b.white)
+	gfx.pipeline_destroy(gfx_ctx, b.pipeline)
+	gfx.sampler_destroy(gfx_ctx, b.sampler)
+	gfx.texture_destroy(gfx_ctx, b.white)
 	delete(b.vertices)
 	delete(b.runs)
 	b^ = {}
 }
 
-batch_begin :: proc(b: ^Batch, dev: ^gfx.Device, cam: Camera2D) {
+batch_begin :: proc(b: ^Batch, gfx_ctx: ^gfx.Device, cam: Camera2D) {
 	clear(&b.vertices)
 	clear(&b.runs)
 	b.sprites = 0
 	b.draw = false
-	b.camera = camera2d_matrix(cam, dev.window_size)
+	b.camera = camera2d_matrix(cam, gfx_ctx.window_size)
 }
 
 // Rotated, flipped, origin-relative textured quad. `src` in texture px; {} = whole image.
@@ -194,9 +194,9 @@ batch_text :: proc(b: ^Batch, font: ^gfx.Font, text: string, pos: [2]f32, color:
 	}
 }
 
-batch_end :: proc(b: ^Batch, dev: ^gfx.Device) {
+batch_end :: proc(b: ^Batch, gfx_ctx: ^gfx.Device) {
 	b.draw = len(b.vertices) > 0 // SDL rejects empty buffers; mesh_update asserts
-	if b.draw do gfx.mesh_update_unindexed(&dev.renderer, &b.mesh, b.vertices[:])
+	if b.draw do gfx.mesh_update_unindexed(&gfx_ctx.renderer, &b.mesh, b.vertices[:])
 }
 
 // Two triangles (0,1,2) and (0,2,3) from four world-px corners, converted to NDC.
@@ -216,21 +216,21 @@ batch_quad :: proc(b: ^Batch, texture: gfx.Texture_Handle, world: [4][2]f32, uv:
 batch_draw :: proc(ctx: ^gfx.Pass_Ctx, user: rawptr) {
 	b := cast(^Batch)user
 	if !b.draw do return
-	dev := ctx.dev
+	gfx_ctx := ctx.gfx_ctx
 	gfx.renderer_begin_overlay_pass(ctx.renderer, ctx.color)
 	pass := ctx.renderer.pass
-	pipeline := gfx.pipeline_get(dev, b.pipeline)
+	pipeline := gfx.pipeline_get(gfx_ctx, b.pipeline)
 	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-	vertex_buffer := gfx.buffer_get(dev, b.mesh.vertex_buffer)
+	vertex_buffer := gfx.buffer_get(gfx_ctx, b.mesh.vertex_buffer)
 	sdl.BindGPUVertexBuffers(pass, 0, &(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}), 1)
 	for run in b.runs {
 		// Re-binding the texture replaces the material's entry, so each run samples its own.
 		bind_textured_material(&b.material, run.texture, b.sampler)
-		gfx.pipeline_bind_material(dev, pass, dev.command_buffer, &b.material)
+		gfx.pipeline_bind_material(gfx_ctx, pass, gfx_ctx.command_buffer, &b.material)
 		gfx.pipeline_bind_draw(
-			dev,
+			gfx_ctx,
 			b.pipeline,
-			dev.command_buffer,
+			gfx_ctx.command_buffer,
 			{
 				view_projection = linalg.MATRIX4F32_IDENTITY,
 				model_transform = linalg.MATRIX4F32_IDENTITY,

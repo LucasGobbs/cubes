@@ -147,3 +147,46 @@ input_rewind_drops_actions_and_bindings_added_after_mark :: proc(t: ^testing.T) 
 	input.update(&inputs)
 	testing.expect(t, input.pressed(&inputs, quit))
 }
+
+@(test)
+input_button_key_argument_binds_and_reports_pressed :: proc(t: ^testing.T) {
+	inputs := input.system_create(mock.create())
+	defer input.system_destroy(&inputs)
+	jump := input.button(&inputs, "player.jump", .SPACE)
+	testing.expect_value(t, len(inputs.key_bindings), 1)
+
+	event := mock.key_event(.SPACE, true)
+	input.register_event(&inputs, &event)
+	input.update(&inputs)
+	testing.expect(t, input.pressed(&inputs, jump))
+}
+
+@(test)
+input_move_2d_named_keys_resolve_axis :: proc(t: ^testing.T) {
+	inputs := input.system_create(mock.create())
+	defer input.system_destroy(&inputs)
+	move := input.move_2d(&inputs, "player.move", up = .W, down = .S, left = .A, right = .D)
+
+	event := mock.key_event(.D, true)
+	input.register_event(&inputs, &event)
+	input.update(&inputs)
+	testing.expect_value(t, input.axis_2d(&inputs, move), [2]f32{1, 0})
+
+	// opposite pair held together cancels to zero
+	event = mock.key_event(.A, true)
+	input.register_event(&inputs, &event)
+	input.update(&inputs)
+	testing.expect_value(t, input.axis_2d(&inputs, move), [2]f32{0, 0})
+
+	// diagonal is not normalized: right + up = {1, 1}
+	event = mock.key_event(.A, false)
+	input.register_event(&inputs, &event)
+	event = mock.key_event(.D, false)
+	input.register_event(&inputs, &event)
+	event = mock.key_event(.W, true)
+	input.register_event(&inputs, &event)
+	event = mock.key_event(.D, true)
+	input.register_event(&inputs, &event)
+	input.update(&inputs)
+	testing.expect_value(t, input.axis_2d(&inputs, move), [2]f32{1, 1})
+}

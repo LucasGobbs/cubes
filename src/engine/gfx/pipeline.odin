@@ -27,7 +27,7 @@ Pipeline_Bind_Draw_Proc :: #type proc(
 )
 
 Pipeline_Bind_Skinned_Storage_Proc :: #type proc(
-	dev: ^Device,
+	gfx_ctx: ^Device,
 	pass: ^sdl.GPURenderPass,
 	transforms: Buffer_Handle,
 	palettes: Buffer_Handle,
@@ -90,7 +90,7 @@ draw_push_uniform :: proc(draw_context: ^Draw_Context, binding: goose.UniformBlo
 	goose_sdl.push_uniform(command_buffer, binding, data)
 }
 
-pipeline_create :: proc(dev: ^Device, desc: Graphics_Pipeline_Desc) -> Pipeline_Handle {
+pipeline_create :: proc(gfx_ctx: ^Device, desc: Graphics_Pipeline_Desc) -> Pipeline_Handle {
 	assert(desc.vertex.stage == .Vertex)
 	assert(desc.fragment.stage == .Fragment)
 	assert(len(desc.vertex_attributes) > 0 && desc.vertex_stride > 0)
@@ -99,16 +99,16 @@ pipeline_create :: proc(dev: ^Device, desc: Graphics_Pipeline_Desc) -> Pipeline_
 		context.temp_allocator,
 	)
 	assert(attributes_ok)
-	vertex_shader := goose_sdl.create_graphics_shader(dev.gpu, desc.vertex)
-	fragment_shader := goose_sdl.create_graphics_shader(dev.gpu, desc.fragment)
+	vertex_shader := goose_sdl.create_graphics_shader(gfx_ctx.gpu, desc.vertex)
+	fragment_shader := goose_sdl.create_graphics_shader(gfx_ctx.gpu, desc.fragment)
 	assert(vertex_shader != nil && fragment_shader != nil)
 	defer {
-		sdl.ReleaseGPUShader(dev.gpu, vertex_shader)
-		sdl.ReleaseGPUShader(dev.gpu, fragment_shader)
+		sdl.ReleaseGPUShader(gfx_ctx.gpu, vertex_shader)
+		sdl.ReleaseGPUShader(gfx_ctx.gpu, fragment_shader)
 	}
 
 	color_target := sdl.GPUColorTargetDescription {
-		format = desc.color_format if desc.color_format != .INVALID else sdl.GetGPUSwapchainTextureFormat(dev.gpu, dev.window),
+		format = desc.color_format if desc.color_format != .INVALID else sdl.GetGPUSwapchainTextureFormat(gfx_ctx.gpu, gfx_ctx.window),
 	}
 	if desc.blend {
 		color_target.blend_state = {
@@ -154,12 +154,12 @@ pipeline_create :: proc(dev: ^Device, desc: Graphics_Pipeline_Desc) -> Pipeline_
 				depth_stencil_format = .D32_FLOAT if has_depth else .INVALID,
 			},
 	}
-	native := sdl.CreateGPUGraphicsPipeline(dev.gpu, info)
+	native := sdl.CreateGPUGraphicsPipeline(gfx_ctx.gpu, info)
 	assert(native != nil)
 	native_msaa: ^sdl.GPUGraphicsPipeline
-	if !desc.single_sample && dev.renderer.msaa_supported {
+	if !desc.single_sample && gfx_ctx.renderer.msaa_supported {
 		info.multisample_state.sample_count = MSAA_SAMPLES
-		native_msaa = sdl.CreateGPUGraphicsPipeline(dev.gpu, info)
+		native_msaa = sdl.CreateGPUGraphicsPipeline(gfx_ctx.gpu, info)
 		assert(native_msaa != nil)
 	}
 	resource := Pipeline {
@@ -171,12 +171,12 @@ pipeline_create :: proc(dev: ^Device, desc: Graphics_Pipeline_Desc) -> Pipeline_
 		instanced = desc.instanced,
 		skinned = desc.skinned,
 	}
-	handle := Pipeline_Handle(handle_pool_acquire(&dev.pipeline_handles))
+	handle := Pipeline_Handle(handle_pool_acquire(&gfx_ctx.pipeline_handles))
 	index := Resource_Handle(handle).index
-	if int(index) == len(dev.pipelines) {
-		append(&dev.pipelines, resource)
+	if int(index) == len(gfx_ctx.pipelines) {
+		append(&gfx_ctx.pipelines, resource)
 	} else {
-		dev.pipelines[index] = resource
+		gfx_ctx.pipelines[index] = resource
 	}
 	return handle
 }
@@ -188,31 +188,31 @@ pipeline_native :: proc(pipeline: ^Pipeline, msaa_pass: bool) -> ^sdl.GPUGraphic
 	return pipeline.handle
 }
 
-pipeline_get :: proc(dev: ^Device, handle: Pipeline_Handle) -> ^Pipeline {
+pipeline_get :: proc(gfx_ctx: ^Device, handle: Pipeline_Handle) -> ^Pipeline {
 	raw := Resource_Handle(handle)
-	assert(handle_pool_contains(&dev.pipeline_handles, raw), "stale pipeline handle")
-	return &dev.pipelines[raw.index]
+	assert(handle_pool_contains(&gfx_ctx.pipeline_handles, raw), "stale pipeline handle")
+	return &gfx_ctx.pipelines[raw.index]
 }
 
-pipeline_destroy :: proc(dev: ^Device, handle: Pipeline_Handle) {
+pipeline_destroy :: proc(gfx_ctx: ^Device, handle: Pipeline_Handle) {
 	raw := Resource_Handle(handle)
-	if !handle_pool_contains(&dev.pipeline_handles, raw) do return
-	resource := &dev.pipelines[raw.index]
-	if resource.handle != nil do sdl.ReleaseGPUGraphicsPipeline(dev.gpu, resource.handle)
-	if resource.handle_msaa != nil do sdl.ReleaseGPUGraphicsPipeline(dev.gpu, resource.handle_msaa)
+	if !handle_pool_contains(&gfx_ctx.pipeline_handles, raw) do return
+	resource := &gfx_ctx.pipelines[raw.index]
+	if resource.handle != nil do sdl.ReleaseGPUGraphicsPipeline(gfx_ctx.gpu, resource.handle)
+	if resource.handle_msaa != nil do sdl.ReleaseGPUGraphicsPipeline(gfx_ctx.gpu, resource.handle_msaa)
 	resource^ = {}
-	assert(handle_pool_release(&dev.pipeline_handles, raw))
+	assert(handle_pool_release(&gfx_ctx.pipeline_handles, raw))
 }
 
 pipeline_bind_material :: proc(
-	dev: ^Device,
+	gfx_ctx: ^Device,
 	pass: ^sdl.GPURenderPass,
 	command_buffer: ^sdl.GPUCommandBuffer,
 	material: ^Material,
 ) {
 	for &binding in material.textures {
-		texture := texture_get(dev, binding.texture)
-		sampler := sampler_get(dev, binding.sampler)
+		texture := texture_get(gfx_ctx, binding.texture)
+		sampler := sampler_get(gfx_ctx, binding.sampler)
 		goose_sdl.bind_sampler(
 			pass,
 			binding.texture_parameter,
@@ -232,12 +232,12 @@ pipeline_bind_material :: proc(
 }
 
 pipeline_bind_draw :: proc(
-	dev: ^Device,
+	gfx_ctx: ^Device,
 	handle: Pipeline_Handle,
 	command_buffer: ^sdl.GPUCommandBuffer,
 	parameters: Draw_Parameters,
 ) {
-	pipeline := pipeline_get(dev, handle)
+	pipeline := pipeline_get(gfx_ctx, handle)
 	if pipeline.bind_draw == nil do return
 	draw_context := Draw_Context {
 		_backend_command_buffer = rawptr(command_buffer),

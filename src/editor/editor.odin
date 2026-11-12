@@ -24,7 +24,7 @@ Draw_Span :: struct {
 
 Editor :: struct {
 	ctx:      mu.Context,
-	dev:      ^gfx.Device,
+	gfx_ctx:  ^gfx.Device,
 	font:     gfx.Font,
 	pipeline: gfx.Pipeline_Handle,
 	material: gfx.Material,
@@ -39,10 +39,10 @@ Editor :: struct {
 // practice, so they read this.
 g_active_font: ^gfx.Font
 
-editor_init :: proc(dev: ^gfx.Device, ed: ^Editor, font_path := "static/fonts/andale-mono.ttf") -> bool {
-	font, ok := gfx.font_create(dev, font_path)
+editor_init :: proc(gfx_ctx: ^gfx.Device, ed: ^Editor, font_path := "static/fonts/andale-mono.ttf") -> bool {
+	font, ok := gfx.font_create(gfx_ctx, font_path)
 	if !ok do return false
-	ed.dev = dev
+	ed.gfx_ctx = gfx_ctx
 	ed.font = font
 	ed.visible = true
 	g_active_font = &ed.font
@@ -55,23 +55,23 @@ editor_init :: proc(dev: ^gfx.Device, ed: ^Editor, font_path := "static/fonts/an
 		return g_active_font.line_height
 	}
 
-	ed.pipeline = default.create_textured_overlay_pipeline(dev)
-	ed.sampler = gfx.sampler_create(dev)
+	ed.pipeline = default.create_textured_overlay_pipeline(gfx_ctx)
+	ed.sampler = gfx.sampler_create(gfx_ctx)
 	ed.material = gfx.material_create(ed.pipeline)
 	default.bind_textured_material(&ed.material, ed.font.texture, ed.sampler)
 
 	dummy := [6]gfx.VertexData{}
-	ed.mesh = gfx.mesh_create_unindexed(dev, dummy[:])
-	gfx.mesh_upload(&dev.renderer, &ed.mesh)
+	ed.mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
+	gfx.mesh_upload(&gfx_ctx.renderer, &ed.mesh)
 	return true
 }
 
-editor_destroy :: proc(dev: ^gfx.Device, ed: ^Editor) {
-	gfx.font_destroy(dev, &ed.font)
-	gfx.mesh_destroy(dev, &ed.mesh)
+editor_destroy :: proc(gfx_ctx: ^gfx.Device, ed: ^Editor) {
+	gfx.font_destroy(gfx_ctx, &ed.font)
+	gfx.mesh_destroy(gfx_ctx, &ed.mesh)
 	gfx.material_destroy(&ed.material)
-	gfx.sampler_destroy(dev, ed.sampler)
-	gfx.pipeline_destroy(dev, ed.pipeline)
+	gfx.sampler_destroy(gfx_ctx, ed.sampler)
+	gfx.pipeline_destroy(gfx_ctx, ed.pipeline)
 	delete(ed.vertices)
 	delete(ed.spans)
 	ed^ = {}
@@ -102,7 +102,7 @@ editor_end :: proc(ed: ^Editor) {
 editor_handle_event :: proc(ed: ^Editor, event: ^sdl.Event) {
 	if event.type == .KEY_DOWN && event.key.scancode == .TAB && !event.key.repeat {
 		ed.visible = !ed.visible
-		_ = sdl.SetWindowRelativeMouseMode(ed.dev.window, !ed.visible)
+		_ = sdl.SetWindowRelativeMouseMode(ed.gfx_ctx.window, !ed.visible)
 		return
 	}
 	if !ed.visible do return
@@ -191,8 +191,8 @@ push_quad :: proc(
 	uv0, uv1: [2]f32,
 	color: [4]f32,
 ) {
-	w := f32(ed.dev.window_size.x)
-	h := f32(ed.dev.window_size.y)
+	w := f32(ed.gfx_ctx.window_size.x)
+	h := f32(ed.gfx_ctx.window_size.y)
 	p0 := ndc_position(x0, y0, w, h)
 	p1 := ndc_position(x1, y0, w, h)
 	p2 := ndc_position(x1, y1, w, h)
@@ -264,7 +264,7 @@ push_icon :: proc(ed: ^Editor, cmd: ^mu.Command_Icon) {
 editor_build :: proc(ed: ^Editor) {
 	clear(&ed.vertices)
 	clear(&ed.spans)
-	clip := mu.Rect{0, 0, ed.dev.window_size.x, ed.dev.window_size.y}
+	clip := mu.Rect{0, 0, ed.gfx_ctx.window_size.x, ed.gfx_ctx.window_size.y}
 	span_start := u32(0)
 
 	finish_span :: proc(ed: ^Editor, start: ^u32, clip: mu.Rect) {
@@ -321,7 +321,7 @@ push_viewport_quad :: proc(
 // post-processing because the post chain finished before this pass.
 editor_draw :: proc(
 	ed: ^Editor,
-	dev: ^gfx.Device,
+	gfx_ctx: ^gfx.Device,
 	viewport_texture: gfx.Texture_Handle,
 	viewport_rect: mu.Rect,
 ) {
@@ -332,18 +332,18 @@ editor_draw :: proc(
 	}
 	if len(ed.vertices) == 0 do return
 
-	renderer := &dev.renderer
+	renderer := &gfx_ctx.renderer
 	gfx.mesh_update_unindexed(renderer, &ed.mesh, ed.vertices[:])
 
 	gfx.renderer_begin_present_pass(renderer)
 	pass := renderer.pass
-	pipeline := gfx.pipeline_get(dev, ed.pipeline)
+	pipeline := gfx.pipeline_get(gfx_ctx, ed.pipeline)
 	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-	gfx.pipeline_bind_material(dev, pass, dev.command_buffer, &ed.material)
+	gfx.pipeline_bind_material(gfx_ctx, pass, gfx_ctx.command_buffer, &ed.material)
 	gfx.pipeline_bind_draw(
-		dev,
+		gfx_ctx,
 		ed.pipeline,
-		dev.command_buffer,
+		gfx_ctx.command_buffer,
 		{
 			view_projection = linalg.MATRIX4F32_IDENTITY,
 			model_transform = linalg.MATRIX4F32_IDENTITY,
@@ -351,9 +351,9 @@ editor_draw :: proc(
 		},
 	)
 	bound := Span_Texture.ATLAS
-	viewport_texture_resource := gfx.texture_get(dev, viewport_texture)
-	sampler := gfx.sampler_get(dev, ed.sampler)
-	vertex_buffer := gfx.buffer_get(dev, ed.mesh.vertex_buffer)
+	viewport_texture_resource := gfx.texture_get(gfx_ctx, viewport_texture)
+	sampler := gfx.sampler_get(gfx_ctx, ed.sampler)
+	vertex_buffer := gfx.buffer_get(gfx_ctx, ed.mesh.vertex_buffer)
 	for span in ed.spans {
 		if span.texture != bound {
 			if span.texture == .VIEWPORT {
@@ -365,7 +365,7 @@ editor_draw :: proc(
 					sampler.handle,
 				)
 			} else {
-				gfx.pipeline_bind_material(dev, pass, dev.command_buffer, &ed.material)
+				gfx.pipeline_bind_material(gfx_ctx, pass, gfx_ctx.command_buffer, &ed.material)
 			}
 			bound = span.texture
 		}

@@ -40,19 +40,19 @@ models_position :: proc(index: int) -> [3]f32 {
 }
 
 models_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	state := new(Models_State)
 	demo.state = state
-	engine.scene_camera_reset(demo, dev, {0, 2, 4})
+	engine.scene_camera_reset(demo, gfx_ctx, {0, 2, 4})
 
-	state.fly_camera = default.fly_camera_create(dev, &ctx.input, "models")
+	state.fly_camera = default.fly_camera_create(gfx_ctx, &ctx.input, "models")
 
-	state.pipeline = default.create_textured_pipeline(dev)
-	state.sampler = gfx.sampler_create(dev, gfx.SAMPLER_TRILINEAR)
+	state.pipeline = default.create_textured_pipeline(gfx_ctx)
+	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 
 	for path, index in MODEL_PATHS {
 		state.models[index] = default.load_textured_model(
-			dev,
+			gfx_ctx,
 			path,
 			state.pipeline,
 			state.sampler,
@@ -65,10 +65,10 @@ models_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	}
 
 	// Ground plane: raw quad, tiled mud texture.
-	state.skybox = default.skybox_create(dev, default.SKYBOX_PATH)
+	state.skybox = default.skybox_create(gfx_ctx, default.SKYBOX_PATH)
 	append(&state.draws, default.skybox_draw(&state.skybox))
 
-	state.ground_texture = gfx.texture_load(dev, "static/muddy_ground.jpg")
+	state.ground_texture = gfx.texture_load(gfx_ctx, "static/muddy_ground.jpg")
 	state.ground_material = gfx.material_create(state.pipeline)
 	default.bind_textured_material(&state.ground_material, state.ground_texture, state.sampler)
 	tiling :: f32(40)
@@ -79,17 +79,17 @@ models_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		{position = {-100, -1, 100}, color = {1, 1, 1, 1}, normal = {0, 1, 0}, uv = {0, tiling}},
 	}
 	ground_indices := [6]u16{0, 2, 1, 0, 3, 2}
-	state.ground_mesh = gfx.mesh_create(dev, ground_vertices[:], ground_indices[:])
-	gfx.mesh_upload(&dev.renderer, &state.ground_mesh)
+	state.ground_mesh = gfx.mesh_create(gfx_ctx, ground_vertices[:], ground_indices[:])
+	gfx.mesh_upload(&gfx_ctx.renderer, &state.ground_mesh)
 	append(&state.draws, gfx.draw_make(&state.ground_mesh, &state.ground_material))
 	return true
 }
 
 models_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	state := cast(^Models_State)demo.state
 
-	default.fly_camera_tick(&state.fly_camera, dev, &ctx.input, delta_time)
+	default.fly_camera_tick(&state.fly_camera, gfx_ctx, &ctx.input, delta_time)
 
 	state.rotation += delta_time
 	for draw, index in state.model_draws {
@@ -105,19 +105,19 @@ models_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 			MODEL_SCALE,
 		)
 	}
-	gfx.render(dev, state.draws[:])
+	gfx.render(gfx_ctx, state.draws[:])
 }
 
 models_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	state := cast(^Models_State)demo.state
 	delete(state.draws)
-	default.skybox_destroy(dev, &state.skybox)
-	gfx.mesh_destroy(dev, &state.ground_mesh)
+	default.skybox_destroy(gfx_ctx, &state.skybox)
+	gfx.mesh_destroy(gfx_ctx, &state.ground_mesh)
 	gfx.material_destroy(&state.ground_material)
-	gfx.texture_destroy(dev, state.ground_texture)
-	for &model in state.models do gfx.model_unload(dev, &model)
-	gfx.sampler_destroy(dev, state.sampler)
-	gfx.pipeline_destroy(dev, state.pipeline)
+	gfx.texture_destroy(gfx_ctx, state.ground_texture)
+	for &model in state.models do gfx.model_unload(gfx_ctx, &model)
+	gfx.sampler_destroy(gfx_ctx, state.sampler)
+	gfx.pipeline_destroy(gfx_ctx, state.pipeline)
 	free(state)
 }

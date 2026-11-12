@@ -24,29 +24,29 @@ Model_Asset :: struct {
 asset_model :: proc(world: ^World, path: string) -> ^Model_Asset {
 	if asset, found := world.assets.models[path]; found do return asset
 
-	dev := world.dev
+	gfx_ctx := world.gfx_ctx
 	assets := &world.assets
 	asset := new(Model_Asset)
 	asset.skinned = loader.gltf_has_skin(path)
 	if !is_set(assets.sampler) {
-		assets.sampler = gfx.sampler_create(dev, gfx.SAMPLER_TRILINEAR)
+		assets.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 	}
 
 	if asset.skinned {
 		if !is_set(assets.skinned_pipeline) {
-			assets.skinned_pipeline = default.create_textured_skinned_pipeline(dev)
+			assets.skinned_pipeline = default.create_textured_skinned_pipeline(gfx_ctx)
 		}
 		imported, ok := loader.model_import_skinned_from_gltf(path)
 		assert(ok, "engine: model load failed")
 		defer loader.skinned_model_destroy(&imported)
-		asset.model = gfx.model_create_skinned(dev, &imported, assets.skinned_pipeline)
-		gfx.model_upload_to_gpu(&asset.model, &dev.renderer.uploader)
+		asset.model = gfx.model_create_skinned(gfx_ctx, &imported, assets.skinned_pipeline)
+		gfx.model_upload_to_gpu(&asset.model, &gfx_ctx.renderer.uploader)
 		default.bind_textured_skinned_material(&asset.model.material, gfx.model_texture(&asset.model), assets.sampler)
 	} else {
 		if !is_set(assets.static_pipeline) {
-			assets.static_pipeline = default.create_textured_instanced_pipeline(dev)
+			assets.static_pipeline = default.create_textured_instanced_pipeline(gfx_ctx)
 		}
-		asset.model = gfx.model_load(dev, {model_path = path, pipeline = assets.static_pipeline})
+		asset.model = gfx.model_load(gfx_ctx, {model_path = path, pipeline = assets.static_pipeline})
 		default.bind_textured_instanced_material(&asset.model.material, gfx.model_texture(&asset.model), assets.sampler)
 	}
 
@@ -64,27 +64,27 @@ assets_load :: proc(world: ^World, def: Assets_Def) {
 // Loads on first use and caches by path until world_destroy.
 asset_texture :: proc(world: ^World, path: string) -> gfx.Texture_Handle {
 	if handle, found := world.assets.textures[path]; found do return handle
-	handle := gfx.texture_load(world.dev, path)
+	handle := gfx.texture_load(world.gfx_ctx, path)
 	world.assets.textures[strings.clone(path)] = handle
 	return handle
 }
 
 assets_destroy :: proc(world: ^World) {
 	for path, handle in world.assets.textures {
-		gfx.texture_destroy(world.dev, handle)
+		gfx.texture_destroy(world.gfx_ctx, handle)
 		delete(path)
 	}
 	delete(world.assets.textures)
 	assets := &world.assets
 	for path, asset in assets.models {
-		gfx.model_unload(world.dev, &asset.model)
+		gfx.model_unload(world.gfx_ctx, &asset.model)
 		free(asset)
 		delete(path)
 	}
 	delete(assets.models)
-	if is_set(assets.sampler) do gfx.sampler_destroy(world.dev, assets.sampler)
-	if is_set(assets.static_pipeline) do gfx.pipeline_destroy(world.dev, assets.static_pipeline)
-	if is_set(assets.skinned_pipeline) do gfx.pipeline_destroy(world.dev, assets.skinned_pipeline)
+	if is_set(assets.sampler) do gfx.sampler_destroy(world.gfx_ctx, assets.sampler)
+	if is_set(assets.static_pipeline) do gfx.pipeline_destroy(world.gfx_ctx, assets.static_pipeline)
+	if is_set(assets.skinned_pipeline) do gfx.pipeline_destroy(world.gfx_ctx, assets.skinned_pipeline)
 	assets^ = {}
 }
 

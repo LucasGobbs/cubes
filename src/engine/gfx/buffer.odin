@@ -13,12 +13,12 @@ Buffer :: struct {
 }
 
 buffer_create_from_bytes :: proc(
-	dev: ^Device,
+	gfx_ctx: ^Device,
 	data: []$T,
 	usage: sdl.GPUBufferUsageFlag,
 ) -> Buffer_Handle {
-	handle := buffer_create(dev, u32(len(data) * size_of(T)), usage)
-	resource := buffer_get(dev, handle)
+	handle := buffer_create(gfx_ctx, u32(len(data) * size_of(T)), usage)
+	resource := buffer_get(gfx_ctx, handle)
 	resource.length = u32(len(data))
 	resource._temporary_raw_data = slice.to_bytes(data)
 	return handle
@@ -29,52 +29,52 @@ buffer_create_from_bytes :: proc(
 // idle wait, so it is safe to call between frames without a retire queue.
 // The data is not on the GPU until the buffer goes through the Uploader.
 buffer_stage :: proc(
-	dev: ^Device,
+	gfx_ctx: ^Device,
 	handle: Buffer_Handle,
 	data: []$T,
 	usage: sdl.GPUBufferUsageFlag,
 ) -> Buffer_Handle {
 	size := u32(len(data) * size_of(T))
-	resource := buffer_get(dev, handle)
+	resource := buffer_get(gfx_ctx, handle)
 	if resource.size >= size && resource.usage == {usage} {
 		resource.length = u32(len(data))
 		resource._temporary_raw_data = slice.to_bytes(data)
 		return handle
 	}
-	ok := sdl.WaitForGPUIdle(dev.gpu)
+	ok := sdl.WaitForGPUIdle(gfx_ctx.gpu)
 	assert(ok)
-	buffer_destroy(dev, handle)
-	return buffer_create_from_bytes(dev, data, usage)
+	buffer_destroy(gfx_ctx, handle)
+	return buffer_create_from_bytes(gfx_ctx, data, usage)
 }
 
-buffer_create :: proc(dev: ^Device, size: u32, usage: sdl.GPUBufferUsageFlag) -> Buffer_Handle {
+buffer_create :: proc(gfx_ctx: ^Device, size: u32, usage: sdl.GPUBufferUsageFlag) -> Buffer_Handle {
 	resource := Buffer {
-		handle = sdl.CreateGPUBuffer(dev.gpu, {usage = {usage}, size = size}),
+		handle = sdl.CreateGPUBuffer(gfx_ctx.gpu, {usage = {usage}, size = size}),
 		size   = size,
 		usage  = {usage},
 	}
 	assert(resource.handle != nil)
-	handle := Buffer_Handle(handle_pool_acquire(&dev.buffer_handles))
+	handle := Buffer_Handle(handle_pool_acquire(&gfx_ctx.buffer_handles))
 	index := Resource_Handle(handle).index
-	if int(index) == len(dev.buffers) {
-		append(&dev.buffers, resource)
+	if int(index) == len(gfx_ctx.buffers) {
+		append(&gfx_ctx.buffers, resource)
 	} else {
-		dev.buffers[index] = resource
+		gfx_ctx.buffers[index] = resource
 	}
 	return handle
 }
 
-buffer_get :: proc(dev: ^Device, handle: Buffer_Handle) -> ^Buffer {
+buffer_get :: proc(gfx_ctx: ^Device, handle: Buffer_Handle) -> ^Buffer {
 	raw := Resource_Handle(handle)
-	assert(handle_pool_contains(&dev.buffer_handles, raw), "stale buffer handle")
-	return &dev.buffers[raw.index]
+	assert(handle_pool_contains(&gfx_ctx.buffer_handles, raw), "stale buffer handle")
+	return &gfx_ctx.buffers[raw.index]
 }
 
-buffer_destroy :: proc(dev: ^Device, handle: Buffer_Handle) {
+buffer_destroy :: proc(gfx_ctx: ^Device, handle: Buffer_Handle) {
 	raw := Resource_Handle(handle)
-	if !handle_pool_contains(&dev.buffer_handles, raw) do return
-	resource := &dev.buffers[raw.index]
-	if resource.handle != nil do sdl.ReleaseGPUBuffer(dev.gpu, resource.handle)
+	if !handle_pool_contains(&gfx_ctx.buffer_handles, raw) do return
+	resource := &gfx_ctx.buffers[raw.index]
+	if resource.handle != nil do sdl.ReleaseGPUBuffer(gfx_ctx.gpu, resource.handle)
 	resource^ = {}
-	assert(handle_pool_release(&dev.buffer_handles, raw))
+	assert(handle_pool_release(&gfx_ctx.buffer_handles, raw))
 }

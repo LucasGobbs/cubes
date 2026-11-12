@@ -40,14 +40,14 @@ Mesh :: struct {
 // Raw geometry seam: vertices/indices are user-built slices in whatever
 // layout the bound pipeline declares (packed voxel verts included).
 mesh_create :: proc(
-	dev: ^Device,
+	gfx_ctx: ^Device,
 	vertices: []$V,
 	indices: []$I,
 ) -> Mesh where size_of(I) == 2 ||
 	size_of(I) == 4 {
 	mesh := Mesh {
-		vertex_buffer = buffer_create_from_bytes(dev, vertices, .VERTEX),
-		index_buffer = buffer_create_from_bytes(dev, indices, .INDEX),
+		vertex_buffer = buffer_create_from_bytes(gfx_ctx, vertices, .VERTEX),
+		index_buffer = buffer_create_from_bytes(gfx_ctx, indices, .INDEX),
 		num_indices = u32(len(indices)),
 		num_vertices = u32(len(vertices)),
 		index_size = size_of(I) == 2 ? ._16BIT : ._32BIT,
@@ -56,9 +56,9 @@ mesh_create :: proc(
 	return mesh
 }
 
-mesh_create_unindexed :: proc(dev: ^Device, vertices: []$V) -> Mesh {
+mesh_create_unindexed :: proc(gfx_ctx: ^Device, vertices: []$V) -> Mesh {
 	mesh := Mesh {
-		vertex_buffer = buffer_create_from_bytes(dev, vertices, .VERTEX),
+		vertex_buffer = buffer_create_from_bytes(gfx_ctx, vertices, .VERTEX),
 		num_vertices = u32(len(vertices)),
 	}
 	mesh_set_bounds(&mesh, vertices)
@@ -95,8 +95,8 @@ mesh_update :: proc(
 ) where size_of(I) == 2 ||
 	size_of(I) == 4 {
 	assert(len(vertices) > 0 && len(indices) > 0)
-	mesh.vertex_buffer = buffer_stage(renderer.dev, mesh.vertex_buffer, vertices, .VERTEX)
-	mesh.index_buffer = buffer_stage(renderer.dev, mesh.index_buffer, indices, .INDEX)
+	mesh.vertex_buffer = buffer_stage(renderer.gfx_ctx, mesh.vertex_buffer, vertices, .VERTEX)
+	mesh.index_buffer = buffer_stage(renderer.gfx_ctx, mesh.index_buffer, indices, .INDEX)
 	mesh.num_vertices = u32(len(vertices))
 	mesh.num_indices = u32(len(indices))
 	mesh.index_size = size_of(I) == 2 ? ._16BIT : ._32BIT
@@ -106,7 +106,7 @@ mesh_update :: proc(
 
 mesh_update_unindexed :: proc(renderer: ^Renderer, mesh: ^Mesh, vertices: []$V) {
 	assert(len(vertices) > 0)
-	mesh.vertex_buffer = buffer_stage(renderer.dev, mesh.vertex_buffer, vertices, .VERTEX)
+	mesh.vertex_buffer = buffer_stage(renderer.gfx_ctx, mesh.vertex_buffer, vertices, .VERTEX)
 	mesh.num_vertices = u32(len(vertices))
 	mesh_set_bounds(mesh, vertices)
 	mesh_upload(renderer, mesh)
@@ -119,14 +119,14 @@ mesh_upload :: proc(renderer: ^Renderer, mesh: ^Mesh) {
 		uploader_upload_buffer(&renderer.uploader, mesh.index_buffer)
 	}
 	uploader_flush(&renderer.uploader)
-	buffer_get(renderer.dev, mesh.vertex_buffer)._temporary_raw_data = nil
+	buffer_get(renderer.gfx_ctx, mesh.vertex_buffer)._temporary_raw_data = nil
 	if Resource_Handle(mesh.index_buffer).generation != 0 {
-		buffer_get(renderer.dev, mesh.index_buffer)._temporary_raw_data = nil
+		buffer_get(renderer.gfx_ctx, mesh.index_buffer)._temporary_raw_data = nil
 	}
 }
 
-mesh_draw :: proc(dev: ^Device, mesh: ^Mesh, render_pass: ^sdl.GPURenderPass) {
-	vertex_buffer := buffer_get(dev, mesh.vertex_buffer)
+mesh_draw :: proc(gfx_ctx: ^Device, mesh: ^Mesh, render_pass: ^sdl.GPURenderPass) {
+	vertex_buffer := buffer_get(gfx_ctx, mesh.vertex_buffer)
 	sdl.BindGPUVertexBuffers(
 		render_pass,
 		0,
@@ -134,7 +134,7 @@ mesh_draw :: proc(dev: ^Device, mesh: ^Mesh, render_pass: ^sdl.GPURenderPass) {
 		1,
 	)
 	if Resource_Handle(mesh.index_buffer).generation != 0 {
-		index_buffer := buffer_get(dev, mesh.index_buffer)
+		index_buffer := buffer_get(gfx_ctx, mesh.index_buffer)
 		sdl.BindGPUIndexBuffer(render_pass, {buffer = index_buffer.handle}, mesh.index_size)
 		sdl.DrawGPUIndexedPrimitives(render_pass, mesh.num_indices, 1, 0, 0, 0)
 	} else {
@@ -143,13 +143,13 @@ mesh_draw :: proc(dev: ^Device, mesh: ^Mesh, render_pass: ^sdl.GPURenderPass) {
 }
 
 mesh_draw_instanced :: proc(
-	dev: ^Device,
+	gfx_ctx: ^Device,
 	mesh: ^Mesh,
 	render_pass: ^sdl.GPURenderPass,
 	instances: u32,
 	first_instance: u32,
 ) {
-	vertex_buffer := buffer_get(dev, mesh.vertex_buffer)
+	vertex_buffer := buffer_get(gfx_ctx, mesh.vertex_buffer)
 	sdl.BindGPUVertexBuffers(
 		render_pass,
 		0,
@@ -157,7 +157,7 @@ mesh_draw_instanced :: proc(
 		1,
 	)
 	if Resource_Handle(mesh.index_buffer).generation != 0 {
-		index_buffer := buffer_get(dev, mesh.index_buffer)
+		index_buffer := buffer_get(gfx_ctx, mesh.index_buffer)
 		sdl.BindGPUIndexBuffer(render_pass, {buffer = index_buffer.handle}, mesh.index_size)
 		sdl.DrawGPUIndexedPrimitives(
 			render_pass,
@@ -172,8 +172,8 @@ mesh_draw_instanced :: proc(
 	}
 }
 
-mesh_destroy :: proc(dev: ^Device, mesh: ^Mesh) {
-	buffer_destroy(dev, mesh.vertex_buffer)
-	buffer_destroy(dev, mesh.index_buffer)
+mesh_destroy :: proc(gfx_ctx: ^Device, mesh: ^Mesh) {
+	buffer_destroy(gfx_ctx, mesh.vertex_buffer)
+	buffer_destroy(gfx_ctx, mesh.index_buffer)
 	mesh^ = {}
 }

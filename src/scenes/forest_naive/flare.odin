@@ -37,7 +37,7 @@ FLARE_GHOSTS :: [FLARE_MAX_QUADS]struct {
 	{-1.3, 220, 0.15, {0.6, 0.7, 1.0}},
 }
 
-flare_create :: proc(dev: ^gfx.Device, flare: ^Flare) {
+flare_create :: proc(gfx_ctx: ^gfx.Device, flare: ^Flare) {
 	// Radial falloff, alpha only meaningful: white rgb with smooth alpha.
 	pixels := make([]u8, FLARE_TEXTURE_SIZE * FLARE_TEXTURE_SIZE * 4, context.temp_allocator)
 	for y in 0 ..< FLARE_TEXTURE_SIZE {
@@ -50,31 +50,31 @@ flare_create :: proc(dev: ^gfx.Device, flare: ^Flare) {
 			pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3] = 255, 255, 255, u8(alpha * 255)
 		}
 	}
-	flare.texture = gfx.texture_create(dev, FLARE_TEXTURE_SIZE, FLARE_TEXTURE_SIZE, .R8G8B8A8_UNORM, .SAMPLER)
-	gfx.texture_get(dev, flare.texture)._temporary_raw_data = pixels
-	uploader := &dev.renderer.uploader
+	flare.texture = gfx.texture_create(gfx_ctx, FLARE_TEXTURE_SIZE, FLARE_TEXTURE_SIZE, .R8G8B8A8_UNORM, .SAMPLER)
+	gfx.texture_get(gfx_ctx, flare.texture)._temporary_raw_data = pixels
+	uploader := &gfx_ctx.renderer.uploader
 	gfx.uploader_begin(uploader)
 	gfx.uploader_upload_texture(uploader, flare.texture)
 	gfx.uploader_flush_blocking(uploader)
-	gfx.texture_get(dev, flare.texture)._temporary_raw_data = nil
+	gfx.texture_get(gfx_ctx, flare.texture)._temporary_raw_data = nil
 
-	flare.sampler = gfx.sampler_create(dev, gfx.SAMPLER_LINEAR_CLAMP)
-	flare.pipeline = default.create_textured_overlay_pipeline(dev)
+	flare.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_LINEAR_CLAMP)
+	flare.pipeline = default.create_textured_overlay_pipeline(gfx_ctx)
 	flare.material = gfx.material_create(flare.pipeline)
 	default.bind_textured_material(&flare.material, flare.texture, flare.sampler)
 	dummy := [6]gfx.VertexData{}
-	flare.mesh = gfx.mesh_create_unindexed(dev, dummy[:])
-	gfx.mesh_upload(&dev.renderer, &flare.mesh)
-	gfx.renderer_set_passes(&dev.renderer, .After_Scene, []gfx.Render_Pass{{name = "flare", run = flare_draw, user = flare}})
+	flare.mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
+	gfx.mesh_upload(&gfx_ctx.renderer, &flare.mesh)
+	gfx.renderer_set_passes(&gfx_ctx.renderer, .After_Scene, []gfx.Render_Pass{{name = "flare", run = flare_draw, user = flare}})
 }
 
-flare_destroy :: proc(dev: ^gfx.Device, flare: ^Flare) {
-	gfx.renderer_clear_passes(&dev.renderer, .After_Scene)
-	gfx.mesh_destroy(dev, &flare.mesh)
+flare_destroy :: proc(gfx_ctx: ^gfx.Device, flare: ^Flare) {
+	gfx.renderer_clear_passes(&gfx_ctx.renderer, .After_Scene)
+	gfx.mesh_destroy(gfx_ctx, &flare.mesh)
 	gfx.material_destroy(&flare.material)
-	gfx.pipeline_destroy(dev, flare.pipeline)
-	gfx.sampler_destroy(dev, flare.sampler)
-	gfx.texture_destroy(dev, flare.texture)
+	gfx.pipeline_destroy(gfx_ctx, flare.pipeline)
+	gfx.sampler_destroy(gfx_ctx, flare.sampler)
+	gfx.texture_destroy(gfx_ctx, flare.texture)
 	delete(flare.vertices)
 }
 
@@ -89,10 +89,10 @@ flare_sun_blocked :: proc(origin, sun: [3]f32) -> bool {
 	return false
 }
 
-flare_update :: proc(dev: ^gfx.Device, flare: ^Flare, sun: [3]f32) {
+flare_update :: proc(gfx_ctx: ^gfx.Device, flare: ^Flare, sun: [3]f32) {
 	clear(&flare.vertices)
 	flare.draw = false
-	camera := gfx.camera(dev)
+	camera := gfx.camera(gfx_ctx)
 	clip := gfx.camera_view_projection(camera) * [4]f32{camera.position.x + sun.x * 1000, camera.position.y + sun.y * 1000, camera.position.z + sun.z * 1000, 1}
 	if clip.w > 0 && !flare_sun_blocked(camera.position, sun) {
 		ndc := clip.xy / clip.w
@@ -101,8 +101,8 @@ flare_update :: proc(dev: ^gfx.Device, flare: ^Flare, sun: [3]f32) {
 		fade := 1 - math.smoothstep(f32(0.7), f32(1.3), edge)
 		if fade > 0 {
 			flare.draw = true
-			scale := f32(dev.window_size.y) / 720
-			size := [2]f32{f32(dev.window_size.x), f32(dev.window_size.y)}
+			scale := f32(gfx_ctx.window_size.y) / 720
+			size := [2]f32{f32(gfx_ctx.window_size.x), f32(gfx_ctx.window_size.y)}
 			for ghost in FLARE_GHOSTS {
 				center := ndc * ghost.axis
 				half := [2]f32{ghost.size * scale / size.x, ghost.size * scale / size.y} // ndc half extent = size/2 * 2/dim
@@ -121,7 +121,7 @@ flare_update :: proc(dev: ^gfx.Device, flare: ^Flare, sun: [3]f32) {
 					gfx.VertexData{position = p3, color = color, uv = {0, 1}},
 				)
 			}
-			gfx.mesh_update_unindexed(&dev.renderer, &flare.mesh, flare.vertices[:])
+			gfx.mesh_update_unindexed(&gfx_ctx.renderer, &flare.mesh, flare.vertices[:])
 		}
 	}
 }
@@ -129,23 +129,23 @@ flare_update :: proc(dev: ^gfx.Device, flare: ^Flare, sun: [3]f32) {
 flare_draw :: proc(ctx: ^gfx.Pass_Ctx, user: rawptr) {
 	flare := cast(^Flare)user
 	if !flare.draw do return
-	dev := ctx.dev
+	gfx_ctx := ctx.gfx_ctx
 	gfx.renderer_begin_overlay_pass(ctx.renderer, ctx.color)
 	pass := ctx.renderer.pass
-	pipeline := gfx.pipeline_get(dev, flare.pipeline)
+	pipeline := gfx.pipeline_get(gfx_ctx, flare.pipeline)
 	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-	gfx.pipeline_bind_material(dev, pass, dev.command_buffer, &flare.material)
+	gfx.pipeline_bind_material(gfx_ctx, pass, gfx_ctx.command_buffer, &flare.material)
 	gfx.pipeline_bind_draw(
-		dev,
+		gfx_ctx,
 		flare.pipeline,
-		dev.command_buffer,
+		gfx_ctx.command_buffer,
 		{
 			view_projection = linalg.MATRIX4F32_IDENTITY,
 			model_transform = linalg.MATRIX4F32_IDENTITY,
 			material = &flare.material,
 		},
 	)
-	vertex_buffer := gfx.buffer_get(dev, flare.mesh.vertex_buffer)
+	vertex_buffer := gfx.buffer_get(gfx_ctx, flare.mesh.vertex_buffer)
 	sdl.BindGPUVertexBuffers(pass, 0, &(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}), 1)
 	sdl.DrawGPUPrimitives(pass, u32(len(flare.vertices)), 1, 0, 0)
 	gfx.renderer_end_pass(ctx.renderer)

@@ -29,22 +29,22 @@ Transition :: struct {
 transition: Transition
 
 // Call before stats_create so the overlay draws under the stats panel.
-transition_create :: proc(dev: ^gfx.Device) {
+transition_create :: proc(gfx_ctx: ^gfx.Device) {
 	dummy := [6]gfx.VertexData{}
-	transition.mesh = gfx.mesh_create_unindexed(dev, dummy[:])
-	gfx.mesh_upload(&dev.renderer, &transition.mesh)
-	gfx.renderer_add_pass(&dev.renderer, .After_Post, {name = "transition", run = transition_draw})
+	transition.mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
+	gfx.mesh_upload(&gfx_ctx.renderer, &transition.mesh)
+	gfx.renderer_add_pass(&gfx_ctx.renderer, .After_Post, {name = "transition", run = transition_draw})
 }
 
 // Passes are cleared by stats_destroy.
-transition_destroy :: proc(dev: ^gfx.Device) {
-	gfx.mesh_destroy(dev, &transition.mesh)
+transition_destroy :: proc(gfx_ctx: ^gfx.Device) {
+	gfx.mesh_destroy(gfx_ctx, &transition.mesh)
 }
 
 // Runs at the top of a tick. Returns true when it swapped the scene (the caller
 // must skip ticking the old one).
 transition_tick :: proc(ctx: ^Context, scene: ^Scene, delta_time: f32) -> bool {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	transition.draw = false
 	if transition.phase == .None {
 		request, ok := take_scene_request()
@@ -65,7 +65,7 @@ transition_tick :: proc(ctx: ^Context, scene: ^Scene, delta_time: f32) -> bool {
 			host_scene_switch(ctx, scene, index)
 			request.duration = 0.5 if request.transition == .Flash else 0.2
 			transition.request, transition.target, transition.elapsed, transition.phase = request, index, 0, .In
-			transition_build(dev, 0)
+			transition_build(gfx_ctx, 0)
 			return true
 		}
 		transition.request, transition.target, transition.elapsed, transition.phase = request, index, 0, .Out
@@ -83,7 +83,7 @@ transition_tick :: proc(ctx: ^Context, scene: ^Scene, delta_time: f32) -> bool {
 		transition.phase = .None
 		return false
 	}
-	transition_build(dev, progress)
+	transition_build(gfx_ctx, progress)
 	return swapped
 }
 
@@ -108,12 +108,12 @@ transition_polygon :: proc(sides: int, r, aspect, rotation: f32, color: [4]f32) 
 	}
 }
 
-transition_build :: proc(dev: ^gfx.Device, progress: f32) {
+transition_build :: proc(gfx_ctx: ^gfx.Device, progress: f32) {
 	out := transition.phase == .Out
 	// cover: 0 = nothing, 1 = whole screen, in both phases.
 	cover := progress if out else 1 - progress
 	color := [4]f32{0, 0, 0, 1}
-	aspect := f32(dev.window_size.x) / f32(dev.window_size.y)
+	aspect := f32(gfx_ctx.window_size.x) / f32(gfx_ctx.window_size.y)
 	clear(&transition.vertices)
 	switch transition.request.transition {
 	case .Cut:
@@ -154,30 +154,30 @@ transition_build :: proc(dev: ^gfx.Device, progress: f32) {
 		transition.draw = false
 		return
 	}
-	gfx.mesh_update_unindexed(&dev.renderer, &transition.mesh, transition.vertices[:])
+	gfx.mesh_update_unindexed(&gfx_ctx.renderer, &transition.mesh, transition.vertices[:])
 	transition.draw = true
 }
 
 transition_draw :: proc(ctx: ^gfx.Pass_Ctx, _: rawptr) {
 	if !transition.draw do return
-	dev := ctx.dev
+	gfx_ctx := ctx.gfx_ctx
 	gfx.renderer_begin_overlay_pass(ctx.renderer, ctx.color)
 	pass := ctx.renderer.pass
 	target := 0 if ctx.color == ctx.renderer.scene_color else 1 // pipeline format must match the target
-	pipeline := gfx.pipeline_get(dev, stats.pipelines[target])
+	pipeline := gfx.pipeline_get(gfx_ctx, stats.pipelines[target])
 	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-	gfx.pipeline_bind_material(dev, pass, dev.command_buffer, &stats.materials[target])
+	gfx.pipeline_bind_material(gfx_ctx, pass, gfx_ctx.command_buffer, &stats.materials[target])
 	gfx.pipeline_bind_draw(
-		dev,
+		gfx_ctx,
 		stats.pipelines[target],
-		dev.command_buffer,
+		gfx_ctx.command_buffer,
 		{
 			view_projection = linalg.MATRIX4F32_IDENTITY,
 			model_transform = linalg.MATRIX4F32_IDENTITY,
 			material = &stats.materials[target],
 		},
 	)
-	vertex_buffer := gfx.buffer_get(dev, transition.mesh.vertex_buffer)
+	vertex_buffer := gfx.buffer_get(gfx_ctx, transition.mesh.vertex_buffer)
 	sdl.BindGPUVertexBuffers(pass, 0, &(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}), 1)
 	sdl.DrawGPUPrimitives(pass, u32(len(transition.vertices)), 1, 0, 0)
 	gfx.renderer_end_pass(ctx.renderer)

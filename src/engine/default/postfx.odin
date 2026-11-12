@@ -33,9 +33,9 @@ Blur :: struct {
 	radius:   i32,
 }
 
-blur_create :: proc(dev: ^gfx.Device, radius: i32 = 4) -> Blur {
+blur_create :: proc(gfx_ctx: ^gfx.Device, radius: i32 = 4) -> Blur {
 	return Blur {
-		pipeline = gfx.compute_pipeline_create(dev, default_postfx_blur_compute()),
+		pipeline = gfx.compute_pipeline_create(gfx_ctx, default_postfx_blur_compute()),
 		radius = min(max(radius, 1), BLUR_MAX_RADIUS),
 	}
 }
@@ -72,15 +72,15 @@ Bloom :: struct {
 }
 
 bloom_create :: proc(
-	dev: ^gfx.Device,
+	gfx_ctx: ^gfx.Device,
 	threshold := f32(0.8),
 	intensity := f32(0.6),
 	radius := i32(6),
 ) -> Bloom {
 	return Bloom {
-		prefilter = gfx.compute_pipeline_create(dev, default_postfx_bloom_prefilter_compute()),
-		blur = gfx.compute_pipeline_create(dev, default_postfx_blur_compute()),
-		composite = gfx.compute_pipeline_create(dev, default_postfx_bloom_composite_compute()),
+		prefilter = gfx.compute_pipeline_create(gfx_ctx, default_postfx_bloom_prefilter_compute()),
+		blur = gfx.compute_pipeline_create(gfx_ctx, default_postfx_blur_compute()),
+		composite = gfx.compute_pipeline_create(gfx_ctx, default_postfx_bloom_composite_compute()),
 		threshold = threshold,
 		knee = 0.5 * threshold,
 		intensity = intensity,

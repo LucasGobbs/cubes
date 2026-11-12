@@ -78,15 +78,15 @@ forest_instanced_scene :: proc() -> engine.Scene {
 }
 
 forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	state := new(Forest_State)
 	demo.state = state
-	engine.scene_camera_reset(demo, dev, {0, naive.terrain_height(0, 0) + 2.5, 0}, {0, naive.terrain_height(0, -10) + 2, -10})
-	state.fly_camera = default.fly_camera_create(dev, &ctx.input, "forest_instanced")
+	engine.scene_camera_reset(demo, gfx_ctx, {0, naive.terrain_height(0, 0) + 2.5, 0}, {0, naive.terrain_height(0, -10) + 2, -10})
+	state.fly_camera = default.fly_camera_create(gfx_ctx, &ctx.input, "forest_instanced")
 
 	attributes := shader_parameters.forest_instanced_vertex_attributes(gfx.VertexData)
 	state.pipeline = gfx.pipeline_create(
-		dev,
+		gfx_ctx,
 		{
 			vertex = shader_parameters.forest_instanced_vertex(),
 			fragment = shader_parameters.forest_instanced_fragment(),
@@ -104,23 +104,23 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 
 	state.variant_data = variants_build()
 	for &data, index in state.variant_data {
-		state.variant_mesh[index] = gfx.mesh_create(dev, data.verts[:], data.idx[:])
-		gfx.mesh_upload(&dev.renderer, &state.variant_mesh[index])
+		state.variant_mesh[index] = gfx.mesh_create(gfx_ctx, data.verts[:], data.idx[:])
+		gfx.mesh_upload(&gfx_ctx.renderer, &state.variant_mesh[index])
 	}
 	state.tuft_data = tufts_build()
 	for &data, index in state.tuft_data {
-		state.tuft_mesh[index] = gfx.mesh_create(dev, data.verts[:], data.idx[:])
-		gfx.mesh_upload(&dev.renderer, &state.tuft_mesh[index])
+		state.tuft_mesh[index] = gfx.mesh_create(gfx_ctx, data.verts[:], data.idx[:])
+		gfx.mesh_upload(&gfx_ctx.renderer, &state.tuft_mesh[index])
 	}
 
-	state.skybox = default.skybox_create(dev, default.SKYBOX_PATH)
+	state.skybox = default.skybox_create(gfx_ctx, default.SKYBOX_PATH)
 	append(&state.draws, default.skybox_draw(&state.skybox))
 
-	state.bloom = default.bloom_create(dev, 0.95, 0.2, 5)
-	gfx.renderer_set_passes(&dev.renderer, .Post, []gfx.Render_Pass{default.bloom_pass(&state.bloom)})
-	naive.flare_create(dev, &state.flare)
+	state.bloom = default.bloom_create(gfx_ctx, 0.95, 0.2, 5)
+	gfx.renderer_set_passes(&gfx_ctx.renderer, .Post, []gfx.Render_Pass{default.bloom_pass(&state.bloom)})
+	naive.flare_create(gfx_ctx, &state.flare)
 
-	forest_stream(state, dev, 1 << 20, START_RADIUS)
+	forest_stream(state, gfx_ctx, 1 << 20, START_RADIUS)
 	return true
 }
 
@@ -144,15 +144,15 @@ forest_bind_draw :: proc(
 }
 
 forest_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	state := cast(^Forest_State)demo.state
-	default.fly_camera_tick(&state.fly_camera, dev, &ctx.input, delta_time)
+	default.fly_camera_tick(&state.fly_camera, gfx_ctx, &ctx.input, delta_time)
 	state.time += delta_time
 	fog := naive.FOG_COLOR
-	dev.renderer.fog = {fog.r, fog.g, fog.b, FOG_DISTANCE}
-	forest_stream(state, dev, BUILD_BUDGET, BUILD_RADIUS)
-	naive.flare_update(dev, &state.flare, naive.SUN_DIRECTION)
-	gfx.render(dev, state.draws[:])
+	gfx_ctx.renderer.fog = {fog.r, fog.g, fog.b, FOG_DISTANCE}
+	forest_stream(state, gfx_ctx, BUILD_BUDGET, BUILD_RADIUS)
+	naive.flare_update(gfx_ctx, &state.flare, naive.SUN_DIRECTION)
+	gfx.render(gfx_ctx, state.draws[:])
 }
 
 // Distance from the camera to a cluster centre; span in chunks, (i, j) cluster index.
@@ -167,9 +167,9 @@ cluster_distance :: proc(camera: [3]f32, i, j, span: int) -> (distance, ox, oz: 
 // `budget` counts work units per call (a terrain cluster is TERRAIN_COST).
 // shortcut: built clusters are never freed (tree draws included); add
 // eviction with a GPU idle wait if memory matters.
-forest_stream :: proc(state: ^Forest_State, dev: ^gfx.Device, budget: int, radius: f32) {
+forest_stream :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, budget: int, radius: f32) {
 	budget := budget
-	camera := gfx.camera(dev).position
+	camera := gfx.camera(gfx_ctx).position
 	extra := f32(TERRAIN_SPAN) * CHUNK_SIZE * 0.7 // cluster centre -> far corner
 	for index in 0 ..< len(state.terrain) {
 		i, j := index % TERRAIN_SIDE, index / TERRAIN_SIDE
@@ -177,7 +177,7 @@ forest_stream :: proc(state: ^Forest_State, dev: ^gfx.Device, budget: int, radiu
 		cluster := &state.terrain[index]
 		if cluster.built || distance > radius + extra || budget < TERRAIN_COST do continue
 		budget -= TERRAIN_COST
-		forest_build_terrain(state, dev, cluster, i, j, ox, oz)
+		forest_build_terrain(state, gfx_ctx, cluster, i, j, ox, oz)
 	}
 
 	extra = f32(GRASS_SPAN) * CHUNK_SIZE * 0.7
@@ -200,7 +200,7 @@ forest_stream :: proc(state: ^Forest_State, dev: ^gfx.Device, budget: int, radiu
 	}
 }
 
-forest_build_terrain :: proc(state: ^Forest_State, dev: ^gfx.Device, cluster: ^Terrain_Cluster, i, j: int, ox, oz: f32) {
+forest_build_terrain :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster: ^Terrain_Cluster, i, j: int, ox, oz: f32) {
 	clear(&state.placements)
 	for dz in 0 ..< TERRAIN_SPAN {
 		for dx in 0 ..< TERRAIN_SPAN {
@@ -209,7 +209,7 @@ forest_build_terrain :: proc(state: ^Forest_State, dev: ^gfx.Device, cluster: ^T
 			placements_chunk(cx, cz, &state.placements)
 		}
 	}
-	cluster.mesh = forest_upload(dev, &cluster.data, ox, oz)
+	cluster.mesh = forest_upload(gfx_ctx, &cluster.data, ox, oz)
 	cluster.built = true
 
 	append(&state.draws, gfx.draw_make(&cluster.mesh, &state.material, {ox, 0, oz}))
@@ -257,7 +257,7 @@ grass_apply_lod :: proc(state: ^Forest_State, cluster: ^Grass_Cluster, want: int
 // Moves world-space vertices to cluster-local x/z (so the mesh bound sits near
 // the entity) and uploads. SDL rejects 0-byte buffers, so an empty cluster gets
 // one degenerate (invisible) triangle.
-forest_upload :: proc(dev: ^gfx.Device, data: ^Mesh_Data, ox, oz: f32) -> gfx.Mesh {
+forest_upload :: proc(gfx_ctx: ^gfx.Device, data: ^Mesh_Data, ox, oz: f32) -> gfx.Mesh {
 	if len(data.verts) == 0 {
 		resize(&data.verts, 3)
 		resize(&data.idx, 3)
@@ -266,37 +266,37 @@ forest_upload :: proc(dev: ^gfx.Device, data: ^Mesh_Data, ox, oz: f32) -> gfx.Me
 		vertex.position.x -= ox
 		vertex.position.z -= oz
 	}
-	mesh := gfx.mesh_create(dev, data.verts[:], data.idx[:])
-	gfx.mesh_upload(&dev.renderer, &mesh)
+	mesh := gfx.mesh_create(gfx_ctx, data.verts[:], data.idx[:])
+	gfx.mesh_upload(&gfx_ctx.renderer, &mesh)
 	return mesh
 }
 
 forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	state := cast(^Forest_State)demo.state
-	gfx.renderer_clear_passes(&dev.renderer, .Post)
-	naive.flare_destroy(dev, &state.flare)
+	gfx.renderer_clear_passes(&gfx_ctx.renderer, .Post)
+	naive.flare_destroy(gfx_ctx, &state.flare)
 	delete(state.draws)
-	default.skybox_destroy(dev, &state.skybox)
+	default.skybox_destroy(gfx_ctx, &state.skybox)
 	for &cluster in state.terrain {
-		if cluster.built do gfx.mesh_destroy(dev, &cluster.mesh)
+		if cluster.built do gfx.mesh_destroy(gfx_ctx, &cluster.mesh)
 		delete(cluster.data.verts)
 		delete(cluster.data.idx)
 	}
 	for &cluster in state.grass do delete(cluster.items)
 	for index in 0 ..< VARIANT_COUNT {
-		gfx.mesh_destroy(dev, &state.variant_mesh[index])
+		gfx.mesh_destroy(gfx_ctx, &state.variant_mesh[index])
 		delete(state.variant_data[index].verts)
 		delete(state.variant_data[index].idx)
 	}
 	delete(state.placements)
 	delete(state.grass_scratch)
 	for index in 0 ..< TUFT_COUNT {
-		gfx.mesh_destroy(dev, &state.tuft_mesh[index])
+		gfx.mesh_destroy(gfx_ctx, &state.tuft_mesh[index])
 		delete(state.tuft_data[index].verts)
 		delete(state.tuft_data[index].idx)
 	}
 	gfx.material_destroy(&state.material)
-	gfx.pipeline_destroy(dev, state.pipeline)
+	gfx.pipeline_destroy(gfx_ctx, state.pipeline)
 	free(state)
 }

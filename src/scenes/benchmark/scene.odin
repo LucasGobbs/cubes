@@ -115,16 +115,16 @@ benchmark_scene :: proc() -> engine.Scene {
 }
 
 benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	state := new(Benchmark_State)
 	state.fog_on = true // haze by default so boats and dragons share the sea's horizon blend
 	demo.state = state
-	engine.scene_camera_reset(demo, dev, {0, 8, 20})
+	engine.scene_camera_reset(demo, gfx_ctx, {0, 8, 20})
 	// Uncapped: the point of this scene is measuring real frame cost.
-	gfx.set_present_mode(dev, .IMMEDIATE)
+	gfx.set_present_mode(gfx_ctx, .IMMEDIATE)
 
 	inputs := &ctx.input
-	state.fly_camera = default.fly_camera_create(dev, &ctx.input, "benchmark")
+	state.fly_camera = default.fly_camera_create(gfx_ctx, &ctx.input, "benchmark")
 	state.add_action = input.button(inputs, "benchmark.add")
 	state.subtract_action = input.button(inputs, "benchmark.subtract")
 	input.bind_key(inputs, state.add_action, .EQUALS)
@@ -132,18 +132,18 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.fog_action = input.button(inputs, "benchmark.fog")
 	input.bind_key(inputs, state.fog_action, .V)
 
-	state.pipeline = default.create_textured_instanced_pipeline(dev)
-	state.sampler = gfx.sampler_create(dev, gfx.SAMPLER_TRILINEAR)
+	state.pipeline = default.create_textured_instanced_pipeline(gfx_ctx)
+	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 	boat_paths := BOAT_PATHS
 	for path, index in boat_paths {
-		state.models[index] = gfx.model_load(dev, {model_path = path, pipeline = state.pipeline})
+		state.models[index] = gfx.model_load(gfx_ctx, {model_path = path, pipeline = state.pipeline})
 		default.bind_textured_instanced_material(
 			&state.models[index].material,
 			gfx.model_texture(&state.models[index]),
 			state.sampler,
 		)
 	}
-	state.dragon = gfx.model_load(dev, {model_path = DRAGON_PATH, pipeline = state.pipeline})
+	state.dragon = gfx.model_load(gfx_ctx, {model_path = DRAGON_PATH, pipeline = state.pipeline})
 	default.bind_textured_instanced_material(
 		&state.dragon.material,
 		gfx.model_texture(&state.dragon),
@@ -151,20 +151,20 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	)
 
 	// On-screen text: font atlas + blended depth-less overlay pipeline.
-	font, font_ok := gfx.font_create(dev, "static/fonts/andale-mono.ttf")
+	font, font_ok := gfx.font_create(gfx_ctx, "static/fonts/andale-mono.ttf")
 	assert(font_ok)
 	state.font = font
-	state.overlay_pipeline = default.create_textured_overlay_pipeline(dev)
+	state.overlay_pipeline = default.create_textured_overlay_pipeline(gfx_ctx)
 	state.overlay_material = gfx.material_create(state.overlay_pipeline)
 	default.bind_textured_material(&state.overlay_material, state.font.texture, state.sampler)
 	dummy := [6]gfx.VertexData{}
-	state.text_mesh = gfx.mesh_create_unindexed(dev, dummy[:])
-	gfx.mesh_upload(&dev.renderer, &state.text_mesh)
+	state.text_mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
+	gfx.mesh_upload(&gfx_ctx.renderer, &state.text_mesh)
 
-	state.skybox = default.skybox_create(dev, default.SKYBOX_PATH)
-	state.sea_pipeline = sea_pipeline_create(dev, state)
+	state.skybox = default.skybox_create(gfx_ctx, default.SKYBOX_PATH)
+	state.sea_pipeline = sea_pipeline_create(gfx_ctx, state)
 	state.sea_material = gfx.material_create(state.sea_pipeline)
-	state.sea_mesh = sea_mesh_create(dev)
+	state.sea_mesh = sea_mesh_create(gfx_ctx)
 
 	rand.reset(1) // fixed layout: every run draws the same fleet, so results compare
 	benchmark_populate(state, 150)
@@ -220,7 +220,7 @@ bench_to_ndc :: proc(x, y, width, height: f32) -> [3]f32 {
 
 benchmark_push_text :: proc(
 	state: ^Benchmark_State,
-	dev: ^gfx.Device,
+	gfx_ctx: ^gfx.Device,
 	text: string,
 	x, top: f32,
 	color: [4]f32,
@@ -230,8 +230,8 @@ benchmark_push_text :: proc(
 	quads: [dynamic]gfx.Font_Quad
 	defer delete(quads)
 	gfx.font_layout(&state.font, text, &cursor_x, &cursor_y, &quads)
-	width := f32(dev.window_size.x)
-	height := f32(dev.window_size.y)
+	width := f32(gfx_ctx.window_size.x)
+	height := f32(gfx_ctx.window_size.y)
 	for quad in quads {
 		p0 := bench_to_ndc(quad.x0, quad.y0, width, height)
 		p1 := bench_to_ndc(quad.x1, quad.y0, width, height)
@@ -253,7 +253,7 @@ benchmark_push_text :: proc(
 	}
 }
 
-sea_mesh_create :: proc(dev: ^gfx.Device) -> gfx.Mesh {
+sea_mesh_create :: proc(gfx_ctx: ^gfx.Device) -> gfx.Mesh {
 	n :: SEA_CELLS + 1
 	cell :: f32(2 * SEA_HALF) / SEA_CELLS
 	vertices := make([dynamic]gfx.VertexData, 0, n * n, context.temp_allocator)
@@ -271,15 +271,15 @@ sea_mesh_create :: proc(dev: ^gfx.Device) -> gfx.Mesh {
 			append(&indices, i, i + stride, i + 1, i + 1, i + stride, i + stride + 1)
 		}
 	}
-	mesh := gfx.mesh_create(dev, vertices[:], indices[:])
-	gfx.mesh_upload(&dev.renderer, &mesh)
+	mesh := gfx.mesh_create(gfx_ctx, vertices[:], indices[:])
+	gfx.mesh_upload(&gfx_ctx.renderer, &mesh)
 	return mesh
 }
 
-sea_pipeline_create :: proc(dev: ^gfx.Device, state: ^Benchmark_State) -> gfx.Pipeline_Handle {
+sea_pipeline_create :: proc(gfx_ctx: ^gfx.Device, state: ^Benchmark_State) -> gfx.Pipeline_Handle {
 	attributes := shader_parameters.sea_vertex_attributes(gfx.VertexData)
 	return gfx.pipeline_create(
-		dev,
+		gfx_ctx,
 		{
 			vertex = shader_parameters.sea_vertex(),
 			fragment = shader_parameters.sea_fragment(),
@@ -315,7 +315,7 @@ sea_bind_draw :: proc(
 }
 
 benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	state := cast(^Benchmark_State)demo.state
 
 	inputs := &ctx.input
@@ -329,11 +329,11 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 		state.fog_on = !state.fog_on
 	}
 	fog_rgb := gfx.color_srgb_to_linear({0.671, 0.757, 0.949, 1}) // skybox horizon; matches `sky` in sea.slang
-	dev.renderer.fog = state.fog_on ? {fog_rgb.r, fog_rgb.g, fog_rgb.b, FOG_VIEW_DISTANCE} : [4]f32{}
+	gfx_ctx.renderer.fog = state.fog_on ? {fog_rgb.r, fog_rgb.g, fog_rgb.b, FOG_VIEW_DISTANCE} : [4]f32{}
 
-	default.fly_camera_tick(&state.fly_camera, dev, &ctx.input, delta_time)
+	default.fly_camera_tick(&state.fly_camera, gfx_ctx, &ctx.input, delta_time)
 	state.sea_time += delta_time
-	camera := dev.renderer.camera.position
+	camera := gfx_ctx.renderer.camera.position
 	for boat in state.boats {
 		flat := gfx.Vec3{boat.x, SEA_Y, boat.z}
 		h, grad := sea_surface_height(flat.xz, state.sea_time, linalg.distance(camera, flat))
@@ -355,7 +355,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 	state.hud_frames += 1
 	if state.hud_time >= 1 || (state.hud_fps == 0 && state.hud_time > 0) {
 		state.hud_fps = f32(state.hud_frames) / state.hud_time
-		state.hud_draws = dev.renderer.draw_calls
+		state.hud_draws = gfx_ctx.renderer.draw_calls
 		state.hud_time, state.hud_frames = 0, 0
 	}
 
@@ -364,7 +364,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 	fps_buffer: [32]byte
 	benchmark_push_text(
 		state,
-		dev,
+		gfx_ctx,
 		fmt.bprintf(fps_buffer[:], "%.0f FPS", state.hud_fps),
 		10,
 		10,
@@ -373,7 +373,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 	count_buffer: [32]byte
 	benchmark_push_text(
 		state,
-		dev,
+		gfx_ctx,
 		fmt.bprintf(count_buffer[:], "objects: %d", state.per_model * BOAT_COUNT + DRAGON_COUNT),
 		10,
 		30,
@@ -382,7 +382,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 	draws_buffer: [32]byte
 	benchmark_push_text(
 		state,
-		dev,
+		gfx_ctx,
 		fmt.bprintf(draws_buffer[:], "draws: %d", state.hud_draws),
 		10,
 		50,
@@ -390,7 +390,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 	)
 	benchmark_push_text(
 		state,
-		dev,
+		gfx_ctx,
 		state.fog_on ? "fog + view distance on (V)" : "fog + view distance off (V)",
 		10,
 		90,
@@ -398,35 +398,35 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 	)
 	benchmark_push_text(
 		state,
-		dev,
+		gfx_ctx,
 		"=/- objects  wasd move  shift fast  c smooth cam",
 		10,
 		70,
 		gfx.color_srgb_to_linear({0.8, 0.8, 0.8, 1}),
 	)
-	gfx.mesh_update_unindexed(&dev.renderer, &state.text_mesh, state.text_vertices[:])
+	gfx.mesh_update_unindexed(&gfx_ctx.renderer, &state.text_mesh, state.text_vertices[:])
 
 	// Frame flow: scene -> offscreen, text into the offscreen, blit out.
-	gfx.renderer_begin_frame(&dev.renderer)
-	gfx.renderer_render_draws(&dev.renderer, state.draws[:])
-	if dev.swapchain != nil {
-		renderer := &dev.renderer
+	gfx.renderer_begin_frame(&gfx_ctx.renderer)
+	gfx.renderer_render_draws(&gfx_ctx.renderer, state.draws[:])
+	if gfx_ctx.swapchain != nil {
+		renderer := &gfx_ctx.renderer
 		gfx.renderer_begin_overlay_pass(renderer, renderer.scene_color)
 		pass := renderer.pass
-		pipeline := gfx.pipeline_get(dev, state.overlay_pipeline)
+		pipeline := gfx.pipeline_get(gfx_ctx, state.overlay_pipeline)
 		sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-		gfx.pipeline_bind_material(dev, pass, dev.command_buffer, &state.overlay_material)
+		gfx.pipeline_bind_material(gfx_ctx, pass, gfx_ctx.command_buffer, &state.overlay_material)
 		gfx.pipeline_bind_draw(
-			dev,
+			gfx_ctx,
 			state.overlay_pipeline,
-			dev.command_buffer,
+			gfx_ctx.command_buffer,
 			{
 				view_projection = linalg.MATRIX4F32_IDENTITY,
 				model_transform = linalg.MATRIX4F32_IDENTITY,
 				material = &state.overlay_material,
 			},
 		)
-		vertex_buffer := gfx.buffer_get(dev, state.text_mesh.vertex_buffer)
+		vertex_buffer := gfx.buffer_get(gfx_ctx, state.text_mesh.vertex_buffer)
 		sdl.BindGPUVertexBuffers(
 			pass,
 			0,
@@ -437,25 +437,25 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 		gfx.renderer_end_pass(renderer)
 		gfx.renderer_present(renderer, gfx.renderer_run_post(renderer)) // run_post: global overlays (F1 stats)
 	}
-	gfx.end_frame(dev)
+	gfx.end_frame(gfx_ctx)
 }
 
 benchmark_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	state := cast(^Benchmark_State)demo.state
 	delete(state.draws)
-	default.skybox_destroy(dev, &state.skybox)
-	gfx.mesh_destroy(dev, &state.sea_mesh)
+	default.skybox_destroy(gfx_ctx, &state.skybox)
+	gfx.mesh_destroy(gfx_ctx, &state.sea_mesh)
 	gfx.material_destroy(&state.sea_material)
-	gfx.pipeline_destroy(dev, state.sea_pipeline)
+	gfx.pipeline_destroy(gfx_ctx, state.sea_pipeline)
 	delete(state.text_vertices)
-	gfx.mesh_destroy(dev, &state.text_mesh)
+	gfx.mesh_destroy(gfx_ctx, &state.text_mesh)
 	gfx.material_destroy(&state.overlay_material)
-	gfx.pipeline_destroy(dev, state.overlay_pipeline)
-	gfx.font_destroy(dev, &state.font)
-	for &model in state.models do gfx.model_unload(dev, &model)
-	gfx.model_unload(dev, &state.dragon)
-	gfx.sampler_destroy(dev, state.sampler)
-	gfx.pipeline_destroy(dev, state.pipeline)
+	gfx.pipeline_destroy(gfx_ctx, state.overlay_pipeline)
+	gfx.font_destroy(gfx_ctx, &state.font)
+	for &model in state.models do gfx.model_unload(gfx_ctx, &model)
+	gfx.model_unload(gfx_ctx, &state.dragon)
+	gfx.sampler_destroy(gfx_ctx, state.sampler)
+	gfx.pipeline_destroy(gfx_ctx, state.pipeline)
 	free(state)
 }

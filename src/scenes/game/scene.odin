@@ -29,10 +29,10 @@ game_scene :: proc() -> engine.Scene {
 }
 
 game_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	state := new(Game_State)
 	demo.state = state
-	engine.scene_camera_reset(demo, dev) // restores full-window targets after the editor shrinks them
+	engine.scene_camera_reset(demo, gfx_ctx) // restores full-window targets after the editor shrinks them
 
 	inputs := &ctx.input
 	state.keys = {
@@ -46,7 +46,7 @@ game_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	input.bind_key(inputs, state.keys[2], .A)
 	input.bind_key(inputs, state.keys[3], .D)
 
-	state.world = engine.world_create(dev)
+	state.world = engine.world_create(gfx_ctx)
 	// Player first: its slot ticks before enemies, so enemies chase this frame's position.
 	state.player_type = engine.register_type(
 		&state.world,

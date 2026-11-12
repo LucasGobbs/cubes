@@ -45,30 +45,30 @@ ed_event_hook :: proc(event: ^sdl.Event, user_data: rawptr) {
 }
 
 ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	state := new(Editor_State)
 	demo.state = state
-	engine.scene_camera_reset(demo, dev)
+	engine.scene_camera_reset(demo, gfx_ctx)
 
-	state.fly_camera = default.fly_camera_create(dev, &ctx.input, "editor")
+	state.fly_camera = default.fly_camera_create(gfx_ctx, &ctx.input, "editor")
 
-	state.textured_pipeline = default.create_textured_pipeline(dev)
-	state.unlit_pipeline = default.create_unlit_pipeline(dev)
-	state.sampler = gfx.sampler_create(dev, gfx.SAMPLER_TRILINEAR)
+	state.textured_pipeline = default.create_textured_pipeline(gfx_ctx)
+	state.unlit_pipeline = default.create_unlit_pipeline(gfx_ctx)
+	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 
 	state.textured_model = default.load_textured_model(
-		dev,
+		gfx_ctx,
 		"static/models/sea/ship-large.glb",
 		state.textured_pipeline,
 		state.sampler,
 	)
 	state.unlit_model = gfx.model_load(
-		dev,
+		gfx_ctx,
 		{model_path = "static/models/sea/ship-large.glb", pipeline = state.unlit_pipeline},
 	)
 	default.set_unlit_color(&state.unlit_model.material, {0.15, 0.85, 0.3, 1})
 
-	state.skybox = default.skybox_create(dev, default.SKYBOX_PATH)
+	state.skybox = default.skybox_create(gfx_ctx, default.SKYBOX_PATH)
 	append(&state.draws, default.skybox_draw(&state.skybox))
 
 	append(&state.draws, gfx.draw_model(&state.textured_model, {-5, -.5, -12}, {0.4, 0.4, 0.4}))
@@ -94,21 +94,21 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		{position = {-1, 1, 0}, color = {1, 1, 1, 1}, uv = {0, 1}},
 	}
 	state.quad_indices = {0, 1, 2, 2, 3, 0}
-	state.quad_mesh = gfx.mesh_create(dev, state.quad_vertices[:], state.quad_indices[:])
-	gfx.mesh_upload(&dev.renderer, &state.quad_mesh)
+	state.quad_mesh = gfx.mesh_create(gfx_ctx, state.quad_vertices[:], state.quad_indices[:])
+	gfx.mesh_upload(&gfx_ctx.renderer, &state.quad_mesh)
 	append(&state.draws, gfx.draw_make(&state.quad_mesh, &state.shared_material, {0, 1.2, -8}, layer = .UI))
 
 	// Post-processing: separable gaussian blur over scene_color, run by the
 	// renderer after the scene (renderer_run_post).
-	state.blur = default.blur_create(dev, 2)
-	gfx.renderer_set_passes(&dev.renderer, .Post, []gfx.Render_Pass{default.blur_pass(&state.blur)})
+	state.blur = default.blur_create(gfx_ctx, 2)
+	gfx.renderer_set_passes(&gfx_ctx.renderer, .Post, []gfx.Render_Pass{default.blur_pass(&state.blur)})
 
 	when gfx.EDITOR {
 		state.editor = new(editor.Editor)
-		ok := editor.editor_init(dev, state.editor)
+		ok := editor.editor_init(gfx_ctx, state.editor)
 		assert(ok)
 		engine.set_event_hook(ctx, ed_event_hook, state.editor)
-		_ = sdl.SetWindowRelativeMouseMode(dev.window, false)
+		_ = sdl.SetWindowRelativeMouseMode(gfx_ctx.window, false)
 	}
 
 	// A small fleet: jittered grid placements with random yaw and scale.
@@ -138,7 +138,7 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 }
 
 ed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	state := cast(^Editor_State)demo.state
 
 	// Mouse-look only when the cursor is over the viewport widget (always
@@ -147,10 +147,10 @@ ed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	when gfx.EDITOR {
 		mouse_in_viewport = editor.editor_mouse_in_viewport(state.editor, state.ui.viewport)
 	}
-	default.fly_camera_tick(&state.fly_camera, dev, &ctx.input, delta_time, look = mouse_in_viewport)
+	default.fly_camera_tick(&state.fly_camera, gfx_ctx, &ctx.input, delta_time, look = mouse_in_viewport)
 
 	when gfx.EDITOR {
-		camera := gfx.camera(dev)
+		camera := gfx.camera(gfx_ctx)
 		state.ui.fps = 1 / delta_time
 		editor.editor_build_ui(state.editor, &state.ui)
 		default.set_unlit_color(&state.shared_material, state.tint)
@@ -160,19 +160,19 @@ ed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 		if state.editor.visible {
 			vp := state.ui.viewport
 			if vp.w > 0 && vp.h > 0 {
-				gfx.renderer_resize_targets(&dev.renderer, u32(vp.w), u32(vp.h))
+				gfx.renderer_resize_targets(&gfx_ctx.renderer, u32(vp.w), u32(vp.h))
 				gfx.camera_set_aspect(camera, f32(vp.w) / f32(vp.h))
 			}
 		} else {
-			gfx.renderer_resize_targets(&dev.renderer, u32(dev.window_size.x), u32(dev.window_size.y))
-			gfx.camera_set_aspect(camera, gfx.aspect_ratio(dev))
+			gfx.renderer_resize_targets(&gfx_ctx.renderer, u32(gfx_ctx.window_size.x), u32(gfx_ctx.window_size.y))
+			gfx.camera_set_aspect(camera, gfx.aspect_ratio(gfx_ctx))
 		}
 	}
 
 	// Rebuild the quad's geometry every frame and re-upload it.
 	state.quad_vertices[2].position.y = 1 + 0.5 * linalg.sin(ctx.time * 2)
 	state.quad_vertices[3].position.y = 1 - 0.5 * linalg.sin(ctx.time * 2)
-	gfx.mesh_update(&dev.renderer, &state.quad_mesh, state.quad_vertices[:], state.quad_indices[:])
+	gfx.mesh_update(&gfx_ctx.renderer, &state.quad_mesh, state.quad_vertices[:], state.quad_indices[:])
 
 	state.rotation += state.rotation_speed * delta_time
 	gfx.draw_set_transform(
@@ -184,41 +184,41 @@ ed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 
 	// Frame flow: scene -> offscreen, post passes -> final, editor overlay
 	// (or plain present) -> swapchain.
-	gfx.renderer_begin_frame(&dev.renderer)
-	gfx.renderer_render_draws(&dev.renderer, state.draws[:])
-	if dev.swapchain != nil {
-		final := gfx.renderer_run_post(&dev.renderer)
+	gfx.renderer_begin_frame(&gfx_ctx.renderer)
+	gfx.renderer_render_draws(&gfx_ctx.renderer, state.draws[:])
+	if gfx_ctx.swapchain != nil {
+		final := gfx.renderer_run_post(&gfx_ctx.renderer)
 		when gfx.EDITOR {
 			if state.editor.visible {
-				editor.editor_draw(state.editor, dev, final, state.ui.viewport)
+				editor.editor_draw(state.editor, gfx_ctx, final, state.ui.viewport)
 			} else {
-				gfx.renderer_present(&dev.renderer, final)
+				gfx.renderer_present(&gfx_ctx.renderer, final)
 			}
 		} else {
-			gfx.renderer_present(&dev.renderer, final)
+			gfx.renderer_present(&gfx_ctx.renderer, final)
 		}
 	}
-	gfx.end_frame(dev)
+	gfx.end_frame(gfx_ctx)
 }
 
 ed_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
-	dev := &ctx.gfx
+	gfx_ctx := &ctx.gfx
 	state := cast(^Editor_State)demo.state
 	engine.set_event_hook(ctx, nil, nil)
-	_ = sdl.SetWindowRelativeMouseMode(dev.window, true)
+	_ = sdl.SetWindowRelativeMouseMode(gfx_ctx.window, true)
 	delete(state.draws)
-	default.skybox_destroy(dev, &state.skybox)
+	default.skybox_destroy(gfx_ctx, &state.skybox)
 	when gfx.EDITOR {
-		editor.editor_destroy(dev, state.editor)
+		editor.editor_destroy(gfx_ctx, state.editor)
 		free(state.editor)
 	}
-	gfx.renderer_clear_passes(&dev.renderer, .Post) // passes point into state
-	gfx.mesh_destroy(dev, &state.quad_mesh)
+	gfx.renderer_clear_passes(&gfx_ctx.renderer, .Post) // passes point into state
+	gfx.mesh_destroy(gfx_ctx, &state.quad_mesh)
 	gfx.material_destroy(&state.shared_material)
-	gfx.model_unload(dev, &state.textured_model)
-	gfx.model_unload(dev, &state.unlit_model)
-	gfx.sampler_destroy(dev, state.sampler)
-	gfx.pipeline_destroy(dev, state.textured_pipeline)
-	gfx.pipeline_destroy(dev, state.unlit_pipeline)
+	gfx.model_unload(gfx_ctx, &state.textured_model)
+	gfx.model_unload(gfx_ctx, &state.unlit_model)
+	gfx.sampler_destroy(gfx_ctx, state.sampler)
+	gfx.pipeline_destroy(gfx_ctx, state.textured_pipeline)
+	gfx.pipeline_destroy(gfx_ctx, state.unlit_pipeline)
 	free(state)
 }

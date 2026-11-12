@@ -27,7 +27,7 @@ Render_Pass :: struct {
 
 Pass_Ctx :: struct {
 	renderer: ^Renderer,
-	dev:      ^Device,
+	gfx_ctx:  ^Device,
 	// Current frame color. Starts as scene_color. A compute pass producing new
 	// output sets ctx.color = output; a graphics pass drawing into it
 	// (renderer_begin_overlay_pass(ctx.renderer, ctx.color)) leaves it unchanged.
@@ -55,17 +55,17 @@ renderer_set_passes :: proc(renderer: ^Renderer, slot: Pass_Slot, passes: []Rend
 // Runs every registered pass and returns the frame's final color. With no
 // passes it returns scene_color and allocates nothing.
 renderer_run_post :: proc(renderer: ^Renderer) -> Texture_Handle {
-	assert(renderer.dev.frame_open)
+	assert(renderer.gfx_ctx.frame_open)
 	assert(renderer.pass == nil)
 	total := 0
 	for slot in Pass_Slot do total += len(renderer.passes[slot])
 	if total == 0 do return renderer.scene_color
 
 	pool_begin_frame(renderer)
-	scene := texture_get(renderer.dev, renderer.scene_color)
+	scene := texture_get(renderer.gfx_ctx, renderer.scene_color)
 	ctx := Pass_Ctx {
 		renderer = renderer,
-		dev      = renderer.dev,
+		gfx_ctx  = renderer.gfx_ctx,
 		color    = renderer.scene_color,
 		width    = scene.width,
 		height   = scene.height,
@@ -107,9 +107,9 @@ pass_compute :: proc(
 	out: Texture_Handle,
 	uniforms: []byte = nil,
 ) {
-	target := texture_get(ctx.dev, out)
+	target := texture_get(ctx.gfx_ctx, out)
 	compute_dispatch(
-		ctx.dev,
+		ctx.gfx_ctx,
 		pipeline,
 		[]Texture_Handle{out},
 		sampled,
@@ -134,11 +134,11 @@ Texture_Pool :: struct {
 pool_begin_frame :: proc(renderer: ^Renderer) {
 	pool := &renderer.pool
 	for &entry in pool.entries do entry.in_use = false
-	scene := texture_get(renderer.dev, renderer.scene_color)
+	scene := texture_get(renderer.gfx_ctx, renderer.scene_color)
 	if scene.width == pool.width && scene.height == pool.height do return
 	// The last submitted frame may still read these textures.
-	_ = sdl.WaitForGPUIdle(renderer.dev.gpu) // the last submitted frame may still read these textures
-	for entry in pool.entries do texture_destroy(renderer.dev, entry.texture)
+	_ = sdl.WaitForGPUIdle(renderer.gfx_ctx.gpu) // the last submitted frame may still read these textures
+	for entry in pool.entries do texture_destroy(renderer.gfx_ctx, entry.texture)
 	clear(&pool.entries)
 	pool.width, pool.height = scene.width, scene.height
 }
@@ -155,7 +155,7 @@ pool_acquire :: proc(renderer: ^Renderer, width, height: u32) -> Texture_Handle 
 	// texture; add lifetime tracking when a chain passes ~8 transients.
 	assert(len(pool.entries) < 16, "too many transient textures")
 	texture := texture_create_with_usage(
-		renderer.dev,
+		renderer.gfx_ctx,
 		width,
 		height,
 		renderer.post_format,

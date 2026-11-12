@@ -103,11 +103,11 @@ host_loop :: proc(ctx: ^Context) {
 // Window size is in points, the same unit as mouse events (input.mouse_position);
 // GetWindowSizeInPixels would mismatch on high-DPI displays.
 host_resize :: proc(ctx: ^Context) {
-	dev := &ctx.gfx
-	ok := sdl.GetWindowSize(dev.window, &dev.window_size.x, &dev.window_size.y); assert(ok)
-	if dev.window_size.x <= 0 || dev.window_size.y <= 0 do return // minimized
-	gfx.renderer_resize_targets(&dev.renderer, u32(dev.window_size.x), u32(dev.window_size.y))
-	gfx.camera_set_aspect(gfx.camera(dev), gfx.aspect_ratio(dev))
+	gfx_ctx := &ctx.gfx
+	ok := sdl.GetWindowSize(gfx_ctx.window, &gfx_ctx.window_size.x, &gfx_ctx.window_size.y); assert(ok)
+	if gfx_ctx.window_size.x <= 0 || gfx_ctx.window_size.y <= 0 do return // minimized
+	gfx.renderer_resize_targets(&gfx_ctx.renderer, u32(gfx_ctx.window_size.x), u32(gfx_ctx.window_size.y))
+	gfx.camera_set_aspect(gfx.camera(gfx_ctx), gfx.aspect_ratio(gfx_ctx))
 }
 
 host_tick :: proc(ctx: ^Context, delta_time: f32) {

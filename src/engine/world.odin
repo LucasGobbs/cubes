@@ -132,7 +132,7 @@ Component :: union {
 }
 
 World :: struct {
-	dev:      ^gfx.Device, // nil is fine for worlds that only hold Transforms (tests)
+	gfx_ctx:  ^gfx.Device, // nil is fine for worlds that only hold Transforms (tests)
 	slots:    [dynamic]Slot,
 	free:     [dynamic]u32,
 	types:    [dynamic]Entity_Type_Info,
@@ -159,8 +159,8 @@ Slot :: struct {
 }
 
 // Use world_create; a zero World has no asset cache.
-world_create :: proc(dev: ^gfx.Device) -> World {
-	return World{dev = dev, assets = {models = make(map[string]^Model_Asset)}}
+world_create :: proc(gfx_ctx: ^gfx.Device) -> World {
+	return World{gfx_ctx = gfx_ctx, assets = {models = make(map[string]^Model_Asset)}}
 }
 
 // Registers a per-entity state type. create runs after spawn, tick once per
@@ -280,10 +280,10 @@ world_destroy_type :: proc(world: ^World, type: Entity_Type) {
 // Frees every entity, cached asset and effect. Clears the Post passes this world
 // may have set on the renderer. Compute pipelines are freed with the Device.
 world_destroy :: proc(world: ^World) {
-	if world.dev != nil {
-		if batch, ok := &world.batch.?; ok do default.batch_destroy(world.dev, batch)
-		gfx.renderer_clear_passes(&world.dev.renderer, .Post)
-		world.dev.renderer.clear_color = gfx.DEFAULT_CLEAR_COLOR
+	if world.gfx_ctx != nil {
+		if batch, ok := &world.batch.?; ok do default.batch_destroy(world.gfx_ctx, batch)
+		gfx.renderer_clear_passes(&world.gfx_ctx.renderer, .Post)
+		world.gfx_ctx.renderer.clear_color = gfx.DEFAULT_CLEAR_COLOR
 	}
 	for index := 0; index < len(world.slots); index += 1 {
 		slot := world.slots[index]
@@ -325,7 +325,7 @@ world_update :: proc(world: ^World, dt: f32) {
 
 world_render :: proc(world: ^World) {
 	if camera_2d_slot(world) != nil do world_draw_sprites(world) // before the frame: batch upload submits its own command buffer
-	gfx.renderer_render_frame(&world.dev.renderer, world_extract, world)
+	gfx.renderer_render_frame(&world.gfx_ctx.renderer, world_extract, world)
 }
 
 @(private = "file")
@@ -348,12 +348,12 @@ Sprite_Draw :: struct {
 
 @(private = "file")
 world_draw_sprites :: proc(world: ^World) {
-	dev := world.dev
+	gfx_ctx := world.gfx_ctx
 	batch, ok := &world.batch.?
 	if !ok {
-		world.batch = default.batch_create(dev)
+		world.batch = default.batch_create(gfx_ctx)
 		batch = &world.batch.?
-		default.batch_register(dev, batch)
+		default.batch_register(gfx_ctx, batch)
 	}
 	queue := make([dynamic]Sprite_Draw, context.temp_allocator)
 	for &slot in world.slots {
@@ -369,16 +369,16 @@ world_draw_sprites :: proc(world: ^World) {
 		if a.depth != b.depth do return a.depth < b.depth
 		return a.texture.index < b.texture.index
 	})
-	default.batch_begin(batch, dev, world.camera_2d)
-	for draw in queue do sprite_push(batch, dev, draw.slot, draw.texture)
-	default.batch_end(batch, dev)
+	default.batch_begin(batch, gfx_ctx, world.camera_2d)
+	for draw in queue do sprite_push(batch, gfx_ctx, draw.slot, draw.texture)
+	default.batch_end(batch, gfx_ctx)
 }
 
 @(private = "file")
-sprite_push :: proc(batch: ^default.Batch, dev: ^gfx.Device, slot: ^Slot, texture: gfx.Texture_Handle) {
+sprite_push :: proc(batch: ^default.Batch, gfx_ctx: ^gfx.Device, slot: ^Slot, texture: gfx.Texture_Handle) {
 	sprite := slot_component(slot, Sprite)
 	transform := slot_component(slot, Transform)
-	tex := gfx.texture_get(dev, texture)
+	tex := gfx.texture_get(gfx_ctx, texture)
 	texture_size := [2]f32{f32(tex.width), f32(tex.height)}
 	cell := texture_size
 	src: default.Rect // zero rect = whole image
@@ -448,7 +448,7 @@ update_camera :: proc(world: ^World) {
 		camera := slot_component(&slot, Camera)
 		if camera == nil do continue
 		transform := slot_component(&slot, Transform)
-		cam := gfx.camera(world.dev)
+		cam := gfx.camera(world.gfx_ctx)
 		cam.position = transform.position
 		if target, ok := camera.look_at.?; ok {
 			cam.yaw, cam.pitch = direction_angles(target - transform.position)
@@ -458,7 +458,7 @@ update_camera :: proc(world: ^World) {
 		}
 		gfx.camera_rotate(cam, 0, 0) // rebuilds direction, right and up from yaw/pitch
 		fov := camera.fov_y if camera.fov_y > 0 else gfx.CAMERA_FOV_Y
-		cam.projection = gfx.camera_perspective(gfx.aspect_ratio(world.dev), fov)
+		cam.projection = gfx.camera_perspective(gfx.aspect_ratio(world.gfx_ctx), fov)
 		set_effect_passes(world, camera)
 		return
 	}
@@ -480,7 +480,7 @@ set_effect_passes :: proc(world: ^World, camera: ^Camera) {
 	if radius, ok := camera.blur.?; ok {
 		if world.blur == nil {
 			world.blur = new(default.Blur)
-			world.blur^ = default.blur_create(world.dev)
+			world.blur^ = default.blur_create(world.gfx_ctx)
 		}
 		world.blur.radius = radius if radius > 0 else 4
 		world.blur.radius = min(world.blur.radius, default.BLUR_MAX_RADIUS)
@@ -490,7 +490,7 @@ set_effect_passes :: proc(world: ^World, camera: ^Camera) {
 	if settings, ok := camera.bloom.?; ok {
 		if world.bloom == nil {
 			world.bloom = new(default.Bloom)
-			world.bloom^ = default.bloom_create(world.dev)
+			world.bloom^ = default.bloom_create(world.gfx_ctx)
 		}
 		// Same values as default.bloom_create, applied to the existing pipelines.
 		threshold := settings.threshold if settings.threshold > 0 else 0.8
@@ -502,7 +502,7 @@ set_effect_passes :: proc(world: ^World, camera: ^Camera) {
 		passes[count] = default.bloom_pass(world.bloom)
 		count += 1
 	}
-	gfx.renderer_set_passes(&world.dev.renderer, .Post, passes[:count])
+	gfx.renderer_set_passes(&world.gfx_ctx.renderer, .Post, passes[:count])
 }
 
 @(private = "file")
@@ -577,7 +577,7 @@ sync_transform :: proc(slot: ^Slot) {
 @(private = "file")
 slot_resolve :: proc(world: ^World, slot: ^Slot) {
 	if model := slot_component(slot, Model); model != nil && slot.draw.mesh == nil {
-		assert(world.dev != nil, "engine: Model needs a world with a Device")
+		assert(world.gfx_ctx != nil, "engine: Model needs a world with a Device")
 		asset := asset_model(world, model.path)
 		slot.draw = gfx.draw_make(&asset.model.mesh, &asset.model.material)
 		slot.draw.cull = !asset.skinned

@@ -114,16 +114,16 @@ renderer_extract_draws :: proc(renderer: ^Renderer, draws: []Draw) {
 }
 
 renderer_render_draws :: proc(renderer: ^Renderer, draws: []Draw) {
-	assert(renderer.dev.frame_open)
-	if renderer.dev.swapchain == nil do return
+	assert(renderer.gfx_ctx.frame_open)
+	if renderer.gfx_ctx.swapchain == nil do return
 	renderer_extract_draws(renderer, draws)
 	renderer_draw_submitted(renderer)
 }
 
 // Simple frame: draws -> offscreen -> post passes -> blit to screen.
-render :: proc(dev: ^Device, draws: []Draw) {
+render :: proc(gfx_ctx: ^Device, draws: []Draw) {
 	frame := Draw_Frame{draws}
-	renderer_render_frame(&dev.renderer, draws_extract_proc, &frame)
+	renderer_render_frame(&gfx_ctx.renderer, draws_extract_proc, &frame)
 }
 
 @(private = "file")

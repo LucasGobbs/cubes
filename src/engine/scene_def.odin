@@ -96,7 +96,7 @@ scene_file_destroy :: proc(file: ^Scene_File) {
 // definition order (camera excluded); the slice uses the temp allocator.
 world_spawn_scene :: proc(world: ^World, def: ^Scene_Def) -> []Entity_Id {
 	assets_load(world, def.assets) // before spawning: spawns then hit the cache
-	if color, ok := def.clear_color.?; ok do world.dev.renderer.clear_color = {color.x, color.y, color.z, 1}
+	if color, ok := def.clear_color.?; ok do world.gfx_ctx.renderer.clear_color = {color.x, color.y, color.z, 1}
 	if camera, ok := def.camera.?; ok {
 		if camera.mode == "2d" {
 			spawn(world, Camera_2D{zoom = camera.zoom, viewport = camera.viewport, integer_scale = camera.integer_scale}, Transform{position = camera.position})

@@ -39,7 +39,7 @@ camera2d_round_trip :: proc(t: ^testing.T) {
 
 @(test)
 batch_sprite_groups_runs_by_texture :: proc(t: ^testing.T) {
-	dev := gfx.Device{window_size = {800, 600}}
+	gfx_ctx := gfx.Device{window_size = {800, 600}}
 	b: Batch
 	defer {
 		delete(b.vertices)
@@ -47,7 +47,7 @@ batch_sprite_groups_runs_by_texture :: proc(t: ^testing.T) {
 	}
 	a := gfx.Texture_Handle(gfx.Resource_Handle{index = 1, generation = 1})
 	c := gfx.Texture_Handle(gfx.Resource_Handle{index = 2, generation = 1})
-	batch_begin(&b, &dev, Camera2D{viewport = {400, 300}})
+	batch_begin(&b, &gfx_ctx, Camera2D{viewport = {400, 300}})
 	size := [2]f32{64, 64}
 	batch_sprite(&b, a, size, {0, 0}, {16, 16})
 	batch_sprite(&b, a, size, {20, 0}, {16, 16})

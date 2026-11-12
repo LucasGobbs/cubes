@@ -28,9 +28,9 @@ Bench_Stat :: struct {
 }
 
 // Called once per tick after the scene ticked, so renderer counters hold this frame's values.
-bench_record :: proc(bench: ^Bench_Run, dev: ^gfx.Device, delta_time: f32) {
+bench_record :: proc(bench: ^Bench_Run, gfx_ctx: ^gfx.Device, delta_time: f32) {
 	if delta_time <= 0 do return // first frame has no previous timestamp
-	renderer := &dev.renderer
+	renderer := &gfx_ctx.renderer
 	bench.total += f64(delta_time)
 	if bench.total < BENCH_WARMUP do return
 	bench.elapsed += f64(delta_time)
@@ -67,7 +67,7 @@ bench_stat :: proc(values: []f64) -> Bench_Stat {
 	}
 }
 
-bench_report :: proc(bench: ^Bench_Run, dev: ^gfx.Device, scene_name: string) {
+bench_report :: proc(bench: ^Bench_Run, gfx_ctx: ^gfx.Device, scene_name: string) {
 	frames := len(bench.frame_ms)
 	if frames == 0 {
 		fmt.printf("benchmark: no frames rendered\n")
@@ -81,9 +81,9 @@ bench_report :: proc(bench: ^Bench_Run, dev: ^gfx.Device, scene_name: string) {
 	fmt.printf(
 		"benchmark  scene=%s  window=%dx%d  msaa=%s  duration=%.2fs  frames=%d\n",
 		scene_name,
-		dev.window_size.x,
-		dev.window_size.y,
-		dev.renderer.msaa_enabled ? "4x" : "off",
+		gfx_ctx.window_size.x,
+		gfx_ctx.window_size.y,
+		gfx_ctx.renderer.msaa_enabled ? "4x" : "off",
 		bench.elapsed,
 		frames,
 	)

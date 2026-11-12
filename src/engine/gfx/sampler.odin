@@ -38,34 +38,34 @@ Sampler :: struct {
 }
 
 sampler_create :: proc(
-	dev: ^Device,
+	gfx_ctx: ^Device,
 	create_info := sdl.GPUSamplerCreateInfo{},
 ) -> Sampler_Handle {
 	resource := Sampler {
-		handle = sdl.CreateGPUSampler(dev.gpu, create_info),
+		handle = sdl.CreateGPUSampler(gfx_ctx.gpu, create_info),
 	}
 	assert(resource.handle != nil)
-	handle := Sampler_Handle(handle_pool_acquire(&dev.sampler_handles))
+	handle := Sampler_Handle(handle_pool_acquire(&gfx_ctx.sampler_handles))
 	index := Resource_Handle(handle).index
-	if int(index) == len(dev.samplers) {
-		append(&dev.samplers, resource)
+	if int(index) == len(gfx_ctx.samplers) {
+		append(&gfx_ctx.samplers, resource)
 	} else {
-		dev.samplers[index] = resource
+		gfx_ctx.samplers[index] = resource
 	}
 	return handle
 }
 
-sampler_get :: proc(dev: ^Device, handle: Sampler_Handle) -> ^Sampler {
+sampler_get :: proc(gfx_ctx: ^Device, handle: Sampler_Handle) -> ^Sampler {
 	raw := Resource_Handle(handle)
-	assert(handle_pool_contains(&dev.sampler_handles, raw), "stale sampler handle")
-	return &dev.samplers[raw.index]
+	assert(handle_pool_contains(&gfx_ctx.sampler_handles, raw), "stale sampler handle")
+	return &gfx_ctx.samplers[raw.index]
 }
 
-sampler_destroy :: proc(dev: ^Device, handle: Sampler_Handle) {
+sampler_destroy :: proc(gfx_ctx: ^Device, handle: Sampler_Handle) {
 	raw := Resource_Handle(handle)
-	if !handle_pool_contains(&dev.sampler_handles, raw) do return
-	resource := &dev.samplers[raw.index]
-	if resource.handle != nil do sdl.ReleaseGPUSampler(dev.gpu, resource.handle)
+	if !handle_pool_contains(&gfx_ctx.sampler_handles, raw) do return
+	resource := &gfx_ctx.samplers[raw.index]
+	if resource.handle != nil do sdl.ReleaseGPUSampler(gfx_ctx.gpu, resource.handle)
 	resource^ = {}
-	assert(handle_pool_release(&dev.sampler_handles, raw))
+	assert(handle_pool_release(&gfx_ctx.sampler_handles, raw))
 }
