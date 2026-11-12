@@ -114,12 +114,8 @@ simple_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Simple_State)demo.state
 	delete(state.draws)
-	gfx.skybox_destroy(gfx_ctx, &state.skybox)
-	gfx.mesh_destroy(gfx_ctx, &state.quad_mesh)
+	gfx.material_destroy(&state.skybox.material)
 	gfx.model_unload(gfx_ctx, &state.textured_model)
 	gfx.model_unload(gfx_ctx, &state.unlit_model)
-	gfx.sampler_destroy(gfx_ctx, state.sampler)
-	gfx.pipeline_destroy(gfx_ctx, state.textured_pipeline)
-	gfx.pipeline_destroy(gfx_ctx, state.unlit_pipeline)
 	free(state)
 }

@@ -280,26 +280,22 @@ forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx.renderer_clear_passes(&gfx_ctx.renderer, .Post)
 	naive.flare_destroy(gfx_ctx, &state.flare)
 	delete(state.draws)
-	gfx.skybox_destroy(gfx_ctx, &state.skybox)
+	gfx.material_destroy(&state.skybox.material)
 	for &cluster in state.terrain {
-		if cluster.built do gfx.mesh_destroy(gfx_ctx, &cluster.mesh)
 		delete(cluster.data.verts)
 		delete(cluster.data.idx)
 	}
 	for &cluster in state.grass do delete(cluster.items)
 	for index in 0 ..< VARIANT_COUNT {
-		gfx.mesh_destroy(gfx_ctx, &state.variant_mesh[index])
 		delete(state.variant_data[index].verts)
 		delete(state.variant_data[index].idx)
 	}
 	delete(state.placements)
 	delete(state.grass_scratch)
 	for index in 0 ..< TUFT_COUNT {
-		gfx.mesh_destroy(gfx_ctx, &state.tuft_mesh[index])
 		delete(state.tuft_data[index].verts)
 		delete(state.tuft_data[index].idx)
 	}
 	gfx.material_destroy(&state.material)
-	gfx.pipeline_destroy(gfx_ctx, state.pipeline)
 	free(state)
 }

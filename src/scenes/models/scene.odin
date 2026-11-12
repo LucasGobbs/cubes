@@ -115,12 +115,8 @@ models_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Models_State)demo.state
 	delete(state.draws)
-	gfx.skybox_destroy(gfx_ctx, &state.skybox)
-	gfx.mesh_destroy(gfx_ctx, &state.ground_mesh)
+	gfx.material_destroy(&state.skybox.material)
 	gfx.material_destroy(&state.ground_material)
-	gfx.texture_destroy(gfx_ctx, state.ground_texture)
 	for &model in state.models do gfx.model_unload(gfx_ctx, &model)
-	gfx.sampler_destroy(gfx_ctx, state.sampler)
-	gfx.pipeline_destroy(gfx_ctx, state.pipeline)
 	free(state)
 }

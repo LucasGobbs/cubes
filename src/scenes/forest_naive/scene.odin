@@ -216,18 +216,15 @@ forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx.renderer_clear_passes(&gfx_ctx.renderer, .Post)
 	flare_destroy(gfx_ctx, &state.flare)
 	delete(state.draws)
-	gfx.skybox_destroy(gfx_ctx, &state.skybox)
+	gfx.material_destroy(&state.skybox.material)
 	for &chunk in state.chunks {
-		if chunk.static_built do gfx.mesh_destroy(gfx_ctx, &chunk.static_mesh)
 		delete(chunk.static_data.verts)
 		delete(chunk.static_data.idx)
 		for lod in 0 ..< 2 {
-			if chunk.grass_built[lod] do gfx.mesh_destroy(gfx_ctx, &chunk.grass_mesh[lod])
 			delete(chunk.grass_data[lod].verts)
 			delete(chunk.grass_data[lod].idx)
 		}
 	}
 	gfx.material_destroy(&state.material)
-	gfx.pipeline_destroy(gfx_ctx, state.pipeline)
 	free(state)
 }

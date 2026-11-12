@@ -18,10 +18,10 @@ PLAYER_AUTOPILOT_IDLE :: 3 // seconds without input before the player circles
 PLAYER_AUTOPILOT_TURN :: 0.8 // rad/s of the circle's heading
 
 Player :: struct {
-	enemy:   engine.Entity_Type, // destroyed on respawn
-	input:   gfx.Vec3, // zero move means no input; the scene writes it each frame
-	idle:    f32, // seconds since last input
-	heading: f32, // heading of the autopilot circle
+	enemy:    engine.Entity_Type, // destroyed on respawn
+	wish_dir: gfx.Vec3, // zero means no input; the scene's fixed_tick writes it each step
+	idle:     f32, // seconds since last input
+	heading:  f32, // heading of the autopilot circle
 }
 
 player_create :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Player) {
@@ -31,7 +31,7 @@ player_create :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Player)
 }
 
 player_tick :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Player, dt: f32) {
-	move := self.input
+	move := self.wish_dir
 	if move == {} {
 		self.idle += dt
 	} else {

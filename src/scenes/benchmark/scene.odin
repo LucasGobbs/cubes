@@ -127,12 +127,9 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	inputs := &ctx.input
 	state.fly_camera = gfx.fly_camera_create()
 	state.fly_controls = engine.fly_controls_create(&ctx.input, "benchmark")
-	state.add_action = input.button(inputs, "benchmark.add")
-	state.subtract_action = input.button(inputs, "benchmark.subtract")
-	input.bind_key(inputs, state.add_action, .EQUALS)
-	input.bind_key(inputs, state.subtract_action, .MINUS)
-	state.fog_action = input.button(inputs, "benchmark.fog")
-	input.bind_key(inputs, state.fog_action, .V)
+	state.add_action = input.button(inputs, "benchmark.add", .EQUALS)
+	state.subtract_action = input.button(inputs, "benchmark.subtract", .MINUS)
+	state.fog_action = input.button(inputs, "benchmark.fog", .V)
 
 	state.pipeline = gfx.create_textured_instanced_pipeline(gfx_ctx)
 	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
@@ -447,18 +444,11 @@ benchmark_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Benchmark_State)demo.state
 	delete(state.draws)
-	gfx.skybox_destroy(gfx_ctx, &state.skybox)
-	gfx.mesh_destroy(gfx_ctx, &state.sea_mesh)
+	gfx.material_destroy(&state.skybox.material)
 	gfx.material_destroy(&state.sea_material)
-	gfx.pipeline_destroy(gfx_ctx, state.sea_pipeline)
 	delete(state.text_vertices)
-	gfx.mesh_destroy(gfx_ctx, &state.text_mesh)
 	gfx.material_destroy(&state.overlay_material)
-	gfx.pipeline_destroy(gfx_ctx, state.overlay_pipeline)
-	gfx.font_destroy(gfx_ctx, &state.font)
 	for &model in state.models do gfx.model_unload(gfx_ctx, &model)
 	gfx.model_unload(gfx_ctx, &state.dragon)
-	gfx.sampler_destroy(gfx_ctx, state.sampler)
-	gfx.pipeline_destroy(gfx_ctx, state.pipeline)
 	free(state)
 }

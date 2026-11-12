@@ -48,10 +48,8 @@ stats: Stats
 stats_create :: proc(ctx: ^Context) {
 	gfx_ctx := &ctx.gfx
 	inputs := &ctx.input
-	stats.action = input.button(inputs, "app.stats")
-	input.bind_key(inputs, stats.action, .F1)
-	stats.dump_action = input.button(inputs, "app.stats_dump")
-	input.bind_key(inputs, stats.dump_action, .P) // with the panel open, logs its lines
+	stats.action = input.button(inputs, "app.stats", .F1)
+	stats.dump_action = input.button(inputs, "app.stats_dump", .P) // with the panel open, logs its lines
 
 	font, ok := gfx.font_create(gfx_ctx, "static/fonts/andale-mono.ttf")
 	assert(ok)

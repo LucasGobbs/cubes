@@ -16,16 +16,12 @@ Fly_Controls :: struct {
 fly_controls_create :: proc(inp: ^input.System, prefix: string) -> Fly_Controls {
 	controls := Fly_Controls {
 		move   = input.add_axis_2d(inp, fmt.tprintf("{}.move", prefix)),
-		boost  = input.button(inp, fmt.tprintf("{}.boost", prefix)),
-		up     = input.button(inp, fmt.tprintf("{}.up", prefix)),
-		down   = input.button(inp, fmt.tprintf("{}.down", prefix)),
-		smooth = input.button(inp, fmt.tprintf("{}.smooth", prefix)),
+		boost  = input.button(inp, fmt.tprintf("{}.boost", prefix), .LSHIFT),
+		up     = input.button(inp, fmt.tprintf("{}.up", prefix), .SPACE),
+		down   = input.button(inp, fmt.tprintf("{}.down", prefix), .LCTRL),
+		smooth = input.button(inp, fmt.tprintf("{}.smooth", prefix), .C),
 	}
 	input.bind_button_axis_2d(inp, controls.move, {up = .W, down = .S, left = .A, right = .D, normalize = true})
-	input.bind_key(inp, controls.boost, .LSHIFT)
-	input.bind_key(inp, controls.up, .SPACE)
-	input.bind_key(inp, controls.down, .LCTRL)
-	input.bind_key(inp, controls.smooth, .C)
 	return controls
 }
 

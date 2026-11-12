@@ -1,6 +1,6 @@
 // Game: a CesiumMan player steered on the XZ plane with WASD, chased by ship
 // enemies that spawn on a ring around it. All game state lives in engine.World;
-// the scene keeps only the entity types it registered and writes player input.
+// the scene keeps only the entity types it registered and reads input in fixed_tick.
 // Idle for 3 s and the player circles on its own, so a screenshot shows hits without
 // input. Per-entity logic lives in game_player.odin and game_enemy.odin.
 package game
@@ -19,13 +19,19 @@ Game_State :: struct {
 	world:       engine.World,
 	player_type: engine.Entity_Type,
 	enemy_type:  engine.Entity_Type,
-	keys:        [4]input.Button_Action, // up, down, left, right
+	move:        input.Axis_2D_Action,
 	spawn_timer: f32,
 	log_timer:   f32,
 }
 
 game_scene :: proc() -> engine.Scene {
-	return {name = "Game", create = game_create, tick = game_tick, destroy = game_destroy}
+	return {
+		name = "Game",
+		create = game_create,
+		tick = game_tick,
+		fixed_tick = game_fixed_tick,
+		destroy = game_destroy,
+	}
 }
 
 game_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
@@ -34,17 +40,7 @@ game_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	demo.state = state
 	engine.scene_camera_reset(demo, gfx_ctx) // restores full-window targets after the editor shrinks them
 
-	inputs := &ctx.input
-	state.keys = {
-		input.button(inputs, "game.up"),
-		input.button(inputs, "game.down"),
-		input.button(inputs, "game.left"),
-		input.button(inputs, "game.right"),
-	}
-	input.bind_key(inputs, state.keys[0], .W)
-	input.bind_key(inputs, state.keys[1], .S)
-	input.bind_key(inputs, state.keys[2], .A)
-	input.bind_key(inputs, state.keys[3], .D)
+	state.move = input.move_2d(&ctx.input, "game.move", up = .W, down = .S, left = .A, right = .D)
 
 	state.world = engine.world_create(gfx_ctx)
 	// Player first: its slot ticks before enemies, so enemies chase this frame's position.
@@ -56,26 +52,22 @@ game_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		nil,
 	)
 	state.enemy_type = engine.register_type(&state.world, Enemy, enemy_create, enemy_tick, nil)
-	engine.spawn(
-		&state.world,
-		engine.Camera{look_at = gfx.Vec3{}},
-		engine.Transform{position = {0, 6, 8}},
-	)
+	engine.spawn_camera(&state.world, {0, 6, 8})
 	engine.spawn_typed(&state.world, state.player_type, Player{enemy = state.enemy_type})
 	return true
 }
 
 game_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	state := cast(^Game_State)demo.state
-	inputs := &ctx.input
+	engine.world_render(&state.world)
+}
 
-	move: gfx.Vec3
-	if input.down(inputs, state.keys[0]) do move.z -= 1
-	if input.down(inputs, state.keys[1]) do move.z += 1
-	if input.down(inputs, state.keys[2]) do move.x -= 1
-	if input.down(inputs, state.keys[3]) do move.x += 1
+// Gameplay runs at the fixed rate (Config.fixed_hz); the frame only renders.
+game_fixed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
+	state := cast(^Game_State)demo.state
+	v := input.axis_2d(&ctx.input, state.move)
 	player_id, player := engine.world_find_state(&state.world, state.player_type, Player)
-	player.input = move
+	player.wish_dir = {v.x, 0, -v.y} // W = -Z, as before
 
 	state.spawn_timer += delta_time
 	if state.spawn_timer >= GAME_SPAWN_INTERVAL {
@@ -102,7 +94,6 @@ game_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	}
 
 	engine.world_update(&state.world, delta_time)
-	engine.world_render(&state.world)
 }
 
 game_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {

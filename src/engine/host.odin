@@ -25,7 +25,7 @@ Config :: struct {
 	after_frame: proc(ctx: ^Context, scene_name: string, dt: f32, user: rawptr), // may call request_quit
 	before_exit: proc(ctx: ^Context, scene_name: string, user: rawptr), // after the loop, before teardown
 	user:        rawptr,
-	fixed_hz:          f32, // Scene.fixed_tick rate; 0 = 60
+	fixed_hz:          f32, // Scene.fixed_tick rate; 0 = 30
 	max_fixed_updates: int, // steps per frame cap; 0 = 5
 }
 
@@ -61,13 +61,10 @@ host_run :: proc(config: Config, scene: Scene) {
 	created := context_create(&ctx, config.title, config.width, config.height, config.fullscreen, config.resizable, config.cursor)
 	assert(created)
 
-	quit_action = input.button(&ctx.input, "app.quit")
-	input.bind_key(&ctx.input, quit_action, .ESCAPE)
-	msaa_action = input.button(&ctx.input, "app.msaa")
-	input.bind_key(&ctx.input, msaa_action, .M)
+	quit_action = input.button(&ctx.input, "app.quit", .ESCAPE)
+	msaa_action = input.button(&ctx.input, "app.msaa", .M)
 	for index in 0 ..< switch_count {
-		switch_actions[index] = input.button(&ctx.input, config.scenes[index].name)
-		input.bind_key(&ctx.input, switch_actions[index], input.Key(int(input.Key._1) + index))
+		switch_actions[index] = input.button(&ctx.input, config.scenes[index].name, input.Key(int(input.Key._1) + index))
 	}
 	transition_create(&ctx.gfx)
 	stats_create(&ctx)
@@ -129,7 +126,7 @@ host_tick :: proc(ctx: ^Context, delta_time: f32) {
 	if transition_tick(ctx, scene, delta_time) do return
 	stats_tick(ctx, delta_time, scene.name)
 	if scene.fixed_tick != nil {
-		hz := host_config.fixed_hz > 0 ? host_config.fixed_hz : 60
+		hz := host_config.fixed_hz > 0 ? host_config.fixed_hz : 30
 		max_steps := host_config.max_fixed_updates > 0 ? host_config.max_fixed_updates : 5
 		steps: int
 		steps, ctx.blend = fixed_steps(&fixed_accumulator, delta_time, 1 / hz, max_steps)

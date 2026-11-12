@@ -69,7 +69,5 @@ skinned_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	delete(state.draws)
 	gfx.playback_destroy(&state.playback)
 	gfx.model_unload(gfx_ctx, &state.model)
-	gfx.sampler_destroy(gfx_ctx, state.sampler)
-	gfx.pipeline_destroy(gfx_ctx, state.pipeline)
 	free(state)
 }

@@ -210,18 +210,14 @@ ed_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	engine.set_event_hook(ctx, nil, nil)
 	_ = sdl.SetWindowRelativeMouseMode(gfx_ctx.window, true)
 	delete(state.draws)
-	gfx.skybox_destroy(gfx_ctx, &state.skybox)
+	gfx.material_destroy(&state.skybox.material)
 	when gfx.EDITOR {
-		editor.editor_destroy(gfx_ctx, state.editor)
+		editor.editor_destroy(state.editor)
 		free(state.editor)
 	}
 	gfx.renderer_clear_passes(&gfx_ctx.renderer, .Post) // passes point into state
-	gfx.mesh_destroy(gfx_ctx, &state.quad_mesh)
 	gfx.material_destroy(&state.shared_material)
 	gfx.model_unload(gfx_ctx, &state.textured_model)
 	gfx.model_unload(gfx_ctx, &state.unlit_model)
-	gfx.sampler_destroy(gfx_ctx, state.sampler)
-	gfx.pipeline_destroy(gfx_ctx, state.textured_pipeline)
-	gfx.pipeline_destroy(gfx_ctx, state.unlit_pipeline)
 	free(state)
 }

@@ -126,14 +126,10 @@ platform_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32
 }
 
 platform_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
-	gfx_ctx := &ctx.gfx
 	state := cast(^Platform_State)demo.state
 	delete(state.draws)
-	gfx.skybox_destroy(gfx_ctx, &state.skybox)
-	for mesh in state.meshes {
-		gfx.mesh_destroy(gfx_ctx, mesh)
-		free(mesh)
-	}
+	gfx.material_destroy(&state.skybox.material)
+	for mesh in state.meshes do free(mesh)
 	for &solid in state.solids {
 		delete(solid.verts)
 		delete(solid.idx)
@@ -141,9 +137,6 @@ platform_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	delete(state.solids)
 	delete(state.meshes)
 	for &material in state.materials do gfx.material_destroy(&material)
-	for texture in state.textures do gfx.texture_destroy(gfx_ctx, texture)
-	gfx.sampler_destroy(gfx_ctx, state.sampler)
-	gfx.pipeline_destroy(gfx_ctx, state.pipeline)
 	free(state)
 }
 

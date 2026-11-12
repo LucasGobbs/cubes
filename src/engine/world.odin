@@ -209,6 +209,12 @@ spawn :: proc(world: ^World, components: ..Component) -> Entity_Id {
 	return Entity_Id{index, slot.generation}
 }
 
+// Spawns a 3D camera at position looking at look_at; fov_y 0 => gfx.CAMERA_FOV_Y.
+// For bloom or blur, spawn a Camera literal instead.
+spawn_camera :: proc(world: ^World, position: Vec3, look_at := Vec3{}, fov_y: f32 = 0) -> Entity_Id {
+	return spawn(world, Camera{fov_y = fov_y, look_at = look_at}, Transform{position = position})
+}
+
 world_valid :: proc(world: ^World, id: Entity_Id) -> bool {
 	if int(id.index) >= len(world.slots) do return false
 	slot := &world.slots[id.index]
@@ -457,7 +463,7 @@ update_camera :: proc(world: ^World) {
 		}
 		gfx.camera_rotate(cam, 0, 0) // rebuilds direction, right and up from yaw/pitch
 		fov := camera.fov_y if camera.fov_y > 0 else gfx.CAMERA_FOV_Y
-		cam.projection = gfx.camera_perspective(gfx.aspect_ratio(world.gfx_ctx), fov)
+		gfx.camera_set_projection(cam, gfx.Perspective{fov_y = fov, near = gfx.CAMERA_NEAR}, gfx.aspect_ratio(world.gfx_ctx))
 		set_effect_passes(world, camera)
 		return
 	}

@@ -65,12 +65,8 @@ editor_init :: proc(gfx_ctx: ^gfx.Device, ed: ^Editor, font_path := "static/font
 	return true
 }
 
-editor_destroy :: proc(gfx_ctx: ^gfx.Device, ed: ^Editor) {
-	gfx.font_destroy(gfx_ctx, &ed.font)
-	gfx.mesh_destroy(gfx_ctx, &ed.mesh)
+editor_destroy :: proc(ed: ^Editor) {
 	gfx.material_destroy(&ed.material)
-	gfx.sampler_destroy(gfx_ctx, ed.sampler)
-	gfx.pipeline_destroy(gfx_ctx, ed.pipeline)
 	delete(ed.vertices)
 	delete(ed.spans)
 	ed^ = {}

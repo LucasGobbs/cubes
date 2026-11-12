@@ -69,11 +69,7 @@ flare_create :: proc(gfx_ctx: ^gfx.Device, flare: ^Flare) {
 
 flare_destroy :: proc(gfx_ctx: ^gfx.Device, flare: ^Flare) {
 	gfx.renderer_clear_passes(&gfx_ctx.renderer, .After_Scene)
-	gfx.mesh_destroy(gfx_ctx, &flare.mesh)
 	gfx.material_destroy(&flare.material)
-	gfx.pipeline_destroy(gfx_ctx, flare.pipeline)
-	gfx.sampler_destroy(gfx_ctx, flare.sampler)
-	gfx.texture_destroy(gfx_ctx, flare.texture)
 	delete(flare.vertices)
 }
 
