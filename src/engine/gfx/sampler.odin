@@ -26,6 +26,13 @@ SAMPLER_LINEAR_CLAMP :: sdl.GPUSamplerCreateInfo {
 	address_mode_w = .CLAMP_TO_EDGE,
 }
 
+// Nearest filtering with clamped edges, no mips: pixel-art sprites (2D batch).
+SAMPLER_NEAREST_CLAMP :: sdl.GPUSamplerCreateInfo {
+	address_mode_u = .CLAMP_TO_EDGE,
+	address_mode_v = .CLAMP_TO_EDGE,
+	address_mode_w = .CLAMP_TO_EDGE,
+}
+
 Sampler :: struct {
 	handle: ^sdl.GPUSampler,
 }

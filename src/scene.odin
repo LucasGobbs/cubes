@@ -24,4 +24,6 @@ SCENES := [?]engine.Scene_Entry {
 	{name = "forest_naive", make = forest_naive.forest_naive_scene},
 	{name = "forest_instanced", make = forest_instanced.forest_instanced_scene},
 	{name = "benchmark", make = benchmark.benchmark_scene},
+	// Keys 1..9, 0 bind only the first 10 entries; later scenes open by CLI or change_scene.
+	{name = "sprites"},
 }

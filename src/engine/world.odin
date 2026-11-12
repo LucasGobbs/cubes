@@ -31,6 +31,7 @@ import "core:math"
 import "core:math/linalg"
 import "core:mem"
 import "core:reflect"
+import "core:slice"
 import gfx "gfx"
 import default "default"
 
@@ -85,6 +86,35 @@ Camera :: struct {
 	blur:    Maybe(i32),
 }
 
+// A textured quad drawn by the World's 2D batch at its Transform (position.xy in
+// world px, scale.xy multiplies the frame size, rotation about Z). texture is
+// borrowed. grid {0,0} = whole image; otherwise frame indexes cells row-major.
+Sprite :: struct {
+	texture:        string,
+	grid:           [2]i32,
+	frame:          i32,
+	color:          [4]f32, // {0,0,0,0} = white
+	origin:         Maybe([2]f32), // nil = centre
+	flip_x, flip_y: bool,
+	layer:          i32, // draw order before position.z
+}
+
+// Advances the sprite frame: time in seconds, advanced by world_update.
+Sprite_Anim :: struct {
+	first, last: i32,
+	fps:         f32,
+	loop:        bool,
+	time:        f32,
+}
+
+// The first live entity with a Camera_2D drives the 2D view; its position comes
+// from Transform.position.xy (world px).
+Camera_2D :: struct {
+	zoom:          f32, // 0 = 1
+	viewport:      [2]f32, // logical resolution; {0,0} = window size
+	integer_scale: bool,
+}
+
 // Plain data: game code reads and writes current through get.
 Health :: struct {
 	current, max: f32,
@@ -95,6 +125,9 @@ Component :: union {
 	Model,
 	Animator,
 	Camera,
+	Camera_2D,
+	Sprite,
+	Sprite_Anim,
 	Health,
 }
 
@@ -108,6 +141,10 @@ World :: struct {
 	// Effects are heap-allocated on first use: render passes point at them.
 	bloom:    ^default.Bloom,
 	blur:     ^default.Blur,
+	// 2D batch and view: the batch is created on the first frame with a Camera_2D
+	// and its render pass keeps its address, so the World must not move after that.
+	batch:     Maybe(default.Batch),
+	camera_2d: default.Camera2D,
 }
 
 Slot :: struct {
@@ -243,7 +280,11 @@ world_destroy_type :: proc(world: ^World, type: Entity_Type) {
 // Frees every entity, cached asset and effect. Clears the Post passes this world
 // may have set on the renderer. Compute pipelines are freed with the Device.
 world_destroy :: proc(world: ^World) {
-	if world.dev != nil do gfx.renderer_clear_passes(&world.dev.renderer, .Post)
+	if world.dev != nil {
+		if batch, ok := &world.batch.?; ok do default.batch_destroy(world.dev, batch)
+		gfx.renderer_clear_passes(&world.dev.renderer, .Post)
+		world.dev.renderer.clear_color = gfx.DEFAULT_CLEAR_COLOR
+	}
 	for index := 0; index < len(world.slots); index += 1 {
 		slot := world.slots[index]
 		if slot.alive do world_destroy_entity(world, Entity_Id{u32(index), slot.generation})
@@ -276,11 +317,14 @@ world_update :: proc(world: ^World, dt: f32) {
 		if !slot.alive do continue
 		sync_transform(&slot)
 		if playback, ok := &slot.playback.(gfx.Playback); ok do gfx.playback_tick(playback, dt)
+		advance_sprite_anim(&slot, dt)
 	}
 	update_camera(world)
+	update_camera_2d(world)
 }
 
 world_render :: proc(world: ^World) {
+	if camera_2d_slot(world) != nil do world_draw_sprites(world) // before the frame: batch upload submits its own command buffer
 	gfx.renderer_render_frame(&world.dev.renderer, world_extract, world)
 }
 
@@ -291,6 +335,110 @@ world_extract :: proc(renderer: ^gfx.Renderer, user: rawptr) {
 	for &slot in world.slots {
 		if slot.alive && slot.draw.mesh != nil do gfx.renderer_submit_draw(renderer, &view, &slot.draw)
 	}
+}
+
+// Sprite_Draw is one queued sprite; sort keys are resolved before drawing.
+@(private = "file")
+Sprite_Draw :: struct {
+	slot:    ^Slot,
+	layer:   i32,
+	depth:   f32,
+	texture: gfx.Texture_Handle,
+}
+
+@(private = "file")
+world_draw_sprites :: proc(world: ^World) {
+	dev := world.dev
+	batch, ok := &world.batch.?
+	if !ok {
+		world.batch = default.batch_create(dev)
+		batch = &world.batch.?
+		default.batch_register(dev, batch)
+	}
+	queue := make([dynamic]Sprite_Draw, context.temp_allocator)
+	for &slot in world.slots {
+		if !slot.alive do continue
+		sprite := slot_component(&slot, Sprite)
+		if sprite == nil do continue
+		transform := slot_component(&slot, Transform)
+		append(&queue, Sprite_Draw{slot = &slot, layer = sprite.layer, depth = transform.position.z, texture = asset_texture(world, sprite.texture)})
+	}
+	// Painter's order: layer, then depth. Texture breaks ties so runs stay long.
+	slice.stable_sort_by(queue[:], proc(a, b: Sprite_Draw) -> bool {
+		if a.layer != b.layer do return a.layer < b.layer
+		if a.depth != b.depth do return a.depth < b.depth
+		return a.texture.index < b.texture.index
+	})
+	default.batch_begin(batch, dev, world.camera_2d)
+	for draw in queue do sprite_push(batch, dev, draw.slot, draw.texture)
+	default.batch_end(batch, dev)
+}
+
+@(private = "file")
+sprite_push :: proc(batch: ^default.Batch, dev: ^gfx.Device, slot: ^Slot, texture: gfx.Texture_Handle) {
+	sprite := slot_component(slot, Sprite)
+	transform := slot_component(slot, Transform)
+	tex := gfx.texture_get(dev, texture)
+	texture_size := [2]f32{f32(tex.width), f32(tex.height)}
+	cell := texture_size
+	src: default.Rect // zero rect = whole image
+	if sprite.grid != {} {
+		cols, rows := max(sprite.grid.x, 1), max(sprite.grid.y, 1)
+		cell = {texture_size.x / f32(cols), texture_size.y / f32(rows)}
+		index := clamp(sprite.frame, 0, cols * rows - 1)
+		src = {x = f32(index % cols) * cell.x, y = f32(index / cols) * cell.y, w = cell.x, h = cell.y}
+	}
+	origin, has_origin := sprite.origin.?
+	if !has_origin do origin = {0.5, 0.5}
+	color := sprite.color
+	if color == {} do color = {1, 1, 1, 1}
+	angle := 2 * math.atan2(transform.rotation.z, transform.rotation.w)
+	size := [2]f32{cell.x * transform.scale.x, cell.y * transform.scale.y}
+	default.batch_sprite(batch, texture, texture_size, transform.position.xy, size, src, color, origin, angle, sprite.flip_x, sprite.flip_y)
+}
+
+@(private = "file")
+camera_2d_slot :: proc(world: ^World) -> ^Slot {
+	for &slot in world.slots do if slot.alive && slot_component(&slot, Camera_2D) != nil do return &slot
+	return nil
+}
+
+@(private = "file")
+update_camera_2d :: proc(world: ^World) {
+	slot := camera_2d_slot(world)
+	if slot == nil do return
+	camera := slot_component(slot, Camera_2D)
+	transform := slot_component(slot, Transform)
+	world.camera_2d = default.Camera2D{position = transform.position.xy, zoom = camera.zoom, viewport = camera.viewport, integer_scale = camera.integer_scale}
+}
+
+@(private = "file")
+advance_sprite_anim :: proc(slot: ^Slot, dt: f32) {
+	anim := slot_component(slot, Sprite_Anim)
+	if anim == nil do return
+	anim.time += dt
+	if sprite := slot_component(slot, Sprite); sprite != nil do sprite.frame = sprite_frame(anim^)
+}
+
+// Frame index at anim.time: loops wrap, otherwise it holds on last.
+sprite_frame :: proc(anim: Sprite_Anim) -> i32 {
+	count := int(anim.last - anim.first) + 1
+	step := int(anim.time * anim.fps)
+	if anim.loop {
+		if count <= 0 do return anim.first
+		return anim.first + i32(step % count)
+	}
+	return i32(min(int(anim.last), int(anim.first) + step))
+}
+
+// Rotation about Z, for Transform.rotation of a 2D entity.
+rotation_2d :: proc(radians: f32) -> linalg.Quaternionf32 {
+	return linalg.quaternion_angle_axis_f32(radians, {0, 0, 1})
+}
+
+// Mouse position in the 2D world (px) through the World's Camera_2D.
+world_mouse :: proc(world: ^World, ctx: ^Context) -> [2]f32 {
+	return default.screen_to_world(world.camera_2d, ctx.gfx.window_size, ctx.input.mouse_position)
 }
 
 @(private = "file")

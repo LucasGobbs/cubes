@@ -18,6 +18,8 @@ Config :: struct {
 	width:       int,
 	height:      int,
 	fullscreen:  bool,
+	resizable:   bool, // window can be resized; host follows WINDOW_PIXEL_SIZE_CHANGED
+	cursor:      bool, // free system cursor: no relative mouse mode, no grab
 	scenes:      []Scene_Entry, // order = number keys 1..9,0
 	start:       string,
 	after_frame: proc(ctx: ^Context, scene_name: string, dt: f32, user: rawptr), // may call request_quit
@@ -56,7 +58,7 @@ host_run :: proc(config: Config, scene: Scene) {
 
 	ctx: Context
 	// Fullscreen skips the compositor (~2 ms floor, 16 ms spikes); --WINDOWED opts out.
-	created := context_create(&ctx, config.title, config.width, config.height, config.fullscreen)
+	created := context_create(&ctx, config.title, config.width, config.height, config.fullscreen, config.resizable, config.cursor)
 	assert(created)
 
 	quit_action = input.button(&ctx.input, "app.quit")
@@ -88,6 +90,7 @@ host_loop :: proc(ctx: ^Context) {
 		event: sdl.Event
 		for sdl.PollEvent(&event) {
 			if !input.register_event(&ctx.input, &event) && event.type == .QUIT do ctx.running = false
+			if host_config.resizable && event.type == .WINDOW_PIXEL_SIZE_CHANGED do host_resize(ctx)
 			if ctx.event_hook != nil do ctx.event_hook(&event, ctx.event_hook_data)
 		}
 		input.update(&ctx.input)
@@ -95,6 +98,16 @@ host_loop :: proc(ctx: ^Context) {
 		host_tick(ctx, ctx.delta)
 		free_all(context.temp_allocator)
 	}
+}
+
+// Window size is in points, the same unit as mouse events (input.mouse_position);
+// GetWindowSizeInPixels would mismatch on high-DPI displays.
+host_resize :: proc(ctx: ^Context) {
+	dev := &ctx.gfx
+	ok := sdl.GetWindowSize(dev.window, &dev.window_size.x, &dev.window_size.y); assert(ok)
+	if dev.window_size.x <= 0 || dev.window_size.y <= 0 do return // minimized
+	gfx.renderer_resize_targets(&dev.renderer, u32(dev.window_size.x), u32(dev.window_size.y))
+	gfx.camera_set_aspect(gfx.camera(dev), gfx.aspect_ratio(dev))
 }
 
 host_tick :: proc(ctx: ^Context, delta_time: f32) {

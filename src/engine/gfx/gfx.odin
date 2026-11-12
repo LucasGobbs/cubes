@@ -33,9 +33,12 @@ create :: proc(
 	width: int = 1280,
 	height: int = 780,
 	fullscreen: bool = false, // sized from the desktop mode; window_size is read once, here
+	resizable: bool = false, // host reacts to WINDOW_PIXEL_SIZE_CHANGED when set
+	cursor: bool = false, // true = free system cursor (no relative mouse mode, no grab)
 ) -> bool {
 	ok := sdl.Init({.VIDEO}); assert(ok)
 	flags := sdl.WindowFlags{.ALWAYS_ON_TOP, .MOUSE_GRABBED}
+	if resizable do flags += {.RESIZABLE}
 	w, h := c.int(width), c.int(height)
 	if fullscreen {
 		mode := sdl.GetDesktopDisplayMode(sdl.GetPrimaryDisplay())
@@ -62,8 +65,8 @@ create :: proc(
 	log.infof("swapchain format: %v", sdl.GetGPUSwapchainTextureFormat(gpu, window))
 	window_size: [2]i32
 	ok = sdl.GetWindowSize(window, &window_size.x, &window_size.y); assert(ok)
-	ok = sdl.SetWindowRelativeMouseMode(window, true); assert(ok)
-	ok = sdl.SetWindowMouseGrab(window, true); assert(ok)
+	ok = sdl.SetWindowRelativeMouseMode(window, !cursor); assert(ok)
+	ok = sdl.SetWindowMouseGrab(window, !cursor); assert(ok)
 	dev.window = window
 	dev.gpu = gpu
 	dev.window_size = window_size

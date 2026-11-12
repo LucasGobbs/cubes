@@ -72,6 +72,8 @@ Renderer :: struct {
 	material_binds:  int,
 	// Linear rgb fog color + view distance (a <= 0 = off). Set per frame by the scene.
 	fog:             [4]f32,
+	// sRGB clear color of the scene pass; converted to linear when cleared.
+	clear_color:     [4]f32,
 	// CPU time of the last frame's prepare and flush (benchmark mode reads these).
 	prepare_time:    time.Duration,
 	flush_time:      time.Duration,
@@ -118,10 +120,13 @@ Renderer_Load_Desc :: struct {
 	model_path: string,
 	pipeline:   Pipeline_Handle,
 }
+// sRGB clear color of the scene pass until a scene sets its own.
+DEFAULT_CLEAR_COLOR :: [4]f32{0.2, 0.2, 0.5, 1}
 
 renderer_create :: proc(dev: ^Device) -> Renderer {
 	renderer := Renderer {
 		dev    = dev,
+		clear_color = DEFAULT_CLEAR_COLOR,
 		camera = camera_create(
 			position = Vec3{0, 0, 3},
 			target = {},
@@ -447,7 +452,7 @@ renderer_begin_pass :: proc(renderer: ^Renderer, view_projection: matrix[4, 4]f3
 	color_target := sdl.GPUColorTargetInfo {
 		texture     = texture_get(renderer.dev, renderer.scene_color).handle,
 		load_op     = .CLEAR,
-		clear_color = sdl.FColor(color_srgb_to_linear({0.2, 0.2, 0.5, 1})),
+		clear_color = sdl.FColor(color_srgb_to_linear(renderer.clear_color)),
 		store_op    = .STORE,
 	}
 	if renderer.msaa_enabled {

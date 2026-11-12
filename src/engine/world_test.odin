@@ -99,3 +99,16 @@ direction_angles_match_camera_convention :: proc(t: ^testing.T) {
 	testing.expect_value(t, yaw, 0)
 	testing.expect_value(t, pitch, 0)
 }
+
+@(test)
+sprite_frame_loops_and_holds :: proc(t: ^testing.T) {
+	anim := Sprite_Anim{first = 0, last = 3, fps = 4, loop = true}
+	anim.time = 0.30
+	testing.expect_value(t, sprite_frame(anim), 1)
+	anim.time = 1.1
+	testing.expect_value(t, sprite_frame(anim), 0)
+
+	anim.loop = false
+	anim.time = 5
+	testing.expect_value(t, sprite_frame(anim), 3)
+}

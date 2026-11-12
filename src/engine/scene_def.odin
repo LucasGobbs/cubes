@@ -25,6 +25,10 @@ Camera_Def :: struct {
 	fov_y:    f32,
 	bloom:    Maybe(Bloom_Def),
 	blur:     Maybe(i32),
+	mode:          string, // "3d" (default) or "2d": Camera_2D, position.xy is the view centre
+	zoom:          f32,
+	viewport:      [2]f32,
+	integer_scale: bool,
 }
 
 Entity_Def :: struct {
@@ -34,6 +38,19 @@ Entity_Def :: struct {
 	position: [3]f32,
 	rotation: [3]f32, // degrees
 	scale:    [3]f32,
+	sprite:        string, // texture path; makes a Sprite
+	grid:          [2]i32, // columns, rows of the sheet; {0,0} = whole image
+	frame:         i32,
+	color:         [4]f32, // {0,0,0,0} = white
+	layer:         i32,
+	flip_x, flip_y: bool,
+	anim:          Maybe(Sprite_Anim_Def),
+}
+
+Sprite_Anim_Def :: struct {
+	first, last: i32,
+	fps:         f32,
+	loop:        bool,
 }
 
 // Everything the scene needs resident; assets_load loads it in one go.
@@ -47,6 +64,7 @@ Scene_Def :: struct {
 	assets:   Assets_Def,
 	camera:   Maybe(Camera_Def),
 	entities: []Entity_Def,
+	clear_color: Maybe([3]f32), // sRGB background; the renderer default when omitted
 }
 
 Scene_File :: struct {
@@ -78,11 +96,17 @@ scene_file_destroy :: proc(file: ^Scene_File) {
 // definition order (camera excluded); the slice uses the temp allocator.
 world_spawn_scene :: proc(world: ^World, def: ^Scene_Def) -> []Entity_Id {
 	assets_load(world, def.assets) // before spawning: spawns then hit the cache
+	if color, ok := def.clear_color.?; ok do world.dev.renderer.clear_color = {color.x, color.y, color.z, 1}
 	if camera, ok := def.camera.?; ok {
-		c := Camera{fov_y = camera.fov_y, blur = camera.blur}
-		if look_at, has := camera.look_at.?; has do c.look_at = Vec3(look_at)
-		if bloom, has := camera.bloom.?; has do c.bloom = Bloom{bloom.threshold, bloom.intensity, bloom.radius}
-		spawn(world, c, Transform{position = camera.position})
+		if camera.mode == "2d" {
+			spawn(world, Camera_2D{zoom = camera.zoom, viewport = camera.viewport, integer_scale = camera.integer_scale}, Transform{position = camera.position})
+		} else {
+			if camera.mode != "" && camera.mode != "3d" do log.errorf("scene: unknown camera mode %q", camera.mode)
+			c := Camera{fov_y = camera.fov_y, blur = camera.blur}
+			if look_at, has := camera.look_at.?; has do c.look_at = Vec3(look_at)
+			if bloom, has := camera.bloom.?; has do c.bloom = Bloom{bloom.threshold, bloom.intensity, bloom.radius}
+			spawn(world, c, Transform{position = camera.position})
+		}
 	}
 	ids := make([]Entity_Id, len(def.entities), context.temp_allocator)
 	for entity, index in def.entities {
@@ -94,6 +118,10 @@ world_spawn_scene :: proc(world: ^World, def: ^Scene_Def) -> []Entity_Id {
 		id := spawn(world, transform)
 		if entity.model != "" do world_add(world, id, Model{path = entity.model})
 		if entity.clip != "" do world_add(world, id, Animator{clip = entity.clip})
+		if entity.sprite != "" {
+			world_add(world, id, Sprite{texture = entity.sprite, grid = entity.grid, frame = entity.frame, color = entity.color, layer = entity.layer, flip_x = entity.flip_x, flip_y = entity.flip_y})
+			if anim, has := entity.anim.?; has do world_add(world, id, Sprite_Anim{first = anim.first, last = anim.last, fps = anim.fps, loop = anim.loop})
+		}
 		ids[index] = id
 	}
 	return ids
