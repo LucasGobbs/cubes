@@ -41,7 +41,7 @@ create_unlit_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
 // Textured pipeline for screen-space overlays: no depth, alpha blending.
 // Vertices are expected in clip space with an identity view-projection
 // (see renderer_begin_overlay_pass).
-create_textured_overlay_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Handle {
+create_textured_overlay_pipeline :: proc(gfx: ^gbbfx.Gfx, color_format := sdl.GPUTextureFormat.INVALID) -> gbbfx.Pipeline_Handle {
 	attributes := default_textured_vertex_attributes(gbbfx.VertexData)
 	return gbbfx.gfx_pipeline_create(
 		gfx,
@@ -53,6 +53,7 @@ create_textured_overlay_pipeline :: proc(gfx: ^gbbfx.Gfx) -> gbbfx.Pipeline_Hand
 			depth_test = false,
 			depth_write = false,
 			blend = true,
+			color_format = color_format,
 			single_sample = true, // drawn in 1x overlay/present passes
 			bind_draw = bind_textured_draw,
 		},

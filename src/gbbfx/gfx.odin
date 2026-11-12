@@ -69,7 +69,7 @@ create :: proc(
 	// hardware encodes on write. Must be set before renderer_create, which
 	// derives scene_color's format from the swapchain.
 	if sdl.WindowSupportsGPUSwapchainComposition(gpu, window, .SDR_LINEAR) {
-		ok = sdl.SetGPUSwapchainParameters(gpu, window, .SDR_LINEAR, .VSYNC); assert(ok)
+		ok = sdl.SetGPUSwapchainParameters(gpu, window, .SDR_LINEAR, .IMMEDIATE); assert(ok) // uncapped: vsync would hide performance
 	} else {
 		log.warn("swapchain SDR_LINEAR unsupported: colors will not be gamma-correct")
 	}

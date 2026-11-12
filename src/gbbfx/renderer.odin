@@ -65,6 +65,11 @@ Renderer :: struct {
 	skinned_overflow_logged: bool,
 	// GPU triangles submitted in the last flush.
 	triangles:       int,
+	// Last flush: instanced draws, instances they drew, pipeline and material binds.
+	instanced_draws: int,
+	instance_count:  int,
+	pipeline_binds:  int,
+	material_binds:  int,
 	// Linear rgb fog color + view distance (a <= 0 = off). Set per frame by the scene.
 	fog:             [4]f32,
 	// CPU time of the last frame's prepare and flush (benchmark mode reads these).
@@ -388,6 +393,8 @@ renderer_prepare :: proc(renderer: ^Renderer) {
 	clear(&renderer.palettes)
 	renderer.draw_calls = 0
 	renderer.triangles = 0
+	renderer.instanced_draws, renderer.instance_count = 0, 0
+	renderer.pipeline_binds, renderer.material_binds = 0, 0
 	i := 0
 	for i < len(renderer.draw_items) {
 		item := renderer.draw_items[i]
@@ -582,6 +589,7 @@ renderer_draw_item :: proc(renderer: ^Renderer, item: ^DrawItem) {
 	if renderer.bound_pipeline != material.pipeline {
 		sdl.BindGPUGraphicsPipeline(renderer.pass, pipeline_native(pipeline, renderer.pass_msaa))
 		renderer.bound_pipeline = material.pipeline
+		renderer.pipeline_binds += 1
 		renderer.bound_material = nil
 	}
 	if renderer.bound_material != material {
@@ -592,6 +600,7 @@ renderer_draw_item :: proc(renderer: ^Renderer, item: ^DrawItem) {
 			material,
 		)
 		renderer.bound_material = material
+		renderer.material_binds += 1
 	}
 
 	gfx_pipeline_bind_draw(
@@ -628,6 +637,7 @@ renderer_draw_instanced_run :: proc(
 	if renderer.bound_pipeline != material.pipeline {
 		sdl.BindGPUGraphicsPipeline(renderer.pass, pipeline_native(pipeline, renderer.pass_msaa))
 		renderer.bound_pipeline = material.pipeline
+		renderer.pipeline_binds += 1
 		renderer.bound_material = nil
 	}
 	if renderer.bound_material != material {
@@ -638,6 +648,7 @@ renderer_draw_instanced_run :: proc(
 			material,
 		)
 		renderer.bound_material = material
+		renderer.material_binds += 1
 	}
 	gfx_pipeline_bind_draw(
 		renderer.gfx,
@@ -654,6 +665,8 @@ renderer_draw_instanced_run :: proc(
 	)
 	mesh_draw_instanced(renderer.gfx, mesh, renderer.pass, u32(count), 0)
 	renderer.draw_calls += 1
+	renderer.instanced_draws += 1
+	renderer.instance_count += count
 	renderer.triangles += count * triangle_count(mesh)
 }
 

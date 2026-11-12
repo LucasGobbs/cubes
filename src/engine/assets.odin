@@ -7,6 +7,7 @@ import loader "../gbbfx/loader"
 
 Assets :: struct {
 	models:           map[string]^Model_Asset,
+	textures:         map[string]gbbfx.Texture_Handle,
 	sampler:          gbbfx.Sampler_Handle,
 	static_pipeline:  gbbfx.Pipeline_Handle,
 	skinned_pipeline: gbbfx.Pipeline_Handle,
@@ -53,7 +54,27 @@ asset_model :: proc(world: ^World, path: string) -> ^Model_Asset {
 	return asset
 }
 
+// Loads everything a scene definition lists, so game code never calls a loader.
+// Use asset_model / asset_texture afterwards; both are then pure cache hits.
+assets_load_all :: proc(world: ^World, def: Assets_Def) {
+	for path in def.models do asset_model(world, path)
+	for path in def.textures do asset_texture(world, path)
+}
+
+// Loads on first use and caches by path until world_destroy.
+asset_texture :: proc(world: ^World, path: string) -> gbbfx.Texture_Handle {
+	if handle, found := world.assets.textures[path]; found do return handle
+	handle := gbbfx.gfx_texture_load(world.gfx, path)
+	world.assets.textures[strings.clone(path)] = handle
+	return handle
+}
+
 assets_destroy :: proc(world: ^World) {
+	for path, handle in world.assets.textures {
+		gbbfx.gfx_texture_destroy(world.gfx, handle)
+		delete(path)
+	}
+	delete(world.assets.textures)
 	assets := &world.assets
 	for path, asset in assets.models {
 		gbbfx.gfx_unload(world.gfx, &asset.model)

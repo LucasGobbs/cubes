@@ -48,6 +48,9 @@ Graphics_Pipeline_Desc :: struct {
 	// transparency. A pipeline with neither depth flag is created without a
 	// depth-stencil target, matching depth-less overlay passes.
 	blend:             bool,
+	// Render target format; .INVALID (zero) = swapchain format. Set to
+	// renderer.post_format for overlays that draw into postfx outputs.
+	color_format:      sdl.GPUTextureFormat,
 	// Face culling. Zero values keep the previous behavior (no culling,
 	// counter-clockwise front, which is glTF's outward winding); closed meshes
 	// should cull .BACK.
@@ -105,7 +108,7 @@ gfx_pipeline_create :: proc(gfx: ^Gfx, desc: Graphics_Pipeline_Desc) -> Pipeline
 	}
 
 	color_target := sdl.GPUColorTargetDescription {
-		format = sdl.GetGPUSwapchainTextureFormat(gfx.gpu, gfx.window),
+		format = desc.color_format if desc.color_format != .INVALID else sdl.GetGPUSwapchainTextureFormat(gfx.gpu, gfx.window),
 	}
 	if desc.blend {
 		color_target.blend_state = {
