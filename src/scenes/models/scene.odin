@@ -24,7 +24,7 @@ Models_State :: struct {
 	ground_material: gfx.Material,
 	ground_mesh:     gfx.Mesh,
 	draws:           [dynamic]gfx.Draw,
-	skybox:          default.Skybox,
+	skybox:          gfx.Skybox,
 	model_draws:     [4]int,
 	rotation:        f32,
 	fly_camera:      default.Fly_Camera,
@@ -47,11 +47,11 @@ models_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 
 	state.fly_camera = default.fly_camera_create(gfx_ctx, &ctx.input, "models")
 
-	state.pipeline = default.create_textured_pipeline(gfx_ctx)
+	state.pipeline = gfx.create_textured_pipeline(gfx_ctx)
 	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 
 	for path, index in MODEL_PATHS {
-		state.models[index] = default.load_textured_model(
+		state.models[index] = gfx.load_textured_model(
 			gfx_ctx,
 			path,
 			state.pipeline,
@@ -65,12 +65,12 @@ models_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	}
 
 	// Ground plane: raw quad, tiled mud texture.
-	state.skybox = default.skybox_create(gfx_ctx, default.SKYBOX_PATH)
-	append(&state.draws, default.skybox_draw(&state.skybox))
+	state.skybox = gfx.skybox_create(gfx_ctx, default.SKYBOX_PATH)
+	append(&state.draws, gfx.skybox_draw(&state.skybox))
 
 	state.ground_texture = gfx.texture_load(gfx_ctx, "static/muddy_ground.jpg")
 	state.ground_material = gfx.material_create(state.pipeline)
-	default.bind_textured_material(&state.ground_material, state.ground_texture, state.sampler)
+	gfx.bind_textured_material(&state.ground_material, state.ground_texture, state.sampler)
 	tiling :: f32(40)
 	ground_vertices := [4]gfx.VertexData {
 		{position = {-100, -1, -100}, color = {1, 1, 1, 1}, normal = {0, 1, 0}, uv = {0, 0}},
@@ -112,7 +112,7 @@ models_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Models_State)demo.state
 	delete(state.draws)
-	default.skybox_destroy(gfx_ctx, &state.skybox)
+	gfx.skybox_destroy(gfx_ctx, &state.skybox)
 	gfx.mesh_destroy(gfx_ctx, &state.ground_mesh)
 	gfx.material_destroy(&state.ground_material)
 	gfx.texture_destroy(gfx_ctx, state.ground_texture)

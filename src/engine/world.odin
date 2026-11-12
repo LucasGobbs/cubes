@@ -33,7 +33,6 @@ import "core:mem"
 import "core:reflect"
 import "core:slice"
 import gfx "gfx"
-import default "default"
 
 Vec3 :: gfx.Vec3
 
@@ -139,12 +138,12 @@ World :: struct {
 	assets:   Assets,
 	updating: bool, // true while world_update ticks; spawns then wait one frame
 	// Effects are heap-allocated on first use: render passes point at them.
-	bloom:    ^default.Bloom,
-	blur:     ^default.Blur,
+	bloom:    ^gfx.Bloom,
+	blur:     ^gfx.Blur,
 	// 2D batch and view: the batch is created on the first frame with a Camera_2D
 	// and its render pass keeps its address, so the World must not move after that.
-	batch:     Maybe(default.Batch),
-	camera_2d: default.Camera2D,
+	batch:     Maybe(gfx.Batch),
+	camera_2d: gfx.Camera2D,
 }
 
 Slot :: struct {
@@ -281,7 +280,7 @@ world_destroy_type :: proc(world: ^World, type: Entity_Type) {
 // may have set on the renderer. Compute pipelines are freed with the Device.
 world_destroy :: proc(world: ^World) {
 	if world.gfx_ctx != nil {
-		if batch, ok := &world.batch.?; ok do default.batch_destroy(world.gfx_ctx, batch)
+		if batch, ok := &world.batch.?; ok do gfx.batch_destroy(world.gfx_ctx, batch)
 		gfx.renderer_clear_passes(&world.gfx_ctx.renderer, .Post)
 		world.gfx_ctx.renderer.clear_color = gfx.DEFAULT_CLEAR_COLOR
 	}
@@ -351,9 +350,9 @@ world_draw_sprites :: proc(world: ^World) {
 	gfx_ctx := world.gfx_ctx
 	batch, ok := &world.batch.?
 	if !ok {
-		world.batch = default.batch_create(gfx_ctx)
+		world.batch = gfx.batch_create(gfx_ctx)
 		batch = &world.batch.?
-		default.batch_register(gfx_ctx, batch)
+		gfx.batch_register(gfx_ctx, batch)
 	}
 	queue := make([dynamic]Sprite_Draw, context.temp_allocator)
 	for &slot in world.slots {
@@ -369,19 +368,19 @@ world_draw_sprites :: proc(world: ^World) {
 		if a.depth != b.depth do return a.depth < b.depth
 		return a.texture.index < b.texture.index
 	})
-	default.batch_begin(batch, gfx_ctx, world.camera_2d)
+	gfx.batch_begin(batch, gfx_ctx, world.camera_2d)
 	for draw in queue do sprite_push(batch, gfx_ctx, draw.slot, draw.texture)
-	default.batch_end(batch, gfx_ctx)
+	gfx.batch_end(batch, gfx_ctx)
 }
 
 @(private = "file")
-sprite_push :: proc(batch: ^default.Batch, gfx_ctx: ^gfx.Device, slot: ^Slot, texture: gfx.Texture_Handle) {
+sprite_push :: proc(batch: ^gfx.Batch, gfx_ctx: ^gfx.Device, slot: ^Slot, texture: gfx.Texture_Handle) {
 	sprite := slot_component(slot, Sprite)
 	transform := slot_component(slot, Transform)
 	tex := gfx.texture_get(gfx_ctx, texture)
 	texture_size := [2]f32{f32(tex.width), f32(tex.height)}
 	cell := texture_size
-	src: default.Rect // zero rect = whole image
+	src: gfx.Rect // zero rect = whole image
 	if sprite.grid != {} {
 		cols, rows := max(sprite.grid.x, 1), max(sprite.grid.y, 1)
 		cell = {texture_size.x / f32(cols), texture_size.y / f32(rows)}
@@ -394,7 +393,7 @@ sprite_push :: proc(batch: ^default.Batch, gfx_ctx: ^gfx.Device, slot: ^Slot, te
 	if color == {} do color = {1, 1, 1, 1}
 	angle := 2 * math.atan2(transform.rotation.z, transform.rotation.w)
 	size := [2]f32{cell.x * transform.scale.x, cell.y * transform.scale.y}
-	default.batch_sprite(batch, texture, texture_size, transform.position.xy, size, src, color, origin, angle, sprite.flip_x, sprite.flip_y)
+	gfx.batch_sprite(batch, texture, texture_size, transform.position.xy, size, src, color, origin, angle, sprite.flip_x, sprite.flip_y)
 }
 
 @(private = "file")
@@ -409,7 +408,7 @@ update_camera_2d :: proc(world: ^World) {
 	if slot == nil do return
 	camera := slot_component(slot, Camera_2D)
 	transform := slot_component(slot, Transform)
-	world.camera_2d = default.Camera2D{position = transform.position.xy, zoom = camera.zoom, viewport = camera.viewport, integer_scale = camera.integer_scale}
+	world.camera_2d = gfx.Camera2D{position = transform.position.xy, zoom = camera.zoom, viewport = camera.viewport, integer_scale = camera.integer_scale}
 }
 
 @(private = "file")
@@ -438,7 +437,7 @@ rotation_2d :: proc(radians: f32) -> linalg.Quaternionf32 {
 
 // Mouse position in the 2D world (px) through the World's Camera_2D.
 world_mouse :: proc(world: ^World, ctx: ^Context) -> [2]f32 {
-	return default.screen_to_world(world.camera_2d, ctx.gfx.window_size, ctx.input.mouse_position)
+	return gfx.screen_to_world(world.camera_2d, ctx.gfx.window_size, ctx.input.mouse_position)
 }
 
 @(private = "file")
@@ -479,27 +478,27 @@ set_effect_passes :: proc(world: ^World, camera: ^Camera) {
 	count := 0
 	if radius, ok := camera.blur.?; ok {
 		if world.blur == nil {
-			world.blur = new(default.Blur)
-			world.blur^ = default.blur_create(world.gfx_ctx)
+			world.blur = new(gfx.Blur)
+			world.blur^ = gfx.blur_create(world.gfx_ctx)
 		}
 		world.blur.radius = radius if radius > 0 else 4
-		world.blur.radius = min(world.blur.radius, default.BLUR_MAX_RADIUS)
-		passes[count] = default.blur_pass(world.blur)
+		world.blur.radius = min(world.blur.radius, gfx.BLUR_MAX_RADIUS)
+		passes[count] = gfx.blur_pass(world.blur)
 		count += 1
 	}
 	if settings, ok := camera.bloom.?; ok {
 		if world.bloom == nil {
-			world.bloom = new(default.Bloom)
-			world.bloom^ = default.bloom_create(world.gfx_ctx)
+			world.bloom = new(gfx.Bloom)
+			world.bloom^ = gfx.bloom_create(world.gfx_ctx)
 		}
-		// Same values as default.bloom_create, applied to the existing pipelines.
+		// Same values as gfx.bloom_create, applied to the existing pipelines.
 		threshold := settings.threshold if settings.threshold > 0 else 0.8
 		world.bloom.threshold = threshold
 		world.bloom.knee = 0.5 * threshold
 		world.bloom.intensity = settings.intensity if settings.intensity > 0 else 0.6
 		world.bloom.radius = settings.radius if settings.radius > 0 else 6
-		world.bloom.radius = min(world.bloom.radius, default.BLUR_MAX_RADIUS)
-		passes[count] = default.bloom_pass(world.bloom)
+		world.bloom.radius = min(world.bloom.radius, gfx.BLUR_MAX_RADIUS)
+		passes[count] = gfx.bloom_pass(world.bloom)
 		count += 1
 	}
 	gfx.renderer_set_passes(&world.gfx_ctx.renderer, .Post, passes[:count])

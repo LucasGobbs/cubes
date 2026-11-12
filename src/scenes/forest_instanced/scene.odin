@@ -58,8 +58,8 @@ Forest_State :: struct {
 	pipeline:         gfx.Pipeline_Handle,
 	material:         gfx.Material,
 	draws:            [dynamic]gfx.Draw,
-	skybox:           default.Skybox,
-	bloom:            default.Bloom,
+	skybox:           gfx.Skybox,
+	bloom:            gfx.Bloom,
 	fly_camera:       default.Fly_Camera,
 	variant_data:     [VARIANT_COUNT]Variant_Data,
 	variant_mesh:     [VARIANT_COUNT]gfx.Mesh,
@@ -113,11 +113,11 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		gfx.mesh_upload(&gfx_ctx.renderer, &state.tuft_mesh[index])
 	}
 
-	state.skybox = default.skybox_create(gfx_ctx, default.SKYBOX_PATH)
-	append(&state.draws, default.skybox_draw(&state.skybox))
+	state.skybox = gfx.skybox_create(gfx_ctx, default.SKYBOX_PATH)
+	append(&state.draws, gfx.skybox_draw(&state.skybox))
 
-	state.bloom = default.bloom_create(gfx_ctx, 0.95, 0.2, 5)
-	gfx.renderer_set_passes(&gfx_ctx.renderer, .Post, []gfx.Render_Pass{default.bloom_pass(&state.bloom)})
+	state.bloom = gfx.bloom_create(gfx_ctx, 0.95, 0.2, 5)
+	gfx.renderer_set_passes(&gfx_ctx.renderer, .Post, []gfx.Render_Pass{gfx.bloom_pass(&state.bloom)})
 	naive.flare_create(gfx_ctx, &state.flare)
 
 	forest_stream(state, gfx_ctx, 1 << 20, START_RADIUS)
@@ -277,7 +277,7 @@ forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx.renderer_clear_passes(&gfx_ctx.renderer, .Post)
 	naive.flare_destroy(gfx_ctx, &state.flare)
 	delete(state.draws)
-	default.skybox_destroy(gfx_ctx, &state.skybox)
+	gfx.skybox_destroy(gfx_ctx, &state.skybox)
 	for &cluster in state.terrain {
 		if cluster.built do gfx.mesh_destroy(gfx_ctx, &cluster.mesh)
 		delete(cluster.data.verts)

@@ -82,7 +82,7 @@ Benchmark_State :: struct {
 	models:           [BOAT_COUNT]gfx.Model,
 	dragon:           gfx.Model,
 	draws:            [dynamic]gfx.Draw,
-	skybox:           default.Skybox,
+	skybox:           gfx.Skybox,
 	sea_pipeline:     gfx.Pipeline_Handle,
 	sea_material:     gfx.Material,
 	sea_mesh:         gfx.Mesh,
@@ -132,19 +132,19 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.fog_action = input.button(inputs, "benchmark.fog")
 	input.bind_key(inputs, state.fog_action, .V)
 
-	state.pipeline = default.create_textured_instanced_pipeline(gfx_ctx)
+	state.pipeline = gfx.create_textured_instanced_pipeline(gfx_ctx)
 	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 	boat_paths := BOAT_PATHS
 	for path, index in boat_paths {
 		state.models[index] = gfx.model_load(gfx_ctx, {model_path = path, pipeline = state.pipeline})
-		default.bind_textured_instanced_material(
+		gfx.bind_textured_instanced_material(
 			&state.models[index].material,
 			gfx.model_texture(&state.models[index]),
 			state.sampler,
 		)
 	}
 	state.dragon = gfx.model_load(gfx_ctx, {model_path = DRAGON_PATH, pipeline = state.pipeline})
-	default.bind_textured_instanced_material(
+	gfx.bind_textured_instanced_material(
 		&state.dragon.material,
 		gfx.model_texture(&state.dragon),
 		state.sampler,
@@ -154,14 +154,14 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	font, font_ok := gfx.font_create(gfx_ctx, "static/fonts/andale-mono.ttf")
 	assert(font_ok)
 	state.font = font
-	state.overlay_pipeline = default.create_textured_overlay_pipeline(gfx_ctx)
+	state.overlay_pipeline = gfx.create_textured_overlay_pipeline(gfx_ctx)
 	state.overlay_material = gfx.material_create(state.overlay_pipeline)
-	default.bind_textured_material(&state.overlay_material, state.font.texture, state.sampler)
+	gfx.bind_textured_material(&state.overlay_material, state.font.texture, state.sampler)
 	dummy := [6]gfx.VertexData{}
 	state.text_mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
 	gfx.mesh_upload(&gfx_ctx.renderer, &state.text_mesh)
 
-	state.skybox = default.skybox_create(gfx_ctx, default.SKYBOX_PATH)
+	state.skybox = gfx.skybox_create(gfx_ctx, default.SKYBOX_PATH)
 	state.sea_pipeline = sea_pipeline_create(gfx_ctx, state)
 	state.sea_material = gfx.material_create(state.sea_pipeline)
 	state.sea_mesh = sea_mesh_create(gfx_ctx)
@@ -177,7 +177,7 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 	state.per_model = per_model
 	clear(&state.draws)
 	clear(&state.boats)
-	append(&state.draws, default.skybox_draw(&state.skybox))
+	append(&state.draws, gfx.skybox_draw(&state.skybox))
 	append(&state.draws, gfx.draw_make(&state.sea_mesh, &state.sea_material, layer = .WORLD))
 	for &model in state.models {
 		for _ in 0 ..< per_model {
@@ -444,7 +444,7 @@ benchmark_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Benchmark_State)demo.state
 	delete(state.draws)
-	default.skybox_destroy(gfx_ctx, &state.skybox)
+	gfx.skybox_destroy(gfx_ctx, &state.skybox)
 	gfx.mesh_destroy(gfx_ctx, &state.sea_mesh)
 	gfx.material_destroy(&state.sea_material)
 	gfx.pipeline_destroy(gfx_ctx, state.sea_pipeline)

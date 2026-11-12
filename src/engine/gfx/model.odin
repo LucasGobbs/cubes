@@ -90,3 +90,16 @@ model_destroy :: proc(gfx_ctx: ^Device, model: ^Model) {
 	}
 	model^ = {}
 }
+
+// Loads a .glb/.gltf and binds its base color texture to the default
+// textured material.
+load_textured_model :: proc(
+	gfx_ctx: ^Device,
+	model_path: string,
+	pipeline: Pipeline_Handle,
+	sampler: Sampler_Handle,
+) -> Model {
+	model := model_load(gfx_ctx, {model_path = model_path, pipeline = pipeline})
+	bind_textured_material(&model.material, model_texture(&model), sampler)
+	return model
+}

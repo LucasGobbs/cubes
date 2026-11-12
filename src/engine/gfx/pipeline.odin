@@ -61,7 +61,7 @@ Graphics_Pipeline_Desc :: struct {
 	// (mesh, material) draw items into one instanced draw.
 	instanced:         bool,
 	// Skinned pipelines also read joint palettes from a second storage buffer
-	// (see default.bind_textured_skinned_storage). Set together with instanced.
+	// (see bind_textured_skinned_storage). Set together with instanced.
 	skinned:           bool,
 	// Only ever bound in passes that render to 1x targets (overlay/present
 	// passes). Skips building the MSAA variant.

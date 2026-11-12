@@ -19,7 +19,7 @@ Simple_State :: struct {
 	quad_vertices:     [4]gfx.VertexData,
 	quad_indices:      [6]u16,
 	draws:             [dynamic]gfx.Draw,
-	skybox:            default.Skybox,
+	skybox:            gfx.Skybox,
 	spinning:          int,
 	rotation:          f32,
 	fly_camera:        default.Fly_Camera,
@@ -41,11 +41,11 @@ simple_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 
 	state.fly_camera = default.fly_camera_create(gfx_ctx, &ctx.input, "simple")
 
-	state.textured_pipeline = default.create_textured_pipeline(gfx_ctx)
-	state.unlit_pipeline = default.create_unlit_pipeline(gfx_ctx)
+	state.textured_pipeline = gfx.create_textured_pipeline(gfx_ctx)
+	state.unlit_pipeline = gfx.create_unlit_pipeline(gfx_ctx)
 	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 
-	state.textured_model = default.load_textured_model(
+	state.textured_model = gfx.load_textured_model(
 		gfx_ctx,
 		"static/models/sea/ship-large.glb",
 		state.textured_pipeline,
@@ -55,10 +55,10 @@ simple_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		gfx_ctx,
 		{model_path = "static/models/sea/ship-small-ghost.glb", pipeline = state.unlit_pipeline},
 	)
-	default.set_unlit_color(&state.unlit_model.material, {0.2, 0.8, 0.9, 1})
+	gfx.set_unlit_color(&state.unlit_model.material, {0.2, 0.8, 0.9, 1})
 
-	state.skybox = default.skybox_create(gfx_ctx, default.SKYBOX_PATH)
-	append(&state.draws, default.skybox_draw(&state.skybox))
+	state.skybox = gfx.skybox_create(gfx_ctx, default.SKYBOX_PATH)
+	append(&state.draws, gfx.skybox_draw(&state.skybox))
 
 	append(&state.draws, gfx.draw_model(&state.textured_model, SPIN_SHIP_POSITION, SHIP_SCALE))
 	state.spinning = len(state.draws) - 1
@@ -111,7 +111,7 @@ simple_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Simple_State)demo.state
 	delete(state.draws)
-	default.skybox_destroy(gfx_ctx, &state.skybox)
+	gfx.skybox_destroy(gfx_ctx, &state.skybox)
 	gfx.mesh_destroy(gfx_ctx, &state.quad_mesh)
 	gfx.model_unload(gfx_ctx, &state.textured_model)
 	gfx.model_unload(gfx_ctx, &state.unlit_model)

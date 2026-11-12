@@ -2,7 +2,6 @@ package engine
 
 import "core:strings"
 import gfx "gfx"
-import default "default"
 import loader "gfx/loader"
 
 Assets :: struct {
@@ -34,20 +33,20 @@ asset_model :: proc(world: ^World, path: string) -> ^Model_Asset {
 
 	if asset.skinned {
 		if !is_set(assets.skinned_pipeline) {
-			assets.skinned_pipeline = default.create_textured_skinned_pipeline(gfx_ctx)
+			assets.skinned_pipeline = gfx.create_textured_skinned_pipeline(gfx_ctx)
 		}
 		imported, ok := loader.model_import_skinned_from_gltf(path)
 		assert(ok, "engine: model load failed")
 		defer loader.skinned_model_destroy(&imported)
 		asset.model = gfx.model_create_skinned(gfx_ctx, &imported, assets.skinned_pipeline)
 		gfx.model_upload_to_gpu(&asset.model, &gfx_ctx.renderer.uploader)
-		default.bind_textured_skinned_material(&asset.model.material, gfx.model_texture(&asset.model), assets.sampler)
+		gfx.bind_textured_skinned_material(&asset.model.material, gfx.model_texture(&asset.model), assets.sampler)
 	} else {
 		if !is_set(assets.static_pipeline) {
-			assets.static_pipeline = default.create_textured_instanced_pipeline(gfx_ctx)
+			assets.static_pipeline = gfx.create_textured_instanced_pipeline(gfx_ctx)
 		}
 		asset.model = gfx.model_load(gfx_ctx, {model_path = path, pipeline = assets.static_pipeline})
-		default.bind_textured_instanced_material(&asset.model.material, gfx.model_texture(&asset.model), assets.sampler)
+		gfx.bind_textured_instanced_material(&asset.model.material, gfx.model_texture(&asset.model), assets.sampler)
 	}
 
 	world.assets.models[strings.clone(path)] = asset

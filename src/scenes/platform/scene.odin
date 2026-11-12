@@ -39,7 +39,7 @@ Platform_State :: struct {
 	solids:    [dynamic]Proto_Solid,
 	meshes:    [dynamic]^gfx.Mesh,
 	draws:     [dynamic]gfx.Draw,
-	skybox:    default.Skybox,
+	skybox:    gfx.Skybox,
 	fly_camera: default.Fly_Camera,
 	player:    int,
 	time:      f32,
@@ -61,16 +61,16 @@ platform_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	engine.scene_camera_reset(demo, gfx_ctx, {24, 18, 34}, {2, 2, -1})
 
 	state.fly_camera = default.fly_camera_create(gfx_ctx, &ctx.input, "platform")
-	state.pipeline = default.create_textured_pipeline(gfx_ctx)
+	state.pipeline = gfx.create_textured_pipeline(gfx_ctx)
 	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 	for path, mat in PROTO_TEXTURES {
 		state.textures[mat] = gfx.texture_load(gfx_ctx, path)
 		state.materials[mat] = gfx.material_create(state.pipeline)
-		default.bind_textured_material(&state.materials[mat], state.textures[mat], state.sampler)
+		gfx.bind_textured_material(&state.materials[mat], state.textures[mat], state.sampler)
 	}
 
-	state.skybox = default.skybox_create(gfx_ctx, default.SKYBOX_PATH)
-	append(&state.draws, default.skybox_draw(&state.skybox))
+	state.skybox = gfx.skybox_create(gfx_ctx, default.SKYBOX_PATH)
+	append(&state.draws, gfx.skybox_draw(&state.skybox))
 
 	// Ground covers the whole field (x -24..24, z -14..14) with a pit at x -4..0, z -2..2.
 	proto_box(state, gfx_ctx, {-14, -1, 0}, {10, 1, 14}, .Ground)
@@ -126,7 +126,7 @@ platform_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Platform_State)demo.state
 	delete(state.draws)
-	default.skybox_destroy(gfx_ctx, &state.skybox)
+	gfx.skybox_destroy(gfx_ctx, &state.skybox)
 	for mesh in state.meshes {
 		gfx.mesh_destroy(gfx_ctx, mesh)
 		free(mesh)

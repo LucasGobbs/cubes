@@ -1,0 +1,53 @@
+{
+  "outputDir": "src/engine/gfx/generated",
+  "parameterOutputDir": "src/engine/gfx",
+  "package": "gfx",
+  "gooseImport": "../../../third_party/goose/src",
+  "shaders": [
+    {
+      "name": "default_textured",
+      "source": "src/engine/gfx/shaders/textured.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "default_unlit_color",
+      "source": "src/engine/gfx/shaders/unlit_color.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "default_textured_instanced",
+      "source": "src/engine/gfx/shaders/textured_instanced.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "default_textured_skinned",
+      "source": "src/engine/gfx/shaders/textured_skinned.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "default_skybox",
+      "source": "src/engine/gfx/shaders/skybox.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "default_postfx_blur",
+      "source": "src/engine/gfx/shaders/postfx_blur.slang",
+      "compute": "computeMain"
+    },
+    {
+      "name": "default_postfx_bloom_prefilter",
+      "source": "src/engine/gfx/shaders/postfx_bloom_prefilter.slang",
+      "compute": "computeMain"
+    },
+    {
+      "name": "default_postfx_bloom_composite",
+      "source": "src/engine/gfx/shaders/postfx_bloom_composite.slang",
+      "compute": "computeMain"
+    }
+  ]
+}

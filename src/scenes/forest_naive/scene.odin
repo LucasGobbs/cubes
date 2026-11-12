@@ -41,8 +41,8 @@ Forest_State :: struct {
 	pipeline:   gfx.Pipeline_Handle,
 	material:   gfx.Material,
 	draws:      [dynamic]gfx.Draw,
-	skybox:     default.Skybox,
-	bloom:      default.Bloom,
+	skybox:     gfx.Skybox,
+	bloom:      gfx.Bloom,
 	fly_camera: default.Fly_Camera,
 	chunks:     [CHUNKS_PER_SIDE * CHUNKS_PER_SIDE]Chunk,
 	time:       f32,
@@ -78,11 +78,11 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	)
 	state.material = gfx.material_create(state.pipeline)
 
-	state.skybox = default.skybox_create(gfx_ctx, default.SKYBOX_PATH)
-	append(&state.draws, default.skybox_draw(&state.skybox))
+	state.skybox = gfx.skybox_create(gfx_ctx, default.SKYBOX_PATH)
+	append(&state.draws, gfx.skybox_draw(&state.skybox))
 
-	state.bloom = default.bloom_create(gfx_ctx, 0.95, 0.2, 5)
-	gfx.renderer_set_passes(&gfx_ctx.renderer, .Post, []gfx.Render_Pass{default.bloom_pass(&state.bloom)})
+	state.bloom = gfx.bloom_create(gfx_ctx, 0.95, 0.2, 5)
+	gfx.renderer_set_passes(&gfx_ctx.renderer, .Post, []gfx.Render_Pass{gfx.bloom_pass(&state.bloom)})
 	flare_create(gfx_ctx, &state.flare)
 
 	forest_stream(state, gfx_ctx, 1 << 20, START_RADIUS)
@@ -213,7 +213,7 @@ forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx.renderer_clear_passes(&gfx_ctx.renderer, .Post)
 	flare_destroy(gfx_ctx, &state.flare)
 	delete(state.draws)
-	default.skybox_destroy(gfx_ctx, &state.skybox)
+	gfx.skybox_destroy(gfx_ctx, &state.skybox)
 	for &chunk in state.chunks {
 		if chunk.static_built do gfx.mesh_destroy(gfx_ctx, &chunk.static_mesh)
 		delete(chunk.static_data.verts)

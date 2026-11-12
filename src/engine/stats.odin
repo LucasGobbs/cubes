@@ -10,7 +10,6 @@ import "core:log"
 import "core:math/linalg"
 import "core:time"
 import gfx "gfx"
-import default "default"
 import input "input"
 import sdl "vendor:sdl3"
 STATS_BUDGET_MS :: 1000.0 / 60.0 // frame quota at 60 fps
@@ -57,12 +56,12 @@ stats_create :: proc(ctx: ^Context) {
 	font, ok := gfx.font_create(gfx_ctx, "static/fonts/andale-mono.ttf")
 	assert(ok)
 	stats.font = font
-	stats.pipelines[0] = default.create_textured_overlay_pipeline(gfx_ctx)
-	stats.pipelines[1] = default.create_textured_overlay_pipeline(gfx_ctx, gfx_ctx.renderer.post_format)
+	stats.pipelines[0] = gfx.create_textured_overlay_pipeline(gfx_ctx)
+	stats.pipelines[1] = gfx.create_textured_overlay_pipeline(gfx_ctx, gfx_ctx.renderer.post_format)
 	stats.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 	for index in 0 ..< 2 {
 		stats.materials[index] = gfx.material_create(stats.pipelines[index])
-		default.bind_textured_material(&stats.materials[index], stats.font.texture, stats.sampler)
+		gfx.bind_textured_material(&stats.materials[index], stats.font.texture, stats.sampler)
 	}
 	dummy := [6]gfx.VertexData{}
 	stats.mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])

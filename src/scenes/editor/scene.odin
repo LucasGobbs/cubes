@@ -19,12 +19,12 @@ Editor_State :: struct {
 	sampler:           gfx.Sampler_Handle,
 	textured_model:    gfx.Model,
 	unlit_model:       gfx.Model,
-	skybox:            default.Skybox,
+	skybox:            gfx.Skybox,
 	shared_material:   gfx.Material,
 	quad_vertices:     [4]gfx.VertexData,
 	quad_indices:      [6]u16,
 	quad_mesh:         gfx.Mesh,
-	blur:              default.Blur,
+	blur:              gfx.Blur,
 	ui:                editor.Ui_State,
 	editor:            ^editor.Editor,
 	tint:              [4]f32,
@@ -52,11 +52,11 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 
 	state.fly_camera = default.fly_camera_create(gfx_ctx, &ctx.input, "editor")
 
-	state.textured_pipeline = default.create_textured_pipeline(gfx_ctx)
-	state.unlit_pipeline = default.create_unlit_pipeline(gfx_ctx)
+	state.textured_pipeline = gfx.create_textured_pipeline(gfx_ctx)
+	state.unlit_pipeline = gfx.create_unlit_pipeline(gfx_ctx)
 	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 
-	state.textured_model = default.load_textured_model(
+	state.textured_model = gfx.load_textured_model(
 		gfx_ctx,
 		"static/models/sea/ship-large.glb",
 		state.textured_pipeline,
@@ -66,10 +66,10 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		gfx_ctx,
 		{model_path = "static/models/sea/ship-large.glb", pipeline = state.unlit_pipeline},
 	)
-	default.set_unlit_color(&state.unlit_model.material, {0.15, 0.85, 0.3, 1})
+	gfx.set_unlit_color(&state.unlit_model.material, {0.15, 0.85, 0.3, 1})
 
-	state.skybox = default.skybox_create(gfx_ctx, default.SKYBOX_PATH)
-	append(&state.draws, default.skybox_draw(&state.skybox))
+	state.skybox = gfx.skybox_create(gfx_ctx, default.SKYBOX_PATH)
+	append(&state.draws, gfx.skybox_draw(&state.skybox))
 
 	append(&state.draws, gfx.draw_model(&state.textured_model, {-5, -.5, -12}, {0.4, 0.4, 0.4}))
 	state.center_entity = len(state.draws)
@@ -80,7 +80,7 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	// state.tint live.
 	state.shared_material = gfx.material_create(state.unlit_pipeline)
 	state.tint = {0.95, 0.85, 0.2, 1}
-	default.set_unlit_color(&state.shared_material, state.tint)
+	gfx.set_unlit_color(&state.shared_material, state.tint)
 
 	append(
 		&state.draws,
@@ -100,8 +100,8 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 
 	// Post-processing: separable gaussian blur over scene_color, run by the
 	// renderer after the scene (renderer_run_post).
-	state.blur = default.blur_create(gfx_ctx, 2)
-	gfx.renderer_set_passes(&gfx_ctx.renderer, .Post, []gfx.Render_Pass{default.blur_pass(&state.blur)})
+	state.blur = gfx.blur_create(gfx_ctx, 2)
+	gfx.renderer_set_passes(&gfx_ctx.renderer, .Post, []gfx.Render_Pass{gfx.blur_pass(&state.blur)})
 
 	when gfx.EDITOR {
 		state.editor = new(editor.Editor)
@@ -153,7 +153,7 @@ ed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 		camera := gfx.camera(gfx_ctx)
 		state.ui.fps = 1 / delta_time
 		editor.editor_build_ui(state.editor, &state.ui)
-		default.set_unlit_color(&state.shared_material, state.tint)
+		gfx.set_unlit_color(&state.shared_material, state.tint)
 
 		// The game renders at the Viewport widget's size; when the editor
 		// is hidden it takes the whole window again.
@@ -207,7 +207,7 @@ ed_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	engine.set_event_hook(ctx, nil, nil)
 	_ = sdl.SetWindowRelativeMouseMode(gfx_ctx.window, true)
 	delete(state.draws)
-	default.skybox_destroy(gfx_ctx, &state.skybox)
+	gfx.skybox_destroy(gfx_ctx, &state.skybox)
 	when gfx.EDITOR {
 		editor.editor_destroy(gfx_ctx, state.editor)
 		free(state.editor)

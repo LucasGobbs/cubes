@@ -5,7 +5,6 @@
 package editor
 
 import gfx "../engine/gfx"
-import default "../engine/default"
 import goose_sdl "../engine/gfx/sdl_gpu"
 import "core:math/linalg"
 import sdl "vendor:sdl3"
@@ -55,10 +54,10 @@ editor_init :: proc(gfx_ctx: ^gfx.Device, ed: ^Editor, font_path := "static/font
 		return g_active_font.line_height
 	}
 
-	ed.pipeline = default.create_textured_overlay_pipeline(gfx_ctx)
+	ed.pipeline = gfx.create_textured_overlay_pipeline(gfx_ctx)
 	ed.sampler = gfx.sampler_create(gfx_ctx)
 	ed.material = gfx.material_create(ed.pipeline)
-	default.bind_textured_material(&ed.material, ed.font.texture, ed.sampler)
+	gfx.bind_textured_material(&ed.material, ed.font.texture, ed.sampler)
 
 	dummy := [6]gfx.VertexData{}
 	ed.mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
@@ -359,8 +358,8 @@ editor_draw :: proc(
 			if span.texture == .VIEWPORT {
 				goose_sdl.bind_sampler(
 					pass,
-					default.DEFAULT_TEXTURED_FRAGMENT_TEX,
-					default.DEFAULT_TEXTURED_FRAGMENT_TEX_SAMPLER,
+					gfx.DEFAULT_TEXTURED_FRAGMENT_TEX,
+					gfx.DEFAULT_TEXTURED_FRAGMENT_TEX_SAMPLER,
 					viewport_texture_resource.handle,
 					sampler.handle,
 				)

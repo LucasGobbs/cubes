@@ -7,7 +7,6 @@ package forest_naive
 import "core:math"
 import "core:math/linalg"
 import gfx "../../engine/gfx"
-import default "../../engine/default"
 import sdl "vendor:sdl3"
 
 FLARE_TEXTURE_SIZE :: 64
@@ -59,9 +58,9 @@ flare_create :: proc(gfx_ctx: ^gfx.Device, flare: ^Flare) {
 	gfx.texture_get(gfx_ctx, flare.texture)._temporary_raw_data = nil
 
 	flare.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_LINEAR_CLAMP)
-	flare.pipeline = default.create_textured_overlay_pipeline(gfx_ctx)
+	flare.pipeline = gfx.create_textured_overlay_pipeline(gfx_ctx)
 	flare.material = gfx.material_create(flare.pipeline)
-	default.bind_textured_material(&flare.material, flare.texture, flare.sampler)
+	gfx.bind_textured_material(&flare.material, flare.texture, flare.sampler)
 	dummy := [6]gfx.VertexData{}
 	flare.mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
 	gfx.mesh_upload(&gfx_ctx.renderer, &flare.mesh)

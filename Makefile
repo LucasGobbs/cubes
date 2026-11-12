@@ -10,7 +10,7 @@ BIN_DEBUG := main_debug
 GOOSE_BUILD         := $(GOOSE_DIR)/src/tools/build
 GOOSE_BUILD_BIN     := goose-build.bin
 GOOSE_MANIFEST      := shaders/goose.json
-DEFAULT_MANIFEST := src/engine/default/goose.json
+DEFAULT_MANIFEST := src/engine/gfx/goose.json
 
 RELEASE_FLAGS := -o:aggressive -microarch:native -no-bounds-check -disable-assert
 DEBUG_FLAGS   := -debug -o:none
@@ -91,9 +91,9 @@ example: default-shaders
 
 clean:
 	rm -f $(BIN) $(BIN_DEBUG) $(GOOSE_BUILD_BIN)
-	rm -rf shaders/generated src/engine/default/generated
+	rm -rf shaders/generated src/engine/gfx/generated
 	rm -f src/shader_parameters/*_shader_parameters.odin \
-		src/engine/default/*_shader_parameters.odin
+		src/engine/gfx/*_shader_parameters.odin
 
 .PHONY: dist
 # Release bundle: binary + static assets. Shaders are embedded at build time,

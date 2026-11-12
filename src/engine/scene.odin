@@ -1,7 +1,6 @@
 package engine
 
-import "gfx"
-import "default"
+import gfx "gfx"
 
 Camera_Start :: struct {
 	position, look_at: gfx.Vec3,
@@ -24,6 +23,6 @@ Scene :: struct {
 // camera_reset using the scene's JSON camera (Scene.start_camera) when it has one;
 // the arguments are the fallback for scenes without a definition.
 scene_camera_reset :: proc(scene: ^Scene, gfx_ctx: ^gfx.Device, position := gfx.Vec3{0, 0, 3}, target := gfx.Vec3{}) {
-	if start, ok := scene.start_camera.?; ok do default.camera_reset(gfx_ctx, start.position, start.look_at)
-	else do default.camera_reset(gfx_ctx, position, target)
+	if start, ok := scene.start_camera.?; ok do gfx.camera_reset(gfx_ctx, start.position, start.look_at)
+	else do gfx.camera_reset(gfx_ctx, position, target)
 }
