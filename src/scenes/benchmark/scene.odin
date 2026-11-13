@@ -115,7 +115,7 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state := new(Benchmark_State)
 	state.fog_on = true // haze by default so boats and dragons share the sea's horizon blend
 	demo.state = state
-	engine.camera_fly(ctx, {0, 8, 20})
+	engine.camera_fly(ctx)
 	// Uncapped: the point of this scene is measuring real frame cost.
 	gfx.set_present_mode(gfx_ctx, .IMMEDIATE)
 

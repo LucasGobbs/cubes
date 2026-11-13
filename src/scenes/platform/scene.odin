@@ -51,7 +51,7 @@ platform_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx_ctx := &ctx.gfx
 	state := new(Platform_State)
 	demo.state = state
-	engine.camera_fly(ctx, {24, 18, 34}, {2, 2, -1})
+	engine.camera_fly(ctx)
 
 	for path, mat in PROTO_TEXTURES {
 		state.materials[mat] = gfx.material_create(gfx_ctx, {kind = .Textured, texture = path})

@@ -29,16 +29,25 @@ Camera_Controller :: union {
 	if ctx.camera_keys == nil do ctx.camera_keys = fly_controls_create(&ctx.input, "camera")
 }
 
-// WASD fly camera at position looking at look_at. speed 0 = default; fov_y 0 = default lens.
-// Resets the view and full-window targets, so call it from scene create.
+// WASD fly camera. nil position/look_at keep the view the host already applied (the
+// scene's JSON camera, or the default); given values reset the view. speed 0 = default;
+// fov_y 0 = default lens. Full-window targets are reset either way, so call from scene create.
 camera_fly :: proc(
 	ctx: ^Context,
-	position := gfx.Vec3{0, 0, 3},
-	look_at := gfx.Vec3{},
+	position: Maybe(gfx.Vec3) = nil,
+	look_at: Maybe(gfx.Vec3) = nil,
 	speed := f32(0),
 	fov_y := f32(0),
 ) {
-	gfx.camera_reset(&ctx.gfx, position, look_at)
+	if position != nil || look_at != nil {
+		eye := gfx.Vec3{0, 0, 3}
+		if p, ok := position.?; ok do eye = p
+		target: gfx.Vec3
+		if t, ok := look_at.?; ok do target = t
+		gfx.camera_reset(&ctx.gfx, eye, target)
+	} else {
+		gfx.renderer_resize_targets(&ctx.gfx.renderer, u32(ctx.gfx.window_size.x), u32(ctx.gfx.window_size.y))
+	}
 	fly := Camera_Fly{fly = gfx.fly_camera_create(), look = true}
 	if speed > 0 do fly.fly.speed = speed
 	ctx.camera = fly

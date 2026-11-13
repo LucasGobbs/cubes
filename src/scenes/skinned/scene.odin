@@ -26,7 +26,7 @@ skinned_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx_ctx := &ctx.gfx
 	state := new(Skinned_State)
 	demo.state = state
-	engine.camera_fly(ctx, {0, 1.0, 1.9}, {0, 0.8, 0})
+	engine.camera_fly(ctx)
 
 	imported, ok := loader.model_import_skinned_from_gltf(SKINNED_MODEL_PATH)
 	if !ok do return false

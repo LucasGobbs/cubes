@@ -33,7 +33,7 @@ models_position :: proc(index: int) -> [3]f32 {
 models_create :: proc(scene: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state := new(Models_State)
 	scene.state = state
-	engine.camera_fly(ctx, {0, 2, 4})
+	engine.camera_fly(ctx)
 
 	for path, index in MODEL_PATHS {
 		model := gfx.model_add(&ctx.gfx, {path = path, kind = .Textured})
