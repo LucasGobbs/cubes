@@ -153,17 +153,16 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	assert(font_ok)
 	state.font = font
 	state.overlay_pipeline = gfx.create_textured_overlay_pipeline(gfx_ctx)
-	state.overlay_material = gfx.material_create(state.overlay_pipeline)
+	state.overlay_material = gfx.material_make(state.overlay_pipeline)
 	gfx.bind_textured_material(&state.overlay_material, state.font.texture, state.sampler)
 	dummy := [6]gfx.VertexData{}
 	state.text_mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
-	gfx.mesh_upload(&gfx_ctx.renderer, &state.text_mesh)
 
 	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
 	state.sea_pipeline = sea_pipeline_create(gfx_ctx, state)
-	state.sea_material = gfx.material_create(state.sea_pipeline)
+	state.sea_material = gfx.material_make(state.sea_pipeline)
 	state.sea_mesh = sea_mesh_create(gfx_ctx)
-	gfx.draw_add(gfx_ctx, gfx.draw_make(&state.sea_mesh, &state.sea_material, layer = .WORLD))
+	gfx.draw_create(gfx_ctx, {mesh = &state.sea_mesh, material = &state.sea_material})
 	state.base_draws = len(gfx_ctx.draws)
 
 	rand.reset(1) // fixed layout: every run draws the same fleet, so results compare
@@ -193,7 +192,7 @@ benchmark_populate :: proc(state: ^Benchmark_State, gfx_ctx: ^gfx.Device, per_mo
 			)
 			scale := 0.25 + rand.float32_range(0, 0.2)
 			if rand.float32() < 0.12 do scale *= rand.float32_range(2, 4) // a few big ships among the small boats
-			draw := gfx.draw_add(gfx_ctx, gfx.draw_model(&model, position, {scale, scale, scale}, yaw))
+			draw := gfx.draw_create(gfx_ctx, {mesh = &model, position = position, scale = {scale, scale, scale}, rotation = yaw})
 			append(&state.boats, Boat_Slot{draw = draw, x = position.x, z = position.z, yaw = yaw, scale = scale})
 		}
 	}
@@ -201,15 +200,12 @@ benchmark_populate :: proc(state: ^Benchmark_State, gfx_ctx: ^gfx.Device, per_mo
 	for index in 0 ..< DRAGON_COUNT {
 		angle := f32(index) / DRAGON_COUNT * linalg.TAU
 		scale := f32(DRAGON_SCALE)
-		gfx.draw_add(
-			gfx_ctx,
-			gfx.draw_model(
-				&state.dragon,
-				{math.cos(angle) * DRAGON_RING_RADIUS, 0, FLEET_CENTER_Z + math.sin(angle) * DRAGON_RING_RADIUS},
-				{scale, scale, scale},
-				linalg.quaternion_from_euler_angles_f32(0, -angle - linalg.PI / 2, 0, .XYZ),
-			),
-		)
+		gfx.draw_create(gfx_ctx, {
+			mesh     = &state.dragon,
+			position = {math.cos(angle) * DRAGON_RING_RADIUS, 0, FLEET_CENTER_Z + math.sin(angle) * DRAGON_RING_RADIUS},
+			scale    = {scale, scale, scale},
+			rotation = linalg.quaternion_from_euler_angles_f32(0, -angle - linalg.PI / 2, 0, .XYZ),
+		})
 	}
 }
 
@@ -271,7 +267,6 @@ sea_mesh_create :: proc(gfx_ctx: ^gfx.Device) -> gfx.Mesh {
 		}
 	}
 	mesh := gfx.mesh_create(gfx_ctx, vertices[:], indices[:])
-	gfx.mesh_upload(&gfx_ctx.renderer, &mesh)
 	return mesh
 }
 

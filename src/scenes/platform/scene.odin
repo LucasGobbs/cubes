@@ -65,7 +65,7 @@ platform_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 	for path, mat in PROTO_TEXTURES {
 		state.textures[mat] = gfx.texture_load(gfx_ctx, path)
-		state.materials[mat] = gfx.material_create(state.pipeline)
+		state.materials[mat] = gfx.material_make(state.pipeline)
 		gfx.bind_textured_material(&state.materials[mat], state.textures[mat], state.sampler)
 	}
 
@@ -162,10 +162,9 @@ proto_piece :: proc(
 
 	mesh := new(gfx.Mesh)
 	mesh^ = gfx.mesh_create(gfx_ctx, stored.verts[:], stored.idx[:])
-	gfx.mesh_upload(&gfx_ctx.renderer, mesh)
 	append(&state.meshes, mesh)
 
-	return gfx.draw_add(gfx_ctx, gfx.draw_make(mesh, &state.materials[material], at))
+	return gfx.draw_create(gfx_ctx, {mesh = mesh, material = &state.materials[material], position = at})
 }
 
 // Extrudes a convex polygon along Z: two caps and one quad per edge.

@@ -1,21 +1,23 @@
 package gfx
 
-// Resource scopes: every handle-based GPU resource created while a scope is
-// open is destroyed by scope_end, in reverse creation order, unless it was
-// destroyed manually first (manual destroy unregisters it).
+// Resource scopes: every GPU resource created while a scope is open is destroyed
+// by scope_end, in reverse creation order, unless it was destroyed manually first
+// (manual destroy unregisters it). Draws are truncated first, then entries run.
 //
-// Rule for callers:
-// - Handle resources (buffer, texture, sampler, pipeline, compute pipeline) and
-//   everything built from them (Mesh, Font, Blur, Bloom, Skybox, Model GPU
-//   parts) are freed by the scope. Manual *_destroy stays valid.
-// - By-value structs (Model, Mesh, Skybox, Material) hold handles, not
-//   pointers, so a scope can free them safely; their CPU-side parts (Model.skin,
-//   Material arrays) are NOT freed by scope_end: call model_destroy /
-//   material_destroy explicitly for those, or use scope_defer.
-// - Draws added while a scope is open (draw_add) are truncated by scope_end.
-// - Renderer-owned targets rebuilt at runtime (MSAA, resize, transient pool) are
-//   created paused so they belong to the renderer, never to a scene.
-// - Resources created outside any scope are swept by gfx.destroy as before.
+// Ownership, one rule per kind:
+// - Handles (buffer, texture, sampler, pipeline, compute pipeline): tracked
+//   automatically by their *_create. Manual *_destroy stays valid.
+// - Scope-owned objects (heap, freed by scope_end via scope_defer): material_create,
+//   model_add, skybox_add, draw_create with Mesh_Data. Never free them yourself;
+//   their pointers stay valid until scope_end.
+// - Borrowed objects (by value, caller frees): mesh_create, material_make,
+//   model_load, draw_make/draw_model. Pair them with their *_destroy.
+// - Draws from draw_create/draw_make/draw_model live in gfx_ctx.draws; scope_end
+//   truncates the ones added inside the scope.
+// - Renderer-owned targets rebuilt at runtime (MSAA, resize, transient pool) and
+//   device caches (builtin pipelines, sampler presets) are created paused, so they
+//   belong to the renderer or device, never to a scene.
+// - Resources created outside any scope are swept by gfx.destroy.
 
 Resource_Kind :: enum u8 {
 	Buffer,
@@ -42,10 +44,10 @@ scope_begin :: proc(gfx_ctx: ^Device) {
 
 scope_end :: proc(gfx_ctx: ^Device) {
 	assert(len(gfx_ctx.scopes) > 0, "scope_end without scope_begin")
+	resize(&gfx_ctx.draws, pop(&gfx_ctx.scope_draw_marks))
 	entries := pop(&gfx_ctx.scopes)
 	#reverse for entry in entries do scope_run(gfx_ctx, entry)
 	delete(entries)
-	resize(&gfx_ctx.draws, pop(&gfx_ctx.scope_draw_marks))
 }
 
 // Runs custom destroyer `destroy(gfx_ctx, user)` in the current scope's reverse

@@ -69,20 +69,17 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx.set_unlit_color(&state.unlit_model.material, {0.15, 0.85, 0.3, 1})
 
 	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
-	gfx.draw_add(gfx_ctx, gfx.draw_model(&state.textured_model, {-5, -.5, -12}, {0.4, 0.4, 0.4}))
-	state.center_entity = gfx.draw_add(gfx_ctx, gfx.draw_model(&state.textured_model, {0, -.5, -12}, {0.4, 0.4, 0.4}))
-	gfx.draw_add(gfx_ctx, gfx.draw_model(&state.unlit_model, {5, -.5, -12}, {0.4, 0.4, 0.4}))
+	gfx.draw_create(gfx_ctx, {mesh = &state.textured_model, position = {-5, -.5, -12}, scale = {0.4, 0.4, 0.4}})
+	state.center_entity = gfx.draw_create(gfx_ctx, {mesh = &state.textured_model, position = {0, -.5, -12}, scale = {0.4, 0.4, 0.4}})
+	gfx.draw_create(gfx_ctx, {mesh = &state.unlit_model, position = {5, -.5, -12}, scale = {0.4, 0.4, 0.4}})
 
 	// One material shared by any number of entities; the editor edits
 	// state.tint live.
-	state.shared_material = gfx.material_create(state.unlit_pipeline)
+	state.shared_material = gfx.material_make(state.unlit_pipeline)
 	state.tint = {0.95, 0.85, 0.2, 1}
 	gfx.set_unlit_color(&state.shared_material, state.tint)
 
-	gfx.draw_add(
-		gfx_ctx,
-		gfx.draw_make(&state.unlit_model.mesh, &state.shared_material, {0, 1.2, -12}, scale = {0.4, 0.4, 0.4}),
-	)
+	gfx.draw_create(gfx_ctx, {mesh = &state.unlit_model.mesh, material = &state.shared_material, position = {0, 1.2, -12}, scale = {0.4, 0.4, 0.4}})
 
 	state.quad_vertices = {
 		{position = {-1, -1, 0}, color = {1, 1, 1, 1}, uv = {0, 0}},
@@ -92,8 +89,7 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	}
 	state.quad_indices = {0, 1, 2, 2, 3, 0}
 	state.quad_mesh = gfx.mesh_create(gfx_ctx, state.quad_vertices[:], state.quad_indices[:])
-	gfx.mesh_upload(&gfx_ctx.renderer, &state.quad_mesh)
-	gfx.draw_add(gfx_ctx, gfx.draw_make(&state.quad_mesh, &state.shared_material, {0, 1.2, -8}, layer = .UI))
+	gfx.draw_create(gfx_ctx, {mesh = &state.quad_mesh, material = &state.shared_material, position = {0, 1.2, -8}, layer = .UI})
 
 	// Post-processing: separable gaussian blur over scene_color, run by the
 	// renderer after the scene (renderer_run_post).
@@ -125,7 +121,7 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 			.XYZ,
 		)
 		scale := 0.25 + rand.float32_range(0, 0.2)
-		gfx.draw_add(gfx_ctx, gfx.draw_model(&state.textured_model, position, {scale, scale, scale}, yaw))
+		gfx.draw_create(gfx_ctx, {mesh = &state.textured_model, position = position, scale = {scale, scale, scale}, rotation = yaw})
 	}
 
 	state.rotation_speed = linalg.to_radians(f32(90))

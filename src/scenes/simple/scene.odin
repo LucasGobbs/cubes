@@ -20,8 +20,6 @@ Simple_State :: struct {
 	quad_indices:      [6]u16,
 	spinning:          int,
 	rotation:          f32,
-	fly_camera:        gfx.Fly_Camera,
-	fly_controls:      engine.Fly_Controls,
 	// move_action:       input.Axis_2D_Action,
 	// boost_action:      input.Button_Action,
 	// up_action:         input.Button_Action,
@@ -36,10 +34,7 @@ simple_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx_ctx := &ctx.gfx
 	state := new(Simple_State)
 	demo.state = state
-	engine.scene_camera_reset(demo, gfx_ctx)
-
-	state.fly_camera = gfx.fly_camera_create()
-	state.fly_controls = engine.fly_controls_create(&ctx.input, "simple")
+	engine.camera_fly(ctx)
 
 	state.textured_pipeline = gfx.create_textured_pipeline(gfx_ctx)
 	state.unlit_pipeline = gfx.create_unlit_pipeline(gfx_ctx)
@@ -59,8 +54,8 @@ simple_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 
 	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
 
-	state.spinning = gfx.draw_add(gfx_ctx, gfx.draw_model(&state.textured_model, SPIN_SHIP_POSITION, SHIP_SCALE))
-	gfx.draw_add(gfx_ctx, gfx.draw_model(&state.unlit_model, {2.5, -0.5, -10}, SHIP_SCALE))
+	state.spinning = gfx.draw_create(gfx_ctx, {mesh = &state.textured_model, position = SPIN_SHIP_POSITION, scale = SHIP_SCALE})
+	gfx.draw_create(gfx_ctx, {mesh = &state.unlit_model, position = {2.5, -0.5, -10}, scale = SHIP_SCALE})
 
 	// Raw geometry: animated quad through the unlit pipeline.
 	state.quad_vertices = {
@@ -71,20 +66,13 @@ simple_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	}
 	state.quad_indices = {0, 1, 2, 2, 3, 0}
 	state.quad_mesh = gfx.mesh_create(gfx_ctx, state.quad_vertices[:], state.quad_indices[:])
-	gfx.mesh_upload(&gfx_ctx.renderer, &state.quad_mesh)
-	gfx.draw_add(
-		gfx_ctx,
-		gfx.draw_make(&state.quad_mesh, &state.unlit_model.material, {0, 1.2, -8}, layer = .UI),
-	)
+	gfx.draw_create(gfx_ctx, {mesh = &state.quad_mesh, material = &state.unlit_model.material, position = {0, 1.2, -8}, layer = .UI})
 	return true
 }
 
 simple_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Simple_State)demo.state
-
-	fly := engine.fly_controls_read(&ctx.input, &state.fly_controls)
-	gfx.fly_camera_update(gfx.camera(gfx_ctx), &state.fly_camera, fly, delta_time)
 
 	state.rotation += linalg.to_radians(f32(60)) * delta_time
 	gfx.draw_set_transform(

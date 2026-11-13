@@ -59,11 +59,10 @@ flare_create :: proc(gfx_ctx: ^gfx.Device, flare: ^Flare) {
 
 	flare.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_LINEAR_CLAMP)
 	flare.pipeline = gfx.create_textured_overlay_pipeline(gfx_ctx)
-	flare.material = gfx.material_create(flare.pipeline)
+	flare.material = gfx.material_make(flare.pipeline)
 	gfx.bind_textured_material(&flare.material, flare.texture, flare.sampler)
 	dummy := [6]gfx.VertexData{}
 	flare.mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
-	gfx.mesh_upload(&gfx_ctx.renderer, &flare.mesh)
 	gfx.renderer_set_passes(&gfx_ctx.renderer, .After_Scene, []gfx.Render_Pass{{name = "flare", run = flare_draw, user = flare}})
 }
 

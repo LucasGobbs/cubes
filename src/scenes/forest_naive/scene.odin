@@ -76,7 +76,7 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 			user_data = state,
 		},
 	)
-	state.material = gfx.material_create(state.pipeline)
+	state.material = gfx.material_make(state.pipeline)
 
 	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
 
@@ -160,7 +160,7 @@ forest_stream :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, budget: int, r
 		}
 		chunk.grass_lod = lod
 		if chunk.grass_entity < 0 {
-			chunk.grass_entity = gfx.draw_add(gfx_ctx, gfx.draw_make(&chunk.grass_mesh[lod], &state.material, {ox, 0, oz}))
+			chunk.grass_entity = gfx.draw_create(gfx_ctx, {mesh = &chunk.grass_mesh[lod], material = &state.material, position = {ox, 0, oz}})
 		} else {
 			gfx.draw_get(gfx_ctx, chunk.grass_entity).mesh = &chunk.grass_mesh[lod]
 		}
@@ -175,7 +175,7 @@ forest_build_static :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, chunk: ^
 	chunk.static_mesh = forest_upload(gfx_ctx, &chunk.static_data, indices[:], ox, oz)
 	chunk.static_built = true
 
-	gfx.draw_add(gfx_ctx, gfx.draw_make(&chunk.static_mesh, &state.material, {ox, 0, oz}))
+	gfx.draw_create(gfx_ctx, {mesh = &chunk.static_mesh, material = &state.material, position = {ox, 0, oz}})
 }
 
 forest_build_grass :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, chunk: ^Chunk, cx, cz, lod: int) {
@@ -202,7 +202,6 @@ forest_upload :: proc(gfx_ctx: ^gfx.Device, data: ^Mesh_Data, indices: []u32, ox
 		for index, i in indices do data.idx[i] = u16(index)
 	}
 	mesh := gfx.mesh_create(gfx_ctx, data.verts[:], data.idx[:])
-	gfx.mesh_upload(&gfx_ctx.renderer, &mesh)
 	return mesh
 }
 

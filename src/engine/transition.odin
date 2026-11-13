@@ -32,7 +32,6 @@ transition: Transition
 transition_create :: proc(gfx_ctx: ^gfx.Device) {
 	dummy := [6]gfx.VertexData{}
 	transition.mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
-	gfx.mesh_upload(&gfx_ctx.renderer, &transition.mesh)
 	gfx.renderer_add_pass(&gfx_ctx.renderer, .After_Post, {name = "transition", run = transition_draw})
 }
 

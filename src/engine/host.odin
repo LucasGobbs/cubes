@@ -123,6 +123,7 @@ host_tick :: proc(ctx: ^Context, delta_time: f32) {
 			change_scene(host_config.scenes[index].name, .Fade, 0.5)
 		}
 	}
+	camera_update(ctx, delta_time)
 	if transition_tick(ctx, scene, delta_time) do return
 	stats_tick(ctx, delta_time, scene.name)
 	if scene.fixed_tick != nil {
@@ -171,6 +172,8 @@ host_scene_switch :: proc(ctx: ^Context, scene: ^Scene, index: int) {
 
 host_scene_create :: proc(ctx: ^Context, scene: ^Scene) -> bool {
 	gfx.scope_begin(&ctx.gfx) // every create pairs with exactly one host_scene_destroy, even if create fails
+	ctx.camera = nil
+	ctx.camera_keys = nil
 	return scene.create(scene, ctx)
 }
 
@@ -179,6 +182,8 @@ host_scene_destroy :: proc(ctx: ^Context, scene: ^Scene) {
 		scene.destroy(scene, ctx)
 		scene.state = nil
 	}
+	ctx.camera = nil
+	ctx.camera_keys = nil
 	gfx.scope_end(&ctx.gfx) // frees the scene's handle resources not destroyed manually
 }
 

@@ -120,10 +120,62 @@ renderer_render_draws :: proc(renderer: ^Renderer, draws: []Draw) {
 	renderer_draw_submitted(renderer)
 }
 
-// Adds to gfx_ctx.draws; returns its index. Draws added in a scope are truncated at scope_end.
-draw_add :: proc(gfx_ctx: ^Device, d: Draw) -> int {
-	append(&gfx_ctx.draws, d)
+// Adds a Draw to gfx_ctx.draws and returns its index. Scope-owned: truncated at scope_end.
+// Mesh_Data is uploaded into a scope-owned Mesh.
+Mesh_Data :: struct {
+	vertices: []VertexData,
+	indices:  []u32, // empty = unindexed
+}
+
+Draw_Mesh :: union {
+	Mesh_Data,
+	^Mesh,
+	^Model,
+}
+
+Draw_Desc :: struct {
+	mesh:     Draw_Mesh,
+	material: ^Material, // ^Model: defaults to the model's material
+	position: Vec3,
+	rotation: linalg.Quaternionf32, // zero = identity
+	scale:    Vec3, // zero = {1, 1, 1}
+	layer:    Render_Layer, // zero = WORLD
+}
+
+draw_create :: proc(gfx_ctx: ^Device, desc: Draw_Desc) -> int {
+	mesh: ^Mesh
+	material := desc.material
+	switch m in desc.mesh {
+	case Mesh_Data:
+		owned := new(Mesh)
+		if len(m.indices) == 0 {
+			owned^ = mesh_create_unindexed(gfx_ctx, m.vertices)
+		} else {
+			owned^ = mesh_create(gfx_ctx, m.vertices, m.indices)
+		}
+		scope_defer(gfx_ctx, mesh_release, owned)
+		mesh = owned
+	case ^Mesh:
+		mesh = m
+	case ^Model:
+		mesh = &m.mesh
+		if material == nil do material = &m.material
+	}
+	rotation := desc.rotation
+	if rotation == {} do rotation = linalg.QUATERNIONF32_IDENTITY
+	scale := desc.scale
+	if scale == {} do scale = {1, 1, 1}
+	layer := desc.layer
+	if layer == Render_Layer(0) do layer = .WORLD
+	append(&gfx_ctx.draws, draw_make(mesh, material, desc.position, rotation, scale, layer))
 	return len(gfx_ctx.draws) - 1
+}
+
+@(private = "file")
+mesh_release :: proc(gfx_ctx: ^Device, user: rawptr) {
+	mesh := (^Mesh)(user)
+	mesh_destroy(gfx_ctx, mesh)
+	free(mesh)
 }
 
 draw_get :: proc(gfx_ctx: ^Device, index: int) -> ^Draw {

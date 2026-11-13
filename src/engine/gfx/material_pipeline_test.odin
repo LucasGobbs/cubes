@@ -37,7 +37,7 @@ material_stores_backend_neutral_bindings :: proc(t: ^testing.T) {
 		size = 16,
 	}
 	uniform := [4]f32{1, 0.5, 0.25, 1}
-	material := material_create(pipeline)
+	material := material_make(pipeline)
 	defer material_destroy(&material)
 	material_bind_texture(&material, texture_parameter, sampler_parameter, texture, sampler)
 	material_set_uniform(&material, uniform_parameter, &uniform)

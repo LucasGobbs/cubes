@@ -2,10 +2,10 @@
 // rotating at its own speed.
 package models
 
-import "core:math/linalg"
-import gfx "../../engine/gfx"
-import default "../../engine/default"
 import engine "../../engine"
+import default "../../engine/default"
+import gfx "../../engine/gfx"
+import "core:math/linalg"
 
 MODEL_PATHS :: [4]string {
 	"static/models/sea/boat-tug-a.glb",
@@ -18,9 +18,7 @@ MODEL_SCALE :: [3]f32{0.5, 0.5, 0.5}
 
 Models_State :: struct {
 	pipeline:        gfx.Pipeline_Handle,
-	sampler:         gfx.Sampler_Handle,
 	models:          [4]gfx.Model,
-	ground_texture:  gfx.Texture_Handle,
 	ground_material: gfx.Material,
 	ground_mesh:     gfx.Mesh,
 	model_draws:     [4]int,
@@ -48,38 +46,36 @@ models_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.fly_controls = engine.fly_controls_create(&ctx.input, "models")
 
 	state.pipeline = gfx.create_textured_pipeline(gfx_ctx)
-	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
-
+	sampler := gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 	for path, index in MODEL_PATHS {
-		state.models[index] = gfx.load_textured_model(
-			gfx_ctx,
-			path,
-			state.pipeline,
-			state.sampler,
-		)
-		state.model_draws[index] = gfx.draw_add(
-			gfx_ctx,
-			gfx.draw_model(&state.models[index], models_position(index), MODEL_SCALE),
-		)
+		state.models[index] = gfx.load_textured_model(gfx_ctx, path, state.pipeline, sampler)
+		state.model_draws[index] = gfx.draw_create(gfx_ctx, {mesh = &state.models[index], position = models_position(index), scale = MODEL_SCALE})
 	}
 
 	// Ground plane: raw quad, tiled mud texture.
 	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
 
-	state.ground_texture = gfx.texture_load(gfx_ctx, "static/muddy_ground.jpg")
-	state.ground_material = gfx.material_create(state.pipeline)
-	gfx.bind_textured_material(&state.ground_material, state.ground_texture, state.sampler)
+	state.ground_material = gfx.material_make(state.pipeline)
+	gfx.bind_textured_material(
+		&state.ground_material,
+		gfx.texture_load(gfx_ctx, "static/muddy_ground.jpg"),
+		sampler,
+	)
 	tiling :: f32(40)
 	ground_vertices := [4]gfx.VertexData {
 		{position = {-100, -1, -100}, color = {1, 1, 1, 1}, normal = {0, 1, 0}, uv = {0, 0}},
 		{position = {100, -1, -100}, color = {1, 1, 1, 1}, normal = {0, 1, 0}, uv = {tiling, 0}},
-		{position = {100, -1, 100}, color = {1, 1, 1, 1}, normal = {0, 1, 0}, uv = {tiling, tiling}},
+		{
+			position = {100, -1, 100},
+			color = {1, 1, 1, 1},
+			normal = {0, 1, 0},
+			uv = {tiling, tiling},
+		},
 		{position = {-100, -1, 100}, color = {1, 1, 1, 1}, normal = {0, 1, 0}, uv = {0, tiling}},
 	}
 	ground_indices := [6]u16{0, 2, 1, 0, 3, 2}
 	state.ground_mesh = gfx.mesh_create(gfx_ctx, ground_vertices[:], ground_indices[:])
-	gfx.mesh_upload(&gfx_ctx.renderer, &state.ground_mesh)
-	gfx.draw_add(gfx_ctx, gfx.draw_make(&state.ground_mesh, &state.ground_material))
+	gfx.draw_create(gfx_ctx, {mesh = &state.ground_mesh, material = &state.ground_material})
 	return true
 }
 

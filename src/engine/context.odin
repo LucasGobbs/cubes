@@ -14,6 +14,8 @@ Context :: struct {
 	blend:           f32, // leftover of the fixed-step accumulator, 0..1 (P6)
 	event_hook:      proc(event: ^sdl.Event, user: rawptr),
 	event_hook_data: rawptr,
+	camera:          Camera_Controller, // host-driven camera; nil = scene drives it
+	camera_keys:     Maybe(Fly_Controls), // fly key actions, registered once per scene
 }
 
 context_create :: proc(

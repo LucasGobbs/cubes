@@ -34,6 +34,10 @@ Device :: struct {
 
 	// Scene draws (draw.odin). scope_end truncates the ones added inside its scope.
 	draws:                    [dynamic]Draw,
+
+	// Builtin caches for material_create (material.odin); lazily filled, swept by destroy.
+	material_pipelines:       [Material_Kind]Pipeline_Handle,
+	material_samplers:        [Sampler_Preset]Sampler_Handle,
 }
 
 create :: proc(

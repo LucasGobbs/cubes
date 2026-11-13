@@ -100,17 +100,15 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 			user_data = state,
 		},
 	)
-	state.material = gfx.material_create(state.pipeline)
+	state.material = gfx.material_make(state.pipeline)
 
 	state.variant_data = variants_build()
 	for &data, index in state.variant_data {
 		state.variant_mesh[index] = gfx.mesh_create(gfx_ctx, data.verts[:], data.idx[:])
-		gfx.mesh_upload(&gfx_ctx.renderer, &state.variant_mesh[index])
 	}
 	state.tuft_data = tufts_build()
 	for &data, index in state.tuft_data {
 		state.tuft_mesh[index] = gfx.mesh_create(gfx_ctx, data.verts[:], data.idx[:])
-		gfx.mesh_upload(&gfx_ctx.renderer, &state.tuft_mesh[index])
 	}
 
 	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
@@ -212,13 +210,13 @@ forest_build_terrain :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster
 	cluster.mesh = forest_upload(gfx_ctx, &cluster.data, ox, oz)
 	cluster.built = true
 
-	gfx.draw_add(gfx_ctx, gfx.draw_make(&cluster.mesh, &state.material, {ox, 0, oz}))
+	gfx.draw_create(gfx_ctx, {mesh = &cluster.mesh, material = &state.material, position = {ox, 0, oz}})
 
 	// One draw per tree/rock/bush, sharing the variant meshes.
 	for instance in state.placements {
 		rotation := linalg.quaternion_angle_axis_f32(instance.yaw, {0, 1, 0})
 		scale := instance.scale
-		gfx.draw_add(gfx_ctx, gfx.draw_make(&state.variant_mesh[instance.variant], &state.material, instance.position, rotation, {scale, scale, scale}))
+		gfx.draw_create(gfx_ctx, {mesh = &state.variant_mesh[instance.variant], material = &state.material, position = instance.position, rotation = rotation, scale = {scale, scale, scale}})
 	}
 }
 
@@ -234,9 +232,9 @@ forest_build_grass :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster: 
 	for instance in state.grass_scratch {
 		rotation := linalg.quaternion_angle_axis_f32(instance.yaw, {0, 1, 0})
 		scale := instance.scale
-		draw := gfx.draw_make(&state.tuft_mesh[instance.lod1], &state.material, instance.position, rotation, {scale, scale, scale})
-		draw.hidden = true
-		append(&cluster.items, Grass_Item{gfx.draw_add(gfx_ctx, draw), instance})
+		index := gfx.draw_create(gfx_ctx, {mesh = &state.tuft_mesh[instance.lod1], material = &state.material, position = instance.position, rotation = rotation, scale = {scale, scale, scale}})
+		gfx.draw_get(gfx_ctx, index).hidden = true
+		append(&cluster.items, Grass_Item{index, instance})
 	}
 	cluster.built = true
 }
@@ -266,7 +264,6 @@ forest_upload :: proc(gfx_ctx: ^gfx.Device, data: ^Mesh_Data, ox, oz: f32) -> gf
 		vertex.position.z -= oz
 	}
 	mesh := gfx.mesh_create(gfx_ctx, data.verts[:], data.idx[:])
-	gfx.mesh_upload(&gfx_ctx.renderer, &mesh)
 	return mesh
 }
 

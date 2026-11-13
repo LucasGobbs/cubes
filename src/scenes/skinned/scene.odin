@@ -48,10 +48,10 @@ skinned_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	if !gfx.playback_play(&state.playback, SKINNED_CLIP) do return false
 
 	// Skinned meshes have no bounds (see mesh_set_bounds), so culling stays off.
-	draw := gfx.draw_make(&state.model.mesh, &state.model.material)
+	index := gfx.draw_create(gfx_ctx, {mesh = &state.model})
+	draw := gfx.draw_get(gfx_ctx, index)
 	draw.cull = false
 	draw.pose = state.playback.pose
-	gfx.draw_add(gfx_ctx, draw)
 	return true
 }
 

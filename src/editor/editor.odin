@@ -56,12 +56,11 @@ editor_init :: proc(gfx_ctx: ^gfx.Device, ed: ^Editor, font_path := "static/font
 
 	ed.pipeline = gfx.create_textured_overlay_pipeline(gfx_ctx)
 	ed.sampler = gfx.sampler_create(gfx_ctx)
-	ed.material = gfx.material_create(ed.pipeline)
+	ed.material = gfx.material_make(ed.pipeline)
 	gfx.bind_textured_material(&ed.material, ed.font.texture, ed.sampler)
 
 	dummy := [6]gfx.VertexData{}
 	ed.mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
-	gfx.mesh_upload(&gfx_ctx.renderer, &ed.mesh)
 	return true
 }
 

@@ -58,12 +58,11 @@ stats_create :: proc(ctx: ^Context) {
 	stats.pipelines[1] = gfx.create_textured_overlay_pipeline(gfx_ctx, gfx_ctx.renderer.post_format)
 	stats.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 	for index in 0 ..< 2 {
-		stats.materials[index] = gfx.material_create(stats.pipelines[index])
+		stats.materials[index] = gfx.material_make(stats.pipelines[index])
 		gfx.bind_textured_material(&stats.materials[index], stats.font.texture, stats.sampler)
 	}
 	dummy := [6]gfx.VertexData{}
 	stats.mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
-	gfx.mesh_upload(&gfx_ctx.renderer, &stats.mesh)
 
 	gfx.renderer_add_pass(&gfx_ctx.renderer, .After_Post, {name = "stats", run = stats_draw})
 }

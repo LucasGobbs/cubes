@@ -49,9 +49,8 @@ skybox_create :: proc(gfx_ctx: ^Device, path: string) -> Skybox {
 		{position = {-1, 3, 0}, color = {1, 1, 1, 1}},
 	}
 	skybox.mesh = mesh_create_unindexed(gfx_ctx, triangle[:])
-	mesh_upload(&gfx_ctx.renderer, &skybox.mesh)
 
-	skybox.material = material_create(skybox.pipeline)
+	skybox.material = material_make(skybox.pipeline)
 	material_bind_texture(
 		&skybox.material,
 		DEFAULT_SKYBOX_FRAGMENT_TEX,
@@ -84,7 +83,8 @@ skybox_add :: proc(gfx_ctx: ^Device, path: string) -> int {
 	skybox := new(Skybox)
 	skybox^ = skybox_create(gfx_ctx, path)
 	scope_defer(gfx_ctx, skybox_release, skybox)
-	return draw_add(gfx_ctx, skybox_draw(skybox))
+	append(&gfx_ctx.draws, skybox_draw(skybox))
+	return len(gfx_ctx.draws) - 1
 }
 
 @(private = "file")

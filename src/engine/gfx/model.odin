@@ -29,8 +29,8 @@ model_create :: proc(
 	pipeline: Pipeline_Handle,
 ) -> Model {
 	model := Model {
-		mesh     = mesh_create(gfx_ctx, imported.mesh.vertices, imported.mesh.indices),
-		material = material_create(pipeline),
+		mesh     = mesh_create(gfx_ctx, imported.mesh.vertices, imported.mesh.indices, .NO_UPLOAD),
+		material = material_make(pipeline),
 	}
 	model.owned_texture = model_texture_create(gfx_ctx, imported.image)
 	return model
@@ -53,8 +53,8 @@ model_create_skinned :: proc(
 	pipeline: Pipeline_Handle,
 ) -> Model {
 	model := Model {
-		mesh     = mesh_create(gfx_ctx, imported.vertices, imported.indices),
-		material = material_create(pipeline),
+		mesh     = mesh_create(gfx_ctx, imported.vertices, imported.indices, .NO_UPLOAD),
+		material = material_make(pipeline),
 		skin     = imported.skin,
 	}
 	imported.skin = {}
@@ -102,4 +102,33 @@ load_textured_model :: proc(
 	model := model_load(gfx_ctx, {model_path = model_path, pipeline = pipeline})
 	bind_textured_material(&model.material, model_texture(&model), sampler)
 	return model
+}
+
+Model_Desc :: struct {
+	path:    string,
+	kind:    Material_Kind, // Textured_Skinned asserts
+	texture: Texture_Source, // nil = the model's own texture
+	sampler: Sampler_Preset,
+	tint:    [4]f32, // Unlit only
+}
+
+// Loads a static model owned by the open scope (heap, freed at scope_end).
+model_add :: proc(gfx_ctx: ^Device, desc: Model_Desc) -> ^Model {
+	assert(desc.kind != .Textured_Skinned, "model_add loads static models only")
+	model := new(Model)
+	model^ = model_load(gfx_ctx, {model_path = desc.path, pipeline = builtin_material_pipeline(gfx_ctx, desc.kind)})
+	texture := resolve_texture(gfx_ctx, desc.texture)
+	if desc.texture == nil do texture = model_texture(model)
+	tint := desc.tint
+	if tint == {} do tint = {1, 1, 1, 1}
+	material_bind_kind(gfx_ctx, &model.material, desc.kind, texture, desc.sampler, tint)
+	scope_defer(gfx_ctx, model_release, model)
+	return model
+}
+
+@(private = "file")
+model_release :: proc(gfx_ctx: ^Device, user: rawptr) {
+	model := (^Model)(user)
+	model_unload(gfx_ctx, model)
+	free(model)
 }

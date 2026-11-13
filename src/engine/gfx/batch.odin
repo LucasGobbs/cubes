@@ -98,7 +98,7 @@ batch_create :: proc(gfx_ctx: ^Device) -> Batch {
 
 	b.sampler = sampler_create(gfx_ctx, SAMPLER_NEAREST_CLAMP)
 	b.pipeline = create_textured_overlay_pipeline(gfx_ctx)
-	b.material = material_create(b.pipeline)
+	b.material = material_make(b.pipeline)
 	bind_textured_material(&b.material, b.white, b.sampler)
 	// Empty buffer of full capacity: no temp data, so mesh_update_unindexed reuses it.
 	b.mesh = Mesh {

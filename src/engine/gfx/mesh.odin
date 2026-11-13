@@ -37,12 +37,20 @@ Mesh :: struct {
 	radius:        f32,
 }
 
+// Whether mesh_create uploads the new buffers now. Pass .NO_UPLOAD when a later
+// step (renderer_load -> model_upload_to_gpu) uploads them in one batch.
+Mesh_Upload :: enum u8 {
+	UPLOAD,
+	NO_UPLOAD,
+}
+
 // Raw geometry seam: vertices/indices are user-built slices in whatever
 // layout the bound pipeline declares (packed voxel verts included).
 mesh_create :: proc(
 	gfx_ctx: ^Device,
 	vertices: []$V,
 	indices: []$I,
+	upload := Mesh_Upload.UPLOAD,
 ) -> Mesh where size_of(I) == 2 ||
 	size_of(I) == 4 {
 	mesh := Mesh {
@@ -53,15 +61,17 @@ mesh_create :: proc(
 		index_size = size_of(I) == 2 ? ._16BIT : ._32BIT,
 	}
 	mesh_set_bounds(&mesh, vertices)
+	if upload == .UPLOAD do mesh_upload(&gfx_ctx.renderer, &mesh)
 	return mesh
 }
 
-mesh_create_unindexed :: proc(gfx_ctx: ^Device, vertices: []$V) -> Mesh {
+mesh_create_unindexed :: proc(gfx_ctx: ^Device, vertices: []$V, upload := Mesh_Upload.UPLOAD) -> Mesh {
 	mesh := Mesh {
 		vertex_buffer = buffer_create_from_bytes(gfx_ctx, vertices, .VERTEX),
 		num_vertices = u32(len(vertices)),
 	}
 	mesh_set_bounds(&mesh, vertices)
+	if upload == .UPLOAD do mesh_upload(&gfx_ctx.renderer, &mesh)
 	return mesh
 }
 
