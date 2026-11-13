@@ -9,8 +9,6 @@ SKINNED_MODEL_PATH :: "static/models/rigged_cesiumman.glb"
 SKINNED_CLIP :: "clip_0"
 
 Skinned_State :: struct {
-	pipeline: gfx.Pipeline_Handle,
-	sampler:  gfx.Sampler_Handle,
 	model:    gfx.Model,
 	playback: gfx.Playback,
 }
@@ -28,20 +26,18 @@ skinned_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx_ctx := &ctx.gfx
 	state := new(Skinned_State)
 	demo.state = state
-	engine.scene_camera_reset(demo, gfx_ctx, {0, 1.0, 1.9}, {0, 0.8, 0})
-
-	state.pipeline = gfx.create_textured_skinned_pipeline(gfx_ctx)
-	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
+	engine.camera_fly(ctx, {0, 1.0, 1.9}, {0, 0.8, 0})
 
 	imported, ok := loader.model_import_skinned_from_gltf(SKINNED_MODEL_PATH)
 	if !ok do return false
 	defer loader.skinned_model_destroy(&imported)
-	state.model = gfx.model_create_skinned(gfx_ctx, &imported, state.pipeline)
+	pipeline := gfx.builtin_material_pipeline(gfx_ctx, .Textured_Skinned)
+	state.model = gfx.model_create_skinned(gfx_ctx, &imported, pipeline)
 	gfx.model_upload_to_gpu(&state.model, &gfx_ctx.renderer.uploader)
 	gfx.bind_textured_skinned_material(
 		&state.model.material,
 		gfx.model_texture(&state.model),
-		state.sampler,
+		gfx.builtin_sampler(gfx_ctx, .Trilinear),
 	)
 
 	state.playback = gfx.playback_create(&state.model.skin)
@@ -49,7 +45,7 @@ skinned_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 
 	// Skinned meshes have no bounds (see mesh_set_bounds), so culling stays off.
 	index := gfx.draw_create(gfx_ctx, {mesh = &state.model})
-	draw := gfx.draw_get(gfx_ctx, index)
+	draw := &gfx_ctx.draws[index]
 	draw.cull = false
 	draw.pose = state.playback.pose
 	return true

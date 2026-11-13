@@ -1,3 +1,9 @@
+// Draw submission has two APIs; pick by who owns the list.
+//  - Value API (engine.World, custom loops): you own a []Draw and pass it to
+//    renderer_render_draws each frame. Build with draw_make; set Draw fields directly.
+//  - Device-list API (demo scenes): draw_create appends to dev.draws and returns an
+//    index; draw_move updates it; render(dev) draws the list. Entries live until scope_end.
+// Do not mix the two for the same object.
 package gfx
 
 import "core:math/linalg"
@@ -46,20 +52,10 @@ draw_make :: proc(
 	}
 }
 
-draw_model :: proc(
-	model: ^Model,
-	position := Vec3{},
-	scale := Vec3{1, 1, 1},
-	rotation := linalg.QUATERNIONF32_IDENTITY,
-	layer := Render_Layer.WORLD,
-) -> Draw {
-	assert(model != nil)
-	return draw_make(&model.mesh, &model.material, position, rotation, scale, layer)
+draw_move :: proc(dev: ^Device, index: int, position: Vec3, rotation: linalg.Quaternionf32, scale: Vec3) {
+	dev.draws[index].transform = transform_trs(position, rotation, scale)
 }
 
-draw_set_transform :: proc(d: ^Draw, position: Vec3, rotation: linalg.Quaternionf32, scale: Vec3) {
-	d.transform = transform_trs(position, rotation, scale)
-}
 
 // Clip playback for a skinned Draw. The pose is heap-allocated so Draw.pose
 // stays valid when the owner moves the Playback.
@@ -176,10 +172,6 @@ mesh_release :: proc(gfx_ctx: ^Device, user: rawptr) {
 	mesh := (^Mesh)(user)
 	mesh_destroy(gfx_ctx, mesh)
 	free(mesh)
-}
-
-draw_get :: proc(gfx_ctx: ^Device, index: int) -> ^Draw {
-	return &gfx_ctx.draws[index]
 }
 
 // Simple frame: gfx_ctx.draws -> offscreen -> post passes -> blit to screen.

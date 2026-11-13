@@ -10,20 +10,11 @@ SPIN_SHIP_POSITION :: [3]f32{-2.5, -0.5, -10}
 SHIP_SCALE :: [3]f32{0.4, 0.4, 0.4}
 
 Simple_State :: struct {
-	textured_pipeline: gfx.Pipeline_Handle,
-	unlit_pipeline:    gfx.Pipeline_Handle,
-	sampler:           gfx.Sampler_Handle,
-	textured_model:    gfx.Model,
-	unlit_model:       gfx.Model,
-	quad_mesh:         gfx.Mesh,
-	quad_vertices:     [4]gfx.VertexData,
-	quad_indices:      [6]u16,
-	spinning:          int,
-	rotation:          f32,
-	// move_action:       input.Axis_2D_Action,
-	// boost_action:      input.Button_Action,
-	// up_action:         input.Button_Action,
-	// down_action:       input.Button_Action,
+	quad_mesh:     gfx.Mesh,
+	quad_vertices: [4]gfx.VertexData,
+	quad_indices:  [6]u16,
+	spinning:      int,
+	rotation:      f32,
 }
 
 simple_scene :: proc() -> engine.Scene {
@@ -36,26 +27,16 @@ simple_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	demo.state = state
 	engine.camera_fly(ctx)
 
-	state.textured_pipeline = gfx.create_textured_pipeline(gfx_ctx)
-	state.unlit_pipeline = gfx.create_unlit_pipeline(gfx_ctx)
-	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
-
-	state.textured_model = gfx.load_textured_model(
+	textured := gfx.model_add(gfx_ctx, {path = "static/models/sea/ship-large.glb", kind = .Textured})
+	unlit := gfx.model_add(
 		gfx_ctx,
-		"static/models/sea/ship-large.glb",
-		state.textured_pipeline,
-		state.sampler,
+		{path = "static/models/sea/ship-small-ghost.glb", kind = .Unlit, tint = {0.2, 0.8, 0.9, 1}},
 	)
-	state.unlit_model = gfx.model_load(
-		gfx_ctx,
-		{model_path = "static/models/sea/ship-small-ghost.glb", pipeline = state.unlit_pipeline},
-	)
-	gfx.set_unlit_color(&state.unlit_model.material, {0.2, 0.8, 0.9, 1})
 
 	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
 
-	state.spinning = gfx.draw_create(gfx_ctx, {mesh = &state.textured_model, position = SPIN_SHIP_POSITION, scale = SHIP_SCALE})
-	gfx.draw_create(gfx_ctx, {mesh = &state.unlit_model, position = {2.5, -0.5, -10}, scale = SHIP_SCALE})
+	state.spinning = gfx.draw_create(gfx_ctx, {mesh = textured, position = SPIN_SHIP_POSITION, scale = SHIP_SCALE})
+	gfx.draw_create(gfx_ctx, {mesh = unlit, position = {2.5, -0.5, -10}, scale = SHIP_SCALE})
 
 	// Raw geometry: animated quad through the unlit pipeline.
 	state.quad_vertices = {
@@ -66,7 +47,8 @@ simple_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	}
 	state.quad_indices = {0, 1, 2, 2, 3, 0}
 	state.quad_mesh = gfx.mesh_create(gfx_ctx, state.quad_vertices[:], state.quad_indices[:])
-	gfx.draw_create(gfx_ctx, {mesh = &state.quad_mesh, material = &state.unlit_model.material, position = {0, 1.2, -8}, layer = .UI})
+	quad_material := gfx.material_create(gfx_ctx, {kind = .Unlit, tint = {0.2, 0.8, 0.9, 1}})
+	gfx.draw_create(gfx_ctx, {mesh = &state.quad_mesh, material = quad_material, position = {0, 1.2, -8}, layer = .UI})
 	return true
 }
 
@@ -75,8 +57,9 @@ simple_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 	state := cast(^Simple_State)demo.state
 
 	state.rotation += linalg.to_radians(f32(60)) * delta_time
-	gfx.draw_set_transform(
-		gfx.draw_get(gfx_ctx, state.spinning),
+	gfx.draw_move(
+		gfx_ctx,
+		state.spinning,
 		SPIN_SHIP_POSITION,
 		linalg.quaternion_from_euler_angles_f32(0, state.rotation, 0, .XYZ),
 		SHIP_SCALE,
@@ -95,9 +78,6 @@ simple_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 }
 
 simple_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
-	gfx_ctx := &ctx.gfx
 	state := cast(^Simple_State)demo.state
-	gfx.model_unload(gfx_ctx, &state.textured_model)
-	gfx.model_unload(gfx_ctx, &state.unlit_model)
 	free(state)
 }

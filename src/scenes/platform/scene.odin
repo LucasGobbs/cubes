@@ -31,22 +31,16 @@ PROTO_TEXTURES := [Proto_Material]string {
 }
 
 Platform_State :: struct {
-	pipeline:  gfx.Pipeline_Handle,
-	sampler:   gfx.Sampler_Handle,
-	textures:  [Proto_Material]gfx.Texture_Handle,
-	materials: [Proto_Material]gfx.Material,
+	materials: [Proto_Material]^gfx.Material, // scope-owned; looked up by proto_* while building
 	// CPU vertex data must outlive mesh upload; kept until destroy.
 	solids:    [dynamic]Proto_Solid,
-	meshes:    [dynamic]^gfx.Mesh,
-	fly_camera: gfx.Fly_Camera,
-	fly_controls: engine.Fly_Controls,
 	player:    int,
 	time:      f32,
 }
 
 Proto_Solid :: struct {
 	verts: [dynamic]gfx.VertexData,
-	idx:   [dynamic]u16,
+	idx:   [dynamic]u32,
 }
 
 platform_scene :: proc() -> engine.Scene {
@@ -57,16 +51,10 @@ platform_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx_ctx := &ctx.gfx
 	state := new(Platform_State)
 	demo.state = state
-	engine.scene_camera_reset(demo, gfx_ctx, {24, 18, 34}, {2, 2, -1})
+	engine.camera_fly(ctx, {24, 18, 34}, {2, 2, -1})
 
-	state.fly_camera = gfx.fly_camera_create()
-	state.fly_controls = engine.fly_controls_create(&ctx.input, "platform")
-	state.pipeline = gfx.create_textured_pipeline(gfx_ctx)
-	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 	for path, mat in PROTO_TEXTURES {
-		state.textures[mat] = gfx.texture_load(gfx_ctx, path)
-		state.materials[mat] = gfx.material_make(state.pipeline)
-		gfx.bind_textured_material(&state.materials[mat], state.textures[mat], state.sampler)
+		state.materials[mat] = gfx.material_create(gfx_ctx, {kind = .Textured, texture = path})
 	}
 
 	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
@@ -79,7 +67,7 @@ platform_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 
 	// Ramp turned on Y so it climbs diagonally across the ground.
 	ramp := proto_piece(state, gfx_ctx, {{-6, 0}, {0, 0}, {0, 4}}, 4, {-8, 0, 0}, .Ramp)
-	gfx.draw_set_transform(gfx.draw_get(gfx_ctx, ramp), {-8, 0, 0}, linalg.quaternion_from_euler_angles_f32(0, 0.6, 0, .XYZ), {1, 1, 1})
+	gfx.draw_move(gfx_ctx, ramp, {-8, 0, 0}, linalg.quaternion_from_euler_angles_f32(0, 0.6, 0, .XYZ), {1, 1, 1})
 
 	// Trapezoid step set back in depth.
 	proto_piece(state, gfx_ctx, {{-1.5, 0}, {1.5, 0}, {0.8, 3}, {-0.8, 3}}, 2, {4, 0, -5}, .Trapezoid)
@@ -104,8 +92,6 @@ platform_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 platform_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Platform_State)demo.state
-	fly := engine.fly_controls_read(&ctx.input, &state.fly_controls)
-	gfx.fly_camera_update(gfx.camera(gfx_ctx), &state.fly_camera, fly, delta_time)
 
 	// Player walks a looping 3D path through the platforms, hopping between waypoints.
 	state.time += delta_time
@@ -117,21 +103,18 @@ platform_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32
 	f = f * f * (3 - 2 * f)
 	pos := PLAYER_PATH[i] + (PLAYER_PATH[(i + 1) % n] - PLAYER_PATH[i]) * f
 	pos.y += 1.0 * math.sin(f * math.PI)
-	gfx.draw_set_transform(gfx.draw_get(gfx_ctx, state.player), pos, linalg.QUATERNIONF32_IDENTITY, {1, 1, 1})
+	gfx.draw_move(gfx_ctx, state.player, pos, linalg.QUATERNIONF32_IDENTITY, {1, 1, 1})
 
 	gfx.render(gfx_ctx)
 }
 
 platform_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	state := cast(^Platform_State)demo.state
-	for mesh in state.meshes do free(mesh)
 	for &solid in state.solids {
 		delete(solid.verts)
 		delete(solid.idx)
 	}
 	delete(state.solids)
-	delete(state.meshes)
-	for &material in state.materials do gfx.material_destroy(&material)
 	free(state)
 }
 
@@ -160,11 +143,14 @@ proto_piece :: proc(
 	append(&state.solids, solid)
 	stored := &state.solids[len(state.solids) - 1]
 
-	mesh := new(gfx.Mesh)
-	mesh^ = gfx.mesh_create(gfx_ctx, stored.verts[:], stored.idx[:])
-	append(&state.meshes, mesh)
-
-	return gfx.draw_create(gfx_ctx, {mesh = mesh, material = &state.materials[material], position = at})
+	return gfx.draw_create(
+		gfx_ctx,
+		{
+			mesh = gfx.Mesh_Data{vertices = stored.verts[:], indices = stored.idx[:]},
+			material = state.materials[material],
+			position = at,
+		},
+	)
 }
 
 // Extrudes a convex polygon along Z: two caps and one quad per edge.
@@ -218,6 +204,6 @@ proto_add_face :: proc(solid: ^Proto_Solid, normal: [3]f32, pts: [][3]f32) {
 		b := base + u32(i)
 		c := base + u32(i + 1)
 		if linalg.dot(linalg.cross(pts[i] - pts[0], pts[i + 1] - pts[0]), normal) < 0 do b, c = c, b
-		append(&solid.idx, u16(base), u16(b), u16(c))
+		append(&solid.idx, base, b, c)
 	}
 }

@@ -14,12 +14,9 @@ BOAT_COLS :: 20
 BOAT_ROWS :: 15 // 300 boats
 
 Editor_State :: struct {
-	textured_pipeline: gfx.Pipeline_Handle,
-	unlit_pipeline:    gfx.Pipeline_Handle,
-	sampler:           gfx.Sampler_Handle,
-	textured_model:    gfx.Model,
-	unlit_model:       gfx.Model,
-	shared_material:   gfx.Material,
+	textured_model:    ^gfx.Model,
+	unlit_model:       ^gfx.Model,
+	shared_material:   ^gfx.Material,
 	quad_vertices:     [4]gfx.VertexData,
 	quad_indices:      [6]u16,
 	quad_mesh:         gfx.Mesh,
@@ -30,9 +27,6 @@ Editor_State :: struct {
 	center_entity:     int,
 	rotation_speed:    f32,
 	rotation:          f32,
-
-	fly_camera:        gfx.Fly_Camera,
-	fly_controls:      engine.Fly_Controls,
 }
 
 editor_scene :: proc() -> engine.Scene {
@@ -47,39 +41,22 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx_ctx := &ctx.gfx
 	state := new(Editor_State)
 	demo.state = state
-	engine.scene_camera_reset(demo, gfx_ctx)
+	engine.camera_fly(ctx)
 
-	state.fly_camera = gfx.fly_camera_create()
-	state.fly_controls = engine.fly_controls_create(&ctx.input, "editor")
-
-	state.textured_pipeline = gfx.create_textured_pipeline(gfx_ctx)
-	state.unlit_pipeline = gfx.create_unlit_pipeline(gfx_ctx)
-	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
-
-	state.textured_model = gfx.load_textured_model(
-		gfx_ctx,
-		"static/models/sea/ship-large.glb",
-		state.textured_pipeline,
-		state.sampler,
-	)
-	state.unlit_model = gfx.model_load(
-		gfx_ctx,
-		{model_path = "static/models/sea/ship-large.glb", pipeline = state.unlit_pipeline},
-	)
-	gfx.set_unlit_color(&state.unlit_model.material, {0.15, 0.85, 0.3, 1})
+	state.textured_model = gfx.model_add(gfx_ctx, {path = "static/models/sea/ship-large.glb", kind = .Textured})
+	state.unlit_model = gfx.model_add(gfx_ctx, {path = "static/models/sea/ship-large.glb", kind = .Unlit, tint = {0.15, 0.85, 0.3, 1}})
 
 	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
-	gfx.draw_create(gfx_ctx, {mesh = &state.textured_model, position = {-5, -.5, -12}, scale = {0.4, 0.4, 0.4}})
-	state.center_entity = gfx.draw_create(gfx_ctx, {mesh = &state.textured_model, position = {0, -.5, -12}, scale = {0.4, 0.4, 0.4}})
-	gfx.draw_create(gfx_ctx, {mesh = &state.unlit_model, position = {5, -.5, -12}, scale = {0.4, 0.4, 0.4}})
+	gfx.draw_create(gfx_ctx, {mesh = state.textured_model, position = {-5, -.5, -12}, scale = {0.4, 0.4, 0.4}})
+	state.center_entity = gfx.draw_create(gfx_ctx, {mesh = state.textured_model, position = {0, -.5, -12}, scale = {0.4, 0.4, 0.4}})
+	gfx.draw_create(gfx_ctx, {mesh = state.unlit_model, position = {5, -.5, -12}, scale = {0.4, 0.4, 0.4}})
 
 	// One material shared by any number of entities; the editor edits
 	// state.tint live.
-	state.shared_material = gfx.material_make(state.unlit_pipeline)
 	state.tint = {0.95, 0.85, 0.2, 1}
-	gfx.set_unlit_color(&state.shared_material, state.tint)
+	state.shared_material = gfx.material_create(gfx_ctx, {kind = .Unlit, tint = state.tint})
 
-	gfx.draw_create(gfx_ctx, {mesh = &state.unlit_model.mesh, material = &state.shared_material, position = {0, 1.2, -12}, scale = {0.4, 0.4, 0.4}})
+	gfx.draw_create(gfx_ctx, {mesh = &state.unlit_model.mesh, material = state.shared_material, position = {0, 1.2, -12}, scale = {0.4, 0.4, 0.4}})
 
 	state.quad_vertices = {
 		{position = {-1, -1, 0}, color = {1, 1, 1, 1}, uv = {0, 0}},
@@ -89,7 +66,7 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	}
 	state.quad_indices = {0, 1, 2, 2, 3, 0}
 	state.quad_mesh = gfx.mesh_create(gfx_ctx, state.quad_vertices[:], state.quad_indices[:])
-	gfx.draw_create(gfx_ctx, {mesh = &state.quad_mesh, material = &state.shared_material, position = {0, 1.2, -8}, layer = .UI})
+	gfx.draw_create(gfx_ctx, {mesh = &state.quad_mesh, material = state.shared_material, position = {0, 1.2, -8}, layer = .UI})
 
 	// Post-processing: separable gaussian blur over scene_color, run by the
 	// renderer after the scene (renderer_run_post).
@@ -121,7 +98,7 @@ ed_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 			.XYZ,
 		)
 		scale := 0.25 + rand.float32_range(0, 0.2)
-		gfx.draw_create(gfx_ctx, {mesh = &state.textured_model, position = position, scale = {scale, scale, scale}, rotation = yaw})
+		gfx.draw_create(gfx_ctx, {mesh = state.textured_model, position = position, scale = {scale, scale, scale}, rotation = yaw})
 	}
 
 	state.rotation_speed = linalg.to_radians(f32(90))
@@ -134,20 +111,12 @@ ed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Editor_State)demo.state
 
-	// Mouse-look only when the cursor is over the viewport widget (always
-	// when the editor is hidden or not compiled in).
-	mouse_in_viewport := true
-	when gfx.EDITOR {
-		mouse_in_viewport = editor.editor_mouse_in_viewport(state.editor, state.ui.viewport)
-	}
-	fly := engine.fly_controls_read(&ctx.input, &state.fly_controls, mouse_in_viewport)
-	gfx.fly_camera_update(gfx.camera(gfx_ctx), &state.fly_camera, fly, delta_time)
-
 	when gfx.EDITOR {
 		camera := gfx.camera(gfx_ctx)
 		state.ui.fps = 1 / delta_time
 		editor.editor_build_ui(state.editor, &state.ui)
-		gfx.set_unlit_color(&state.shared_material, state.tint)
+		engine.camera_mouse_look(ctx, editor.editor_mouse_in_viewport(state.editor, state.ui.viewport))
+		gfx.set_unlit_color(state.shared_material, state.tint)
 
 		// The game renders at the Viewport widget's size; when the editor
 		// is hidden it takes the whole window again.
@@ -169,8 +138,9 @@ ed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	gfx.mesh_update(&gfx_ctx.renderer, &state.quad_mesh, state.quad_vertices[:], state.quad_indices[:])
 
 	state.rotation += state.rotation_speed * delta_time
-	gfx.draw_set_transform(
-		gfx.draw_get(gfx_ctx, state.center_entity),
+	gfx.draw_move(
+		gfx_ctx,
+		state.center_entity,
 		{0, -.5, -12},
 		linalg.quaternion_from_euler_angles_f32(0, state.rotation, 0, .XYZ),
 		{0.4, 0.4, 0.4},
@@ -205,8 +175,5 @@ ed_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 		free(state.editor)
 	}
 	gfx.renderer_clear_passes(&gfx_ctx.renderer, .Post) // passes point into state
-	gfx.material_destroy(&state.shared_material)
-	gfx.model_unload(gfx_ctx, &state.textured_model)
-	gfx.model_unload(gfx_ctx, &state.unlit_model)
 	free(state)
 }

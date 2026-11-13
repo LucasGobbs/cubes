@@ -77,14 +77,12 @@ Boat_Slot :: struct {
 }
 
 Benchmark_State :: struct {
-	pipeline:         gfx.Pipeline_Handle,
 	sampler:          gfx.Sampler_Handle,
-	models:           [BOAT_COUNT]gfx.Model,
-	dragon:           gfx.Model,
+	models:           [BOAT_COUNT]^gfx.Model,
+	dragon:           ^gfx.Model,
 	base_draws:       int,
 	sea_pipeline:     gfx.Pipeline_Handle,
 	sea_material:     gfx.Material,
-	sea_mesh:         gfx.Mesh,
 	sea_time:         f32,
 	boats:            [dynamic]Boat_Slot,
 	per_model:        int,
@@ -93,8 +91,6 @@ Benchmark_State :: struct {
 	overlay_material: gfx.Material,
 	text_mesh:        gfx.Mesh,
 	text_vertices:    [dynamic]gfx.VertexData,
-	fly_camera:       gfx.Fly_Camera,
-	fly_controls:     engine.Fly_Controls,
 	add_action:       input.Button_Action,
 	subtract_action:  input.Button_Action,
 	fog_action:       input.Button_Action,
@@ -119,34 +115,21 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state := new(Benchmark_State)
 	state.fog_on = true // haze by default so boats and dragons share the sea's horizon blend
 	demo.state = state
-	engine.scene_camera_reset(demo, gfx_ctx, {0, 8, 20})
+	engine.camera_fly(ctx, {0, 8, 20})
 	// Uncapped: the point of this scene is measuring real frame cost.
 	gfx.set_present_mode(gfx_ctx, .IMMEDIATE)
 
 	inputs := &ctx.input
-	state.fly_camera = gfx.fly_camera_create()
-	state.fly_controls = engine.fly_controls_create(&ctx.input, "benchmark")
 	state.add_action = input.button(inputs, "benchmark.add", .EQUALS)
 	state.subtract_action = input.button(inputs, "benchmark.subtract", .MINUS)
 	state.fog_action = input.button(inputs, "benchmark.fog", .V)
 
-	state.pipeline = gfx.create_textured_instanced_pipeline(gfx_ctx)
 	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 	boat_paths := BOAT_PATHS
 	for path, index in boat_paths {
-		state.models[index] = gfx.model_load(gfx_ctx, {model_path = path, pipeline = state.pipeline})
-		gfx.bind_textured_instanced_material(
-			&state.models[index].material,
-			gfx.model_texture(&state.models[index]),
-			state.sampler,
-		)
+		state.models[index] = gfx.model_add(gfx_ctx, {path = path, kind = .Textured_Instanced})
 	}
-	state.dragon = gfx.model_load(gfx_ctx, {model_path = DRAGON_PATH, pipeline = state.pipeline})
-	gfx.bind_textured_instanced_material(
-		&state.dragon.material,
-		gfx.model_texture(&state.dragon),
-		state.sampler,
-	)
+	state.dragon = gfx.model_add(gfx_ctx, {path = DRAGON_PATH, kind = .Textured_Instanced})
 
 	// On-screen text: font atlas + blended depth-less overlay pipeline.
 	font, font_ok := gfx.font_create(gfx_ctx, "static/fonts/andale-mono.ttf")
@@ -161,8 +144,7 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
 	state.sea_pipeline = sea_pipeline_create(gfx_ctx, state)
 	state.sea_material = gfx.material_make(state.sea_pipeline)
-	state.sea_mesh = sea_mesh_create(gfx_ctx)
-	gfx.draw_create(gfx_ctx, {mesh = &state.sea_mesh, material = &state.sea_material})
+	gfx.draw_create(gfx_ctx, {mesh = sea_mesh_data(), material = &state.sea_material})
 	state.base_draws = len(gfx_ctx.draws)
 
 	rand.reset(1) // fixed layout: every run draws the same fleet, so results compare
@@ -177,7 +159,7 @@ benchmark_populate :: proc(state: ^Benchmark_State, gfx_ctx: ^gfx.Device, per_mo
 	resize(&gfx_ctx.draws, state.base_draws)
 	clear(&state.boats)
 	// (skybox and sea are added once in create, below base_draws)
-	for &model in state.models {
+	for model in state.models {
 		for _ in 0 ..< per_model {
 			position := gfx.Vec3 {
 				rand.float32_range(-700, 700),
@@ -192,7 +174,7 @@ benchmark_populate :: proc(state: ^Benchmark_State, gfx_ctx: ^gfx.Device, per_mo
 			)
 			scale := 0.25 + rand.float32_range(0, 0.2)
 			if rand.float32() < 0.12 do scale *= rand.float32_range(2, 4) // a few big ships among the small boats
-			draw := gfx.draw_create(gfx_ctx, {mesh = &model, position = position, scale = {scale, scale, scale}, rotation = yaw})
+			draw := gfx.draw_create(gfx_ctx, {mesh = model, position = position, scale = {scale, scale, scale}, rotation = yaw})
 			append(&state.boats, Boat_Slot{draw = draw, x = position.x, z = position.z, yaw = yaw, scale = scale})
 		}
 	}
@@ -201,7 +183,7 @@ benchmark_populate :: proc(state: ^Benchmark_State, gfx_ctx: ^gfx.Device, per_mo
 		angle := f32(index) / DRAGON_COUNT * linalg.TAU
 		scale := f32(DRAGON_SCALE)
 		gfx.draw_create(gfx_ctx, {
-			mesh     = &state.dragon,
+			mesh     = state.dragon,
 			position = {math.cos(angle) * DRAGON_RING_RADIUS, 0, FLEET_CENTER_Z + math.sin(angle) * DRAGON_RING_RADIUS},
 			scale    = {scale, scale, scale},
 			rotation = linalg.quaternion_from_euler_angles_f32(0, -angle - linalg.PI / 2, 0, .XYZ),
@@ -248,7 +230,7 @@ benchmark_push_text :: proc(
 	}
 }
 
-sea_mesh_create :: proc(gfx_ctx: ^gfx.Device) -> gfx.Mesh {
+sea_mesh_data :: proc() -> gfx.Mesh_Data {
 	n :: SEA_CELLS + 1
 	cell :: f32(2 * SEA_HALF) / SEA_CELLS
 	vertices := make([dynamic]gfx.VertexData, 0, n * n, context.temp_allocator)
@@ -266,8 +248,7 @@ sea_mesh_create :: proc(gfx_ctx: ^gfx.Device) -> gfx.Mesh {
 			append(&indices, i, i + stride, i + 1, i + 1, i + stride, i + stride + 1)
 		}
 	}
-	mesh := gfx.mesh_create(gfx_ctx, vertices[:], indices[:])
-	return mesh
+	return gfx.Mesh_Data{vertices = vertices[:], indices = indices[:]}
 }
 
 sea_pipeline_create :: proc(gfx_ctx: ^gfx.Device, state: ^Benchmark_State) -> gfx.Pipeline_Handle {
@@ -325,8 +306,6 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 	fog_rgb := gfx.color_srgb_to_linear({0.671, 0.757, 0.949, 1}) // skybox horizon; matches `sky` in sea.slang
 	gfx_ctx.renderer.fog = state.fog_on ? {fog_rgb.r, fog_rgb.g, fog_rgb.b, FOG_VIEW_DISTANCE} : [4]f32{}
 
-	fly := engine.fly_controls_read(&ctx.input, &state.fly_controls)
-	gfx.fly_camera_update(gfx.camera(gfx_ctx), &state.fly_camera, fly, delta_time)
 	state.sea_time += delta_time
 	camera := gfx_ctx.renderer.camera.position
 	for boat in state.boats {
@@ -337,8 +316,9 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 			math.acos(clamp(normal.y, -1, 1)),
 			linalg.normalize0(linalg.cross(gfx.Vec3{0, 1, 0}, normal)),
 		)
-		gfx.draw_set_transform(
-			gfx.draw_get(gfx_ctx, boat.draw),
+		gfx.draw_move(
+			gfx_ctx,
+			boat.draw,
 			{boat.x, SEA_Y + h + BOAT_DRAFT, boat.z},
 			tilt * boat.yaw,
 			{boat.scale, boat.scale, boat.scale},
@@ -441,7 +421,5 @@ benchmark_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx.material_destroy(&state.sea_material)
 	delete(state.text_vertices)
 	gfx.material_destroy(&state.overlay_material)
-	for &model in state.models do gfx.model_unload(gfx_ctx, &model)
-	gfx.model_unload(gfx_ctx, &state.dragon)
 	free(state)
 }

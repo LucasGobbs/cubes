@@ -11,8 +11,8 @@ package gfx
 //   model_add, skybox_add, draw_create with Mesh_Data. Never free them yourself;
 //   their pointers stay valid until scope_end.
 // - Borrowed objects (by value, caller frees): mesh_create, material_make,
-//   model_load, draw_make/draw_model. Pair them with their *_destroy.
-// - Draws from draw_create/draw_make/draw_model live in gfx_ctx.draws; scope_end
+//   model_load, draw_make. Pair them with their *_destroy.
+// - Draws from draw_create/draw_make live in gfx_ctx.draws; scope_end
 //   truncates the ones added inside the scope.
 // - Renderer-owned targets rebuilt at runtime (MSAA, resize, transient pool) and
 //   device caches (builtin pipelines, sampler presets) are created paused, so they

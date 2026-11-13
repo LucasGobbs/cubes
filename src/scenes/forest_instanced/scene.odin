@@ -58,8 +58,6 @@ Forest_State :: struct {
 	pipeline:         gfx.Pipeline_Handle,
 	material:         gfx.Material,
 	bloom:            gfx.Bloom,
-	fly_camera:       gfx.Fly_Camera,
-	fly_controls:     engine.Fly_Controls,
 	variant_data:     [VARIANT_COUNT]Variant_Data,
 	variant_mesh:     [VARIANT_COUNT]gfx.Mesh,
 	terrain:          [TERRAIN_SIDE * TERRAIN_SIDE]Terrain_Cluster,
@@ -80,9 +78,7 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx_ctx := &ctx.gfx
 	state := new(Forest_State)
 	demo.state = state
-	engine.scene_camera_reset(demo, gfx_ctx, {0, naive.terrain_height(0, 0) + 2.5, 0}, {0, naive.terrain_height(0, -10) + 2, -10})
-	state.fly_camera = gfx.fly_camera_create()
-	state.fly_controls = engine.fly_controls_create(&ctx.input, "forest_instanced")
+	engine.camera_fly(ctx, {0, naive.terrain_height(0, 0) + 2.5, 0}, {0, naive.terrain_height(0, -10) + 2, -10})
 
 	attributes := shader_parameters.forest_instanced_vertex_attributes(gfx.VertexData)
 	state.pipeline = gfx.pipeline_create(
@@ -143,8 +139,6 @@ forest_bind_draw :: proc(
 forest_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Forest_State)demo.state
-	fly := engine.fly_controls_read(&ctx.input, &state.fly_controls)
-	gfx.fly_camera_update(gfx.camera(gfx_ctx), &state.fly_camera, fly, delta_time)
 	state.time += delta_time
 	fog := naive.FOG_COLOR
 	gfx_ctx.renderer.fog = {fog.r, fog.g, fog.b, FOG_DISTANCE}
@@ -233,7 +227,7 @@ forest_build_grass :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster: 
 		rotation := linalg.quaternion_angle_axis_f32(instance.yaw, {0, 1, 0})
 		scale := instance.scale
 		index := gfx.draw_create(gfx_ctx, {mesh = &state.tuft_mesh[instance.lod1], material = &state.material, position = instance.position, rotation = rotation, scale = {scale, scale, scale}})
-		gfx.draw_get(gfx_ctx, index).hidden = true
+		gfx_ctx.draws[index].hidden = true
 		append(&cluster.items, Grass_Item{index, instance})
 	}
 	cluster.built = true
@@ -242,7 +236,7 @@ forest_build_grass :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster: 
 // want: 0 hidden (skipped on submit), 1 near LOD, 2 far LOD.
 grass_apply_lod :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster: ^Grass_Cluster, want: int) {
 	for item in cluster.items {
-		draw := gfx.draw_get(gfx_ctx, item.draw)
+		draw := &gfx_ctx.draws[item.draw]
 		draw.hidden = want == 0
 		if want == 0 do continue
 		variant := item.instance.lod0 if want == 1 else item.instance.lod1

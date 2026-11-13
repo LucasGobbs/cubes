@@ -11,7 +11,8 @@ ORBIT_MAX_DISTANCE :: 1000
 
 // Host-driven camera, updated every frame before Scene.tick. nil = scene drives the camera itself.
 Camera_Fly :: struct {
-	fly: gfx.Fly_Camera,
+	fly:  gfx.Fly_Camera,
+	look: bool, // mouse look on; see camera_mouse_look
 }
 
 Camera_Orbit :: struct {
@@ -38,11 +39,17 @@ camera_fly :: proc(
 	fov_y := f32(0),
 ) {
 	gfx.camera_reset(&ctx.gfx, position, look_at)
-	fly := Camera_Fly{fly = gfx.fly_camera_create()}
+	fly := Camera_Fly{fly = gfx.fly_camera_create(), look = true}
 	if speed > 0 do fly.fly.speed = speed
 	ctx.camera = fly
 	camera_ensure_keys(ctx)
 	if fov_y > 0 do camera_perspective(ctx, fov_y)
+}
+
+// Gates mouse look for the fly camera (editor passes whether the pointer is over the viewport).
+// No-op for other camera kinds.
+camera_mouse_look :: proc(ctx: ^Context, enabled: bool) {
+	if fly, ok := &ctx.camera.(Camera_Fly); ok do fly.look = enabled
 }
 
 // Right-drag orbit around target at distance; wheel zooms. Resets like camera_fly.
@@ -78,7 +85,7 @@ camera_orthographic :: proc(ctx: ^Context, height, near, far: f32) {
 	case nil:
 	case Camera_Fly:
 		keys, _ := ctx.camera_keys.?
-		fly := fly_controls_read(&ctx.input, &keys)
+		fly := fly_controls_read(&ctx.input, &keys, c.look)
 		gfx.fly_camera_update(gfx.camera(&ctx.gfx), &c.fly, fly, dt)
 	case Camera_Orbit:
 		if dt <= 0 do return

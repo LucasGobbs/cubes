@@ -174,6 +174,11 @@ host_scene_create :: proc(ctx: ^Context, scene: ^Scene) -> bool {
 	gfx.scope_begin(&ctx.gfx) // every create pairs with exactly one host_scene_destroy, even if create fails
 	ctx.camera = nil
 	ctx.camera_keys = nil
+	// Default view and targets reset; the JSON camera overrides the default, and a
+	// camera_* call in create overrides both.
+	start := Camera_Start{position = {0, 0, 3}}
+	if json, ok := scene.start_camera.?; ok do start = json
+	gfx.camera_reset(&ctx.gfx, start.position, start.look_at)
 	return scene.create(scene, ctx)
 }
 

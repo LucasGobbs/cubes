@@ -66,8 +66,9 @@ models_tick :: proc(scene: ^engine.Scene, ctx: ^engine.Context, delta_time: f32)
 	state := cast(^Models_State)scene.state
 	state.rotation += delta_time
 	for draw, index in state.ship_draws {
-		gfx.draw_set_transform(
-			gfx.draw_get(&ctx.gfx, draw),
+		gfx.draw_move(
+			&ctx.gfx,
+			draw,
 			models_position(index),
 			linalg.quaternion_from_euler_angles_f32(0, state.rotation * (0.4 + 0.3 * f32(index)), 0, .XYZ),
 			MODEL_SCALE,

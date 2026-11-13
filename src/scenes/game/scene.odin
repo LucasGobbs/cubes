@@ -38,7 +38,6 @@ game_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx_ctx := &ctx.gfx
 	state := new(Game_State)
 	demo.state = state
-	engine.scene_camera_reset(demo, gfx_ctx) // restores full-window targets after the editor shrinks them
 
 	state.move = input.move_2d(&ctx.input, "game.move", up = .W, down = .S, left = .A, right = .D)
 
