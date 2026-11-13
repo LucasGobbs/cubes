@@ -11,3 +11,6 @@ gbbfx.a
 main_debug.dSYM
 docs/
 dist/
+# goose shader output (make shaders / make default-shaders)
+shaders/generated/
+src/engine/gfx/generated/
