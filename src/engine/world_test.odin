@@ -2,6 +2,7 @@ package engine
 
 import "core:math"
 import "core:math/linalg"
+import "core:strings"
 import "core:testing"
 
 @(test)
@@ -124,4 +125,71 @@ sprite_frame_loops_and_holds :: proc(t: ^testing.T) {
 	anim.loop = false
 	anim.time = 5
 	testing.expect_value(t, sprite_frame(anim), 3)
+}
+
+@(test)
+find_by_name_follows_spawn_and_destroy :: proc(t: ^testing.T) {
+	world := World{}
+	defer world_destroy(&world)
+
+	id := spawn(&world, Name{value = "hero"})
+	found, ok := world_find_by_name(&world, "hero")
+	testing.expect(t, ok)
+	testing.expect_value(t, found, id)
+	_, missing := world_find_by_name(&world, "villain")
+	testing.expect(t, !missing)
+
+	world_destroy_entity(&world, id)
+	_, stale := world_find_by_name(&world, "hero")
+	testing.expect(t, !stale)
+}
+
+@(test)
+name_survives_freeing_source_and_replace :: proc(t: ^testing.T) {
+	world := World{}
+	defer world_destroy(&world)
+
+	source := strings.clone("hero")
+	id := spawn(&world, Name{value = source})
+	delete(source)
+	found, ok := world_find_by_name(&world, "hero")
+	testing.expect(t, ok && found == id)
+
+	// Replacing frees the old clone; the leak checker catches a miss.
+	entity_add_component(&world, id, Name{value = "boss"})
+	_, old := world_find_by_name(&world, "hero")
+	testing.expect(t, !old)
+	_, renamed := world_find_by_name(&world, "boss")
+	testing.expect(t, renamed)
+}
+
+@(test)
+entities_list_in_slot_order :: proc(t: ^testing.T) {
+	world := World{}
+	defer world_destroy(&world)
+
+	a := spawn(&world, Name{value = "a"})
+	b := spawn(&world)
+	c := spawn(&world, Name{value = "c"})
+	world_destroy_entity(&world, b)
+	d := spawn(&world) // reuses b's slot, so it sits between a and c
+
+	list := world_entities(&world)
+	testing.expect_value(t, len(list), 3)
+	if len(list) != 3 do return
+	testing.expect_value(t, list[0], a)
+	testing.expect_value(t, list[1], d)
+	testing.expect_value(t, list[2], c)
+}
+
+@(test)
+remove_sprite_component :: proc(t: ^testing.T) {
+	world := World{}
+	defer world_destroy(&world)
+
+	id := spawn(&world, Sprite{texture = "static/none.png", layer = 2})
+	testing.expect(t, entity_get_component(&world, id, Sprite) != nil)
+	entity_remove_component(&world, id, Sprite)
+	testing.expect(t, entity_get_component(&world, id, Sprite) == nil)
+	testing.expect(t, entity_transform(&world, id) != nil)
 }

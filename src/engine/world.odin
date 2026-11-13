@@ -32,6 +32,7 @@ import "core:math/linalg"
 import "core:mem"
 import "core:reflect"
 import "core:slice"
+import "core:strings"
 import gfx "gfx"
 
 Vec3 :: gfx.Vec3
@@ -119,6 +120,11 @@ Health :: struct {
 	current, max: f32,
 }
 
+// Entity name: key for world_find_by_name and hot reload. The world clones value on set.
+Name :: struct {
+	value: string,
+}
+
 Component :: union {
 	Transform,
 	Model,
@@ -128,6 +134,7 @@ Component :: union {
 	Sprite,
 	Sprite_Anim,
 	Health,
+	Name,
 }
 
 World :: struct {
@@ -227,6 +234,24 @@ entity_get_component :: proc(world: ^World, id: Entity_Id, $T: typeid) -> ^T {
 	return slot_component(&world.slots[id.index], T)
 }
 
+// First live entity whose Name equals name. Returns the zero Entity_Id and false if none.
+world_find_by_name :: proc(world: ^World, name: string) -> (Entity_Id, bool) {
+	for &slot, index in world.slots {
+		if !slot.alive do continue
+		if component := slot_component(&slot, Name); component != nil && component.value == name {
+			return Entity_Id{u32(index), slot.generation}, true
+		}
+	}
+	return {}, false
+}
+
+// Live entities in slot order (temp allocator).
+world_entities :: proc(world: ^World) -> []Entity_Id {
+	list := make([dynamic]Entity_Id, context.temp_allocator)
+	for &slot, index in world.slots do if slot.alive do append(&list, Entity_Id{u32(index), slot.generation})
+	return list[:]
+}
+
 // State of an entity spawned with spawn_typed. Nil for invalid ids.
 world_get_state :: proc(world: ^World, id: Entity_Id, $T: typeid) -> ^T {
 	if !world_valid(world, id) do return nil
@@ -256,6 +281,23 @@ entity_add_component :: proc(world: ^World, id: Entity_Id, component: Component)
 	assert(world_valid(world, id), "engine: entity_add_component on invalid entity")
 	slot := &world.slots[id.index]
 	set_component(slot, component)
+	sync_transform(slot)
+	slot_resolve(world, slot)
+}
+
+// Removes a component of type T; Transform cannot be removed. Removing Model drops its renderable.
+entity_remove_component :: proc(world: ^World, id: Entity_Id, $T: typeid) {
+	assert(T != Transform, "engine: Transform cannot be removed")
+	if !world_valid(world, id) do return
+	slot := &world.slots[id.index]
+	for component, index in slot.components {
+		if _, ok := component.(T); ok {
+			free_component(component)
+			ordered_remove(&slot.components, index)
+			break
+		}
+	}
+	if T == Model do remove_renderable(slot)
 	sync_transform(slot)
 	slot_resolve(world, slot)
 }
@@ -562,16 +604,25 @@ slot_component :: proc(slot: ^Slot, $T: typeid) -> ^T {
 set_component :: proc(slot: ^Slot, component: Component) {
 	value := component
 	if transform, ok := &value.(Transform); ok do normalize_transform(transform)
+	// The world owns the name: clone so the caller may free its string.
+	if name, ok := &value.(Name); ok do name.value = strings.clone(name.value)
 	// A new Model needs a new renderable; the old one is dropped by slot_resolve.
 	if _, is_model := value.(Model); is_model do remove_renderable(slot)
 	kind := reflect.union_variant_typeid(value)
 	for &existing in slot.components {
 		if reflect.union_variant_typeid(existing) == kind {
+			free_component(existing)
 			existing = value
 			return
 		}
 	}
 	append(&slot.components, value)
+}
+
+// Frees what the world owns inside a component (the Name clone).
+@(private = "file")
+free_component :: proc(component: Component) {
+	if name, ok := component.(Name); ok do delete(name.value)
 }
 
 // Zero fields mean "unset": a zero quaternion is not a rotation and a zero scale
@@ -630,6 +681,7 @@ remove_renderable :: proc(slot: ^Slot) {
 @(private = "file")
 destroy_slot :: proc(slot: ^Slot) {
 	remove_renderable(slot)
+	for component in slot.components do free_component(component)
 	delete(slot.components)
 	slot.components = nil
 	if slot.state != nil do free(slot.state)
