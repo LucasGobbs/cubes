@@ -7,39 +7,10 @@ import naive "../forest_naive"
 
 // Local-space variant meshes (origin at base centre on the ground, y up, scale 1) drawn as
 // GPU instances. u16 indices: every variant stays far below 65535 verts.
-VARIANT_COUNT :: 13
-VARIANT_OAK_FIRST :: 0 // 0..2
-VARIANT_PINE_FIRST :: 3 // 3..4
-VARIANT_BROAD_FIRST :: 5 // 5..6
-VARIANT_AUTUMN :: 7
-VARIANT_ROCK_FIRST :: 8 // 8..10
-VARIANT_BUSH_FIRST :: 11 // 11..12
-
 Variant_Data :: struct {
 	verts: [dynamic]gfx.VertexData,
 	idx:   [dynamic]u16,
 }
-
-Instance :: struct {
-	position: [3]f32,
-	yaw, scale: f32,
-	variant:  int,
-}
-
-INSTANCE_CAP :: 40
-INSTANCE_SCALE_MIN :: 0.8
-INSTANCE_SCALE_MAX :: 1.4
-// Rocks sink this fraction of their scale into the ground.
-ROCK_BURY :: 0.2
-
-TREE_MIN_SPACING :: 3.5
-PROP_SPACING :: 2.0
-// Canopy radius <= 3 m, so trees stay that far from chunk edges and never cross chunks.
-TREE_EDGE_MARGIN :: 3.0
-PROP_EDGE_MARGIN :: 1.5
-TREE_ORIGIN_KEEP_OUT :: 8.0
-TREE_MAX_SLOPE_Y :: 0.8
-TREE_MAX_HEIGHT :: 45.0
 
 BLOB_SEGS :: 8
 BLOB_RINGS :: 5
@@ -55,13 +26,6 @@ TREE_LEAF_AUTUMN :: [3][3]f32{{0.95, 0.55, 0.15}, {0.85, 0.35, 0.12}, {0.95, 0.8
 TREE_BUSH_LEAF :: [3]f32{0.30, 0.60, 0.18}
 TREE_ROCK :: [3]f32{0.55, 0.54, 0.52}
 
-Tree_Species :: enum {
-	Oak,
-	Autumn,
-	Pine,
-	Broad,
-}
-
 // One squashed sphere. crown_w > 0 blends normals toward `crown` (shared pivot so a whole
 // canopy shades like one ball). uv.x = wind weight from wlo (0) to whi (1); wlo == whi => 0.
 Tree_Blob :: struct {
@@ -75,7 +39,7 @@ Tree_Blob :: struct {
 	seed:     u32,
 }
 
-// Splitmix64 stream. Placement seeds from chunk coords; variants seed from their index.
+// Splitmix64 stream. Variants seed from their index.
 Tree_Rng :: struct {
 	state: u64,
 }
@@ -102,142 +66,28 @@ tree_hash :: proc(a, b, c: u32) -> f32 {
 }
 
 // Builds every variant mesh once. Each variant has a fixed seed, so output is deterministic.
-variants_build :: proc() -> [VARIANT_COUNT]Variant_Data {
-	out: [VARIANT_COUNT]Variant_Data
-	for v in 0 ..< VARIANT_COUNT {
+variants_build :: proc() -> [naive.VARIANT_COUNT]Variant_Data {
+	out: [naive.VARIANT_COUNT]Variant_Data
+	for v in 0 ..< naive.VARIANT_COUNT {
 		rng := Tree_Rng{state = 0x0F0E5713 + u64(v) * 0x9E3779B97F4A7C15}
 		m := &out[v]
 		switch {
-		case v < VARIANT_PINE_FIRST:
+		case v < naive.VARIANT_PINE_FIRST:
 			variant_emit_oak(m, false, &rng)
-		case v < VARIANT_BROAD_FIRST:
+		case v < naive.VARIANT_BROAD_FIRST:
 			variant_emit_pine(m, &rng)
-		case v < VARIANT_AUTUMN:
+		case v < naive.VARIANT_AUTUMN:
 			variant_emit_broad(m, &rng)
-		case v == VARIANT_AUTUMN:
+		case v == naive.VARIANT_AUTUMN:
 			variant_emit_oak(m, true, &rng)
-		case v < VARIANT_BUSH_FIRST:
-			variant_emit_rock(m, v - VARIANT_ROCK_FIRST, &rng)
+		case v < naive.VARIANT_BUSH_FIRST:
+			variant_emit_rock(m, v - naive.VARIANT_ROCK_FIRST, &rng)
 		case:
 			variant_emit_bush(m, &rng)
 		}
 		assert(len(m.verts) < 65535, "forest_instanced: variant exceeds u16 index range")
 	}
 	return out
-}
-
-// Deterministic placements for one chunk. Appends to `out`; at most INSTANCE_CAP per call.
-placements_chunk :: proc(cx, cz: int, out: ^[dynamic]Instance) {
-	x0, z0 := naive.chunk_origin(cx, cz)
-	seed := (u64(i64(cx)) * 0x9E3779B97F4A7C15) ~ (u64(i64(cz)) * 0xC2B2AE3D27D4EB4F) + 1
-	rng := Tree_Rng{state = seed}
-	biome := naive.terrain_biome(x0 + naive.CHUNK_SIZE / 2, z0 + naive.CHUNK_SIZE / 2)
-
-	placed := make([dynamic][2]f32, 0, 32)
-	defer delete(placed)
-	first := len(out)
-
-	want := int(2 + 14 * biome + 0.5) + int(tree_rng_f32(&rng) * 3) - 1
-	planted := 0
-	for _ in 0 ..< 4 * want {
-		if planted >= want || len(out) - first >= INSTANCE_CAP do break
-		p, ok := find_spot(&rng, x0, z0, TREE_EDGE_MARGIN, TREE_MIN_SPACING, placed[:])
-		if !ok do continue
-		p_biome := naive.terrain_biome(p.x, p.y)
-		if p_biome < 0.15 && tree_rng_f32(&rng) < 0.75 do continue
-		h := naive.terrain_height(p.x, p.y)
-		if h > TREE_MAX_HEIGHT || naive.terrain_normal(p.x, p.y).y < TREE_MAX_SLOPE_Y do continue
-		append(&placed, p)
-		planted += 1
-		append(
-			out,
-			Instance {
-				position = {p.x, h, p.y},
-				yaw = tree_rng_range(&rng, 0, 2 * math.PI),
-				scale = tree_rng_range(&rng, INSTANCE_SCALE_MIN, INSTANCE_SCALE_MAX),
-				variant = tree_variant(&rng, p_biome),
-			},
-		)
-	}
-
-	for _ in 0 ..< 3 {
-		if len(out) - first >= INSTANCE_CAP do break
-		p, ok := find_spot(&rng, x0, z0, PROP_EDGE_MARGIN, PROP_SPACING, placed[:])
-		if !ok do continue
-		append(&placed, p)
-		scale := tree_rng_range(&rng, INSTANCE_SCALE_MIN, INSTANCE_SCALE_MAX)
-		append(
-			out,
-			Instance {
-				position = {p.x, naive.terrain_height(p.x, p.y) - ROCK_BURY * scale, p.y},
-				yaw = tree_rng_range(&rng, 0, 2 * math.PI),
-				scale = scale,
-				variant = VARIANT_ROCK_FIRST + int(tree_rng_f32(&rng) * 3),
-			},
-		)
-	}
-
-	for _ in 0 ..< 3 {
-		if len(out) - first >= INSTANCE_CAP do break
-		p, ok := find_spot(&rng, x0, z0, PROP_EDGE_MARGIN, PROP_SPACING, placed[:])
-		if !ok do continue
-		append(&placed, p)
-		append(
-			out,
-			Instance {
-				position = {p.x, naive.terrain_height(p.x, p.y), p.y},
-				yaw = tree_rng_range(&rng, 0, 2 * math.PI),
-				scale = tree_rng_range(&rng, INSTANCE_SCALE_MIN, INSTANCE_SCALE_MAX),
-				variant = VARIANT_BUSH_FIRST + int(tree_rng_f32(&rng) * 2),
-			},
-		)
-	}
-}
-
-// Random spot inside the chunk, away from edges, origin and other props.
-// Gives up after 40 tries; the caller just skips that object.
-find_spot :: proc(rng: ^Tree_Rng, x0, z0, margin, spacing: f32, placed: [][2]f32) -> (p: [2]f32, ok: bool) {
-	for _ in 0 ..< 40 {
-		p = {
-			x0 + tree_rng_range(rng, margin, naive.CHUNK_SIZE - margin),
-			z0 + tree_rng_range(rng, margin, naive.CHUNK_SIZE - margin),
-		}
-		if linalg.length(p) < TREE_ORIGIN_KEEP_OUT do continue
-		ok = true
-		for q in placed {
-			if linalg.distance(p, q) < spacing {
-				ok = false
-				break
-			}
-		}
-		if ok do return
-	}
-	return
-}
-
-tree_pick_species :: proc(rng: ^Tree_Rng, biome: f32) -> Tree_Species {
-	r := tree_rng_f32(rng)
-	if biome < 0.35 {
-		return r < 0.1 ? .Autumn : .Oak
-	}
-	forest := min(max((biome - 0.35) / 0.4, 0), 1)
-	if r < 0.05 do return .Autumn
-	if r < 0.05 + 0.9 * (1 - forest) do return .Oak
-	return tree_rng_f32(rng) < 0.5 ? .Pine : .Broad
-}
-
-tree_variant :: proc(rng: ^Tree_Rng, biome: f32) -> int {
-	switch tree_pick_species(rng, biome) {
-	case .Oak:
-		return VARIANT_OAK_FIRST + int(tree_rng_f32(rng) * 3)
-	case .Autumn:
-		return VARIANT_AUTUMN
-	case .Pine:
-		return VARIANT_PINE_FIRST + int(tree_rng_f32(rng) * 2)
-	case .Broad:
-		return VARIANT_BROAD_FIRST + int(tree_rng_f32(rng) * 2)
-	}
-	return VARIANT_OAK_FIRST
 }
 
 // Thick trunk, two outward stubs, 5-7 blobs in a wide umbrella (~1.3:1 w:h). Local space, ~5 m.

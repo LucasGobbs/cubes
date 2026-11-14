@@ -44,6 +44,19 @@ Tree_Species :: enum {
 	Broad,
 }
 
+// Trunk capsule or rock sphere, recorded while the mesher emits so physics matches what is drawn.
+Tree_Collider_Kind :: enum {
+	Trunk,
+	Rock,
+}
+
+// Trunk: p0 base, p1 top (trunk bend included), radius = waist radius. Rock: p0 centre, radius = blob radius r.
+Tree_Collider :: struct {
+	kind:   Tree_Collider_Kind,
+	p0, p1: [3]f32,
+	radius: f32,
+}
+
 // One squashed sphere. crown_w > 0 blends normals toward `crown` (shared pivot so a whole
 // canopy shades like one ball). uv.x = wind weight from wlo (0) to whi (1); wlo == whi => 0.
 Tree_Blob :: struct {
@@ -83,7 +96,7 @@ tree_hash :: proc(a, b, c: u32) -> f32 {
 	return f32(h) / 4294967295.0
 }
 
-trees_chunk :: proc(cx, cz: int, verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32) {
+trees_chunk :: proc(cx, cz: int, verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, col: ^[dynamic]Tree_Collider) {
 	x0, z0 := chunk_origin(cx, cz)
 	rng := Tree_Rng{state = u64(cx * CHUNKS_PER_SIDE + cz) * 0x9E3779B97F4A7C15 + 1}
 	biome := terrain_biome(x0 + CHUNK_SIZE / 2, z0 + CHUNK_SIZE / 2)
@@ -104,14 +117,14 @@ trees_chunk :: proc(cx, cz: int, verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic
 		if !tree_has_room(len(verts), TREE_MAX_VERTS) do break
 		append(&placed, p)
 		planted += 1
-		tree_emit_tree(verts, idx, {p.x, h, p.y}, p_biome, &rng)
+		tree_emit_tree(verts, idx, {p.x, h, p.y}, p_biome, &rng, col)
 	}
 
 	if tree_rng_f32(&rng) < 0.125 {
 		if p, ok := tree_find_spot(&rng, x0, z0, BOULDER_EDGE_MARGIN, TREE_PROP_SPACING, placed[:]);
 		   ok && tree_has_room(len(verts), 3 * BLOB_VERTS) {
 			append(&placed, p)
-			tree_emit_boulders(verts, idx, {p.x, terrain_height(p.x, p.y), p.y}, &rng)
+			tree_emit_boulders(verts, idx, {p.x, terrain_height(p.x, p.y), p.y}, &rng, col)
 		}
 	}
 
@@ -120,7 +133,7 @@ trees_chunk :: proc(cx, cz: int, verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic
 		if !ok || !tree_has_room(len(verts), BLOB_VERTS) do continue
 		append(&placed, p)
 		r := tree_rng_range(&rng, 0.7, 1.4)
-		tree_emit_rock(verts, idx, {p.x, terrain_height(p.x, p.y) + 0.2 * r, p.y}, r, &rng)
+		tree_emit_rock(verts, idx, {p.x, terrain_height(p.x, p.y) + 0.2 * r, p.y}, r, &rng, col)
 	}
 
 	for _ in 0 ..< 3 {
@@ -133,6 +146,11 @@ trees_chunk :: proc(cx, cz: int, verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic
 
 tree_has_room :: proc(n, need: int) -> bool {
 	return n + need <= TREE_VERT_CAP
+}
+
+// Records a trunk or rock collider for physics; nil means geometry only (no collider list).
+tree_collider_add :: proc(col: ^[dynamic]Tree_Collider, c: Tree_Collider) {
+	if col != nil do append(col, c)
 }
 
 // Random spot inside the chunk, away from edges, origin and other props.
@@ -167,25 +185,25 @@ tree_pick_species :: proc(rng: ^Tree_Rng, biome: f32) -> Tree_Species {
 	return tree_rng_f32(rng) < 0.5 ? .Pine : .Broad
 }
 
-tree_emit_tree :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, biome: f32, rng: ^Tree_Rng) {
+tree_emit_tree :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, biome: f32, rng: ^Tree_Rng, col: ^[dynamic]Tree_Collider) {
 	switch tree_pick_species(rng, biome) {
 	case .Oak:
-		tree_emit_oak(verts, idx, base, false, rng)
+		tree_emit_oak(verts, idx, base, false, rng, col)
 	case .Autumn:
-		tree_emit_oak(verts, idx, base, true, rng)
+		tree_emit_oak(verts, idx, base, true, rng, col)
 	case .Pine:
-		tree_emit_pine(verts, idx, base, rng)
+		tree_emit_pine(verts, idx, base, rng, col)
 	case .Broad:
-		tree_emit_broad(verts, idx, base, rng)
+		tree_emit_broad(verts, idx, base, rng, col)
 	}
 }
 
 // Thick trunk, two outward stubs, 5-7 blobs in a wide umbrella (~1.3:1 w:h).
-tree_emit_oak :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, autumn: bool, rng: ^Tree_Rng) {
+tree_emit_oak :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, autumn: bool, rng: ^Tree_Rng, col: ^[dynamic]Tree_Collider) {
 	s := tree_rng_range(rng, 0.8, 1.0)
 	h := tree_rng_range(rng, 3.0, 4.5) * s
 	bend := tree_rng_range(rng, -0.12, 0.12) * s
-	top := tree_emit_trunk(verts, idx, base, 0.45 * s, h, bend, TREE_BARK_OAK)
+	top := tree_emit_trunk(verts, idx, base, 0.45 * s, h, bend, TREE_BARK_OAK, col)
 
 	for i in 0 ..< 2 {
 		t := 0.45 + 0.25 * f32(i)
@@ -220,10 +238,10 @@ tree_emit_oak :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base:
 }
 
 // Thin trunk, 5-6 drooping cone tiers shrinking upward. Tiers are kind 2 so tips sway.
-tree_emit_pine :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, rng: ^Tree_Rng) {
+tree_emit_pine :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, rng: ^Tree_Rng, col: ^[dynamic]Tree_Collider) {
 	s := tree_rng_range(rng, 0.8, 1.0)
 	h := tree_rng_range(rng, 6.0, 9.0) * s
-	tree_emit_trunk(verts, idx, base, 0.2 * s, h, 0, TREE_BARK_PINE)
+	tree_emit_trunk(verts, idx, base, 0.2 * s, h, 0, TREE_BARK_PINE, col)
 
 	n := 5 + int(tree_rng_f32(rng) * 2)
 	step := 0.7 * h / f32(n)
@@ -236,11 +254,11 @@ tree_emit_pine :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base
 }
 
 // Very tall grey-brown trunk with a high crown of 4-5 blobs kept within 3 m of the trunk.
-tree_emit_broad :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, rng: ^Tree_Rng) {
+tree_emit_broad :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, rng: ^Tree_Rng, col: ^[dynamic]Tree_Collider) {
 	s := tree_rng_range(rng, 0.8, 1.0)
 	h := tree_rng_range(rng, 8.0, 11.0) * s
 	bend := tree_rng_range(rng, -0.1, 0.1) * s
-	top := tree_emit_trunk(verts, idx, base, 0.5 * s, h, bend, TREE_BARK_BROAD)
+	top := tree_emit_trunk(verts, idx, base, 0.5 * s, h, bend, TREE_BARK_BROAD, col)
 
 	n := 4 + int(tree_rng_f32(rng) * 2)
 	blobs: [5]Tree_Blob
@@ -255,20 +273,21 @@ tree_emit_broad :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, bas
 	tree_emit_crown(verts, idx, blobs[:n])
 }
 
-tree_emit_rock :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, c: [3]f32, r: f32, rng: ^Tree_Rng) {
+tree_emit_rock :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, c: [3]f32, r: f32, rng: ^Tree_Rng, col: ^[dynamic]Tree_Collider) {
 	shade := tree_rng_range(rng, 0.85, 1.1)
 	tree_emit_blob(verts, idx, Tree_Blob{c = c, radii = {r, 0.6 * r, r}, color = TREE_ROCK * shade, rough = 0.2, seed = u32(rng.state)})
+	tree_collider_add(col, Tree_Collider{kind = .Rock, p0 = c, radius = r})
 }
 
 // Three rocks stacked upward, each 1.5..3 m radius.
-tree_emit_boulders :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, ground: [3]f32, rng: ^Tree_Rng) {
+tree_emit_boulders :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, ground: [3]f32, rng: ^Tree_Rng, col: ^[dynamic]Tree_Collider) {
 	prev := tree_rng_range(rng, 1.5, 3.0)
 	c := ground + {0, 0.2 * prev, 0}
-	tree_emit_rock(verts, idx, c, prev, rng)
+	tree_emit_rock(verts, idx, c, prev, rng, col)
 	for _ in 1 ..< 3 {
 		r := tree_rng_range(rng, 1.5, 3.0)
 		c += {tree_rng_range(rng, -0.3, 0.3), 0.8 * 0.6 * (prev + r), tree_rng_range(rng, -0.3, 0.3)}
-		tree_emit_rock(verts, idx, c, r, rng)
+		tree_emit_rock(verts, idx, c, r, rng, col)
 		prev = r
 	}
 }
@@ -300,7 +319,7 @@ tree_emit_crown :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, blo
 
 // Trunk along a slightly curved axis. Rings: buried flare, ground flare (1.6x, tapering within
 // 0.6 m), waist, then taper to 75%. Returns top centre for the crown.
-tree_emit_trunk :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, r, h, bend: f32, color: [3]f32) -> [3]f32 {
+tree_emit_trunk :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, base: [3]f32, r, h, bend: f32, color: [3]f32, col: ^[dynamic]Tree_Collider) -> [3]f32 {
 	ys := [3]f32{-0.5, 0, 0.6}
 	path: [7][3]f32
 	rad: [7]f32
@@ -318,6 +337,7 @@ tree_emit_trunk :: proc(verts: ^[dynamic]gfx.VertexData, idx: ^[dynamic]u32, bas
 		}
 	}
 	tree_tube(verts, idx, path[:], rad[:], color)
+	tree_collider_add(col, Tree_Collider{kind = .Trunk, p0 = base, p1 = base + {bend, h, 0}, radius = r})
 	return base + {bend, h, 0}
 }
 

@@ -7,10 +7,11 @@ package forest_naive
 import "core:math"
 import gfx "../../engine/gfx"
 import default "../../engine/default"
+import input "../../engine/input"
 import shader_parameters "../../shader_parameters"
 import engine "../../engine"
 
-SUN_DIRECTION :: [3]f32{0.30, 0.38, -0.87} // unit; in front of the spawn view so the flare is seen at start
+SUN_DIRECTION :: [3]f32{-0.559, 0.764, 0.322} // unit; measured by aiming the crosshair at the skybox sun (F1 `look`)
 FOG_DISTANCE :: 560.0 // also the renderer's view distance: farther chunks are culled
 BUILD_RADIUS :: FOG_DISTANCE + 12.0
 GRASS_NEAR :: 42.0 // dense grass inside; hysteresis keeps LOD from flickering
@@ -19,6 +20,7 @@ GRASS_MAX :: 95.0 // no grass past this; the terrain colour carries the meadow
 BUILD_PER_FRAME :: 6 // chunk meshes baked per tick once streaming
 START_RADIUS :: 140.0 // baked before the first frame; the rest streams in under fog
 FOG_COLOR :: [3]f32{0.62, 0.78, 0.95}
+SHADOW_BIAS :: 0.002 // depth bias in shadow-map [0,1] units (~0.6 m over SHADOW_DEPTH)
 
 Mesh_Data :: struct {
 	verts: [dynamic]gfx.VertexData,
@@ -43,11 +45,15 @@ Forest_State :: struct {
 	bloom:      gfx.Bloom,
 	chunks:     [CHUNKS_PER_SIDE * CHUNKS_PER_SIDE]Chunk,
 	time:       f32,
+	shadow_action: input.Button_Action, // H: toggles renderer.shadow_enabled
 	flare:      Flare,
+	crosshair:  Crosshair, // C: toggles the screen-centre cross
+	physics:    Physics,
+	ball_action: input.Button_Action, // B: launches a ball from the camera
 }
 
 forest_naive_scene :: proc() -> engine.Scene {
-	return {name = "Forest (naive)", create = forest_create, tick = forest_tick, destroy = forest_destroy}
+	return {name = "Forest (naive)", create = forest_create, tick = forest_tick, fixed_tick = forest_fixed_tick, destroy = forest_destroy}
 }
 
 forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
@@ -73,12 +79,19 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		},
 	)
 	state.material = gfx.material_make(state.pipeline)
+	gfx.material_bind_texture(&state.material, shader_parameters.FOREST_FRAGMENT_SHADOW_MAP, shader_parameters.FOREST_FRAGMENT_SHADOW_SAMPLER, gfx_ctx.renderer.shadow_map, gfx_ctx.renderer.shadow_sampler)
+	gfx_ctx.renderer.light_direction = SUN_DIRECTION
+	state.shadow_action = input.button(&ctx.input, "forest.shadows", .H, "Toggle shadows")
+	state.ball_action = input.button(&ctx.input, "forest_naive.ball", .B, "Launch ball")
+	physics_create(&state.physics, gfx_ctx, &state.material, .Mesh)
 
 	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
 
 	state.bloom = gfx.bloom_create(gfx_ctx, 0.95, 0.2, 5)
 	gfx.renderer_set_passes(&gfx_ctx.renderer, .Post, []gfx.Render_Pass{gfx.bloom_pass(&state.bloom)})
 	flare_create(gfx_ctx, &state.flare)
+	crosshair_create(gfx_ctx, &state.crosshair, input.button(&ctx.input, "forest.crosshair", .C, "Toggle crosshair")) // after flare: flare resets After_Scene
+	showcase_create(gfx_ctx)
 
 	forest_stream(state, gfx_ctx, 1 << 20, START_RADIUS)
 	return true
@@ -100,6 +113,8 @@ forest_bind_draw :: proc(
 			camera_position = {camera.x, camera.y, camera.z, 1},
 			time = {state.time, SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z}, // yzw: sun for lighting and fog tint
 			fog = parameters.fog,
+			light_view_projection = parameters.light_view_projection,
+			shadow_params = {parameters.shadow_enabled ? f32(1) : f32(0), SHADOW_BIAS, 1.0 / gfx.SHADOW_MAP_SIZE, 0},
 		},
 	}
 	gfx.draw_push_uniform(draw_context, shader_parameters.FOREST_VERTEX_UNIFORM_BLOCK, &uniforms)
@@ -109,10 +124,21 @@ forest_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 	gfx_ctx := &ctx.gfx
 	state := cast(^Forest_State)demo.state
 	state.time += delta_time
+	if input.pressed(&ctx.input, state.shadow_action) {
+		gfx_ctx.renderer.shadow_enabled = !gfx_ctx.renderer.shadow_enabled
+	}
+	if input.pressed(&ctx.input, state.ball_action) do physics_launch(&state.physics, gfx_ctx)
 	gfx_ctx.renderer.fog = {FOG_COLOR.r, FOG_COLOR.g, FOG_COLOR.b, FOG_DISTANCE}
 	forest_stream(state, gfx_ctx, BUILD_PER_FRAME, BUILD_RADIUS)
 	flare_update(gfx_ctx, &state.flare, SUN_DIRECTION)
+	crosshair_update(gfx_ctx, &state.crosshair, &ctx.input)
+	physics_draw(&state.physics, gfx_ctx, ctx.blend)
 	gfx.render(gfx_ctx)
+}
+
+forest_fixed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
+	state := cast(^Forest_State)demo.state
+	physics_step(&state.physics, delta_time)
 }
 
 // Bakes missing meshes for chunks near the camera (nearest-first is not
@@ -164,7 +190,7 @@ forest_stream :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, budget: int, r
 forest_build_static :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, chunk: ^Chunk, cx, cz: int) {
 	indices := make([dynamic]u32, context.temp_allocator)
 	terrain_chunk(cx, cz, &chunk.static_data.verts, &indices)
-	trees_chunk(cx, cz, &chunk.static_data.verts, &indices)
+	trees_chunk(cx, cz, &chunk.static_data.verts, &indices, nil)
 	ox, oz := chunk_origin(cx, cz)
 	chunk.static_mesh = forest_upload(gfx_ctx, &chunk.static_data, indices[:], ox, oz)
 	chunk.static_built = true
@@ -203,6 +229,8 @@ forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Forest_State)demo.state
 	gfx.renderer_clear_passes(&gfx_ctx.renderer, .Post)
+	gfx.renderer_update_light(&gfx_ctx.renderer, gfx.DEFAULT_LIGHT_DIRECTION)
+	crosshair_destroy(gfx_ctx, &state.crosshair)
 	flare_destroy(gfx_ctx, &state.flare)
 	for &chunk in state.chunks {
 		delete(chunk.static_data.verts)
@@ -212,6 +240,7 @@ forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 			delete(chunk.grass_data[lod].idx)
 		}
 	}
+	physics_destroy(&state.physics, gfx_ctx)
 	gfx.material_destroy(&state.material)
 	free(state)
 }

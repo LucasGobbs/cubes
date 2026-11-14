@@ -20,7 +20,13 @@ BALL_LAUNCH_SPEED :: 12.0
 BALL_RINGS :: 12
 BALL_MAX :: 8 // simultaneous balls; launch past this reuses the oldest slot
 BALL_SEGMENTS :: 16
-ROCK_COLLIDER_RADIUS :: 0.8 // per unit scale; rock blobs sit around the instance origin
+ROCK_COLLIDER_RADIUS :: 0.8 // rock sphere radius per unit: placements scale, mesh blob r
+
+// Which tree colliders to build: placements (forest_instanced) or the mesher's trees (forest_naive).
+Collider_Source :: enum {
+	Placements,
+	Mesh,
+}
 
 Ball :: struct {
 	track: phys.Tracked,
@@ -39,11 +45,11 @@ Physics :: struct {
 }
 
 // Sets up the Box3D world (only one may exist at a time) and all static colliders.
-physics_create :: proc(state: ^Physics, gfx_ctx: ^gfx.Device, material: ^gfx.Material) {
+physics_create :: proc(state: ^Physics, gfx_ctx: ^gfx.Device, material: ^gfx.Material, source: Collider_Source) {
 	state.world = phys.create()
 	state.material = material
 	physics_terrain_create(state)
-	physics_trees_create(state)
+	physics_trees_create(state, source)
 	spawn := b3.Vec3{0, terrain_height(0, -4) + BALL_SPAWN_HEIGHT, -4}
 	state.ball_mesh = ball_mesh_create(gfx_ctx)
 	ball_create(state, gfx_ctx, spawn)
@@ -106,18 +112,23 @@ physics_terrain_create :: proc(state: ^Physics) {
 }
 
 // One static body holds every tree and rock collider, in world coordinates.
-physics_trees_create :: proc(state: ^Physics) {
+physics_trees_create :: proc(state: ^Physics, source: Collider_Source) {
 	body_def := b3.DefaultBodyDef()
 	body_def.type = .staticBody
 	body := b3.CreateBody(state.world.id, body_def)
-	instances := make([dynamic]Instance, 0, 64)
-	defer delete(instances)
-	for cz in COLLIDER_CHUNK0 ..< COLLIDER_CHUNK0 + COLLIDER_CHUNKS {
-		for cx in COLLIDER_CHUNK0 ..< COLLIDER_CHUNK0 + COLLIDER_CHUNKS {
-			clear(&instances)
-			placements_chunk(cx, cz, &instances)
-			for inst in instances do physics_collider_add(body, inst)
+	switch source {
+	case .Placements:
+		instances := make([dynamic]Instance, 0, 64)
+		defer delete(instances)
+		for cz in COLLIDER_CHUNK0 ..< COLLIDER_CHUNK0 + COLLIDER_CHUNKS {
+			for cx in COLLIDER_CHUNK0 ..< COLLIDER_CHUNK0 + COLLIDER_CHUNKS {
+				clear(&instances)
+				placements_chunk(cx, cz, &instances)
+				for inst in instances do physics_collider_add(body, inst)
+			}
 		}
+	case .Mesh:
+		physics_mesh_trees_add(body)
 	}
 }
 
@@ -146,6 +157,42 @@ physics_collider_add :: proc(body: b3.BodyId, inst: Instance) {
 			radius  = radius * inst.scale,
 		}
 		_ = b3.CreateCapsuleShape(body, shape_def, &capsule)
+	}
+}
+
+// Colliders from the mesher's own trees: trunk capsules and rock spheres as recorded by
+// trees_chunk, for every chunk in the collider region. Same call order as forest_build_static
+// (terrain verts count toward the tree vertex cap), so the set matches the drawn trees.
+physics_mesh_trees_add :: proc(body: b3.BodyId) {
+	verts := make([dynamic]gfx.VertexData, 0, 4096)
+	idx := make([dynamic]u32, 0, 8192)
+	cols := make([dynamic]Tree_Collider, 0, 64)
+	defer delete(verts)
+	defer delete(idx)
+	defer delete(cols)
+	for cz in COLLIDER_CHUNK0 ..< COLLIDER_CHUNK0 + COLLIDER_CHUNKS {
+		for cx in COLLIDER_CHUNK0 ..< COLLIDER_CHUNK0 + COLLIDER_CHUNKS {
+			clear(&verts)
+			clear(&idx)
+			clear(&cols)
+			terrain_chunk(cx, cz, &verts, &idx)
+			trees_chunk(cx, cz, &verts, &idx, &cols)
+			for c in cols do physics_mesh_collider_add(body, c)
+		}
+	}
+}
+
+// Trunk: capsule along the real (bent) trunk axis, radius = waist radius (flare ignored).
+// Rock: sphere at blob centre, radius = ROCK_COLLIDER_RADIUS x blob radius (blob is 0.6 r tall).
+physics_mesh_collider_add :: proc(body: b3.BodyId, c: Tree_Collider) {
+	shape_def := b3.DefaultShapeDef()
+	switch c.kind {
+	case .Trunk:
+		capsule := b3.Capsule{center1 = c.p0, center2 = c.p1, radius = c.radius}
+		_ = b3.CreateCapsuleShape(body, shape_def, &capsule)
+	case .Rock:
+		sphere := b3.Sphere{center = c.p0, radius = ROCK_COLLIDER_RADIUS * c.radius}
+		_ = b3.CreateSphereShape(body, shape_def, &sphere)
 	}
 }
 

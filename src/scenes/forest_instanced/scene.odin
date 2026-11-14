@@ -12,9 +12,12 @@ import "core:math"
 import "core:math/linalg"
 import gfx "../../engine/gfx"
 import default "../../engine/default"
+import input "../../engine/input"
 import naive "../forest_naive"
 import shader_parameters "../../shader_parameters"
 import engine "../../engine"
+import "core:log"
+import phys "../../engine/physics"
 
 CHUNK_SIZE :: naive.CHUNK_SIZE
 TERRAIN_SPAN :: 4 // chunks per terrain cluster side (64 m)
@@ -58,20 +61,24 @@ Forest_State :: struct {
 	pipeline:         gfx.Pipeline_Handle,
 	material:         gfx.Material,
 	bloom:            gfx.Bloom,
-	variant_data:     [VARIANT_COUNT]Variant_Data,
-	variant_mesh:     [VARIANT_COUNT]gfx.Mesh,
+	variant_data:     [naive.VARIANT_COUNT]Variant_Data,
+	variant_mesh:     [naive.VARIANT_COUNT]gfx.Mesh,
 	terrain:          [TERRAIN_SIDE * TERRAIN_SIDE]Terrain_Cluster,
 	grass:            [GRASS_SIDE * GRASS_SIDE]Grass_Cluster,
 	tuft_data:        [TUFT_COUNT]Variant_Data,
 	tuft_mesh:        [TUFT_COUNT]gfx.Mesh,
 	grass_scratch:    [dynamic]Grass_Instance,
-	placements:       [dynamic]Instance, // scratch, reused per chunk
+	placements:       [dynamic]naive.Instance, // scratch, reused per chunk
 	time:             f32,
 	flare:            naive.Flare,
+	crosshair:        naive.Crosshair, // C: toggles the screen-centre cross
+	shadow_action:    input.Button_Action, // H: toggles renderer.shadow_enabled
+	physics:          naive.Physics,
+	ball_action:      input.Button_Action, // B: launches the ball from the camera
 }
 
 forest_instanced_scene :: proc() -> engine.Scene {
-	return {name = "Forest (instanced)", create = forest_create, tick = forest_tick, destroy = forest_destroy}
+	return {name = "Forest (instanced)", create = forest_create, tick = forest_tick, fixed_tick = forest_fixed_tick, destroy = forest_destroy}
 }
 
 forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
@@ -97,6 +104,9 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		},
 	)
 	state.material = gfx.material_make(state.pipeline)
+	gfx.material_bind_texture(&state.material, shader_parameters.FOREST_INSTANCED_FRAGMENT_SHADOW_MAP, shader_parameters.FOREST_INSTANCED_FRAGMENT_SHADOW_SAMPLER, gfx_ctx.renderer.shadow_map, gfx_ctx.renderer.shadow_sampler)
+	gfx_ctx.renderer.light_direction = naive.SUN_DIRECTION
+	state.shadow_action = input.button(&ctx.input, "forest_instanced.shadows", .H, "Toggle shadows")
 
 	state.variant_data = variants_build()
 	for &data, index in state.variant_data {
@@ -112,7 +122,10 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.bloom = gfx.bloom_create(gfx_ctx, 0.95, 0.2, 5)
 	gfx.renderer_set_passes(&gfx_ctx.renderer, .Post, []gfx.Render_Pass{gfx.bloom_pass(&state.bloom)})
 	naive.flare_create(gfx_ctx, &state.flare)
+	naive.crosshair_create(gfx_ctx, &state.crosshair, input.button(&ctx.input, "forest_instanced.crosshair", .C, "Toggle crosshair")) // after flare: flare resets After_Scene
 
+	naive.physics_create(&state.physics, gfx_ctx, &state.material, .Placements)
+	state.ball_action = input.button(&ctx.input, "forest_instanced.ball", .B, "Launch ball")
 	forest_stream(state, gfx_ctx, 1 << 20, START_RADIUS)
 	return true
 }
@@ -131,6 +144,8 @@ forest_bind_draw :: proc(
 			first_instance = parameters.first_instance,
 			time = {state.time, sun.x, sun.y, sun.z},
 			fog = parameters.fog,
+			light_view_projection = parameters.light_view_projection,
+			shadow_params = {parameters.shadow_enabled ? f32(1) : f32(0), naive.SHADOW_BIAS, 1.0 / gfx.SHADOW_MAP_SIZE, 0},
 		},
 	}
 	gfx.draw_push_uniform(draw_context, shader_parameters.FOREST_INSTANCED_VERTEX_UNIFORM_BLOCK, &uniforms)
@@ -140,11 +155,22 @@ forest_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 	gfx_ctx := &ctx.gfx
 	state := cast(^Forest_State)demo.state
 	state.time += delta_time
+	if input.pressed(&ctx.input, state.shadow_action) {
+		gfx_ctx.renderer.shadow_enabled = !gfx_ctx.renderer.shadow_enabled
+	}
+	if input.pressed(&ctx.input, state.ball_action) do naive.physics_launch(&state.physics, gfx_ctx)
 	fog := naive.FOG_COLOR
 	gfx_ctx.renderer.fog = {fog.r, fog.g, fog.b, FOG_DISTANCE}
 	forest_stream(state, gfx_ctx, BUILD_BUDGET, BUILD_RADIUS)
 	naive.flare_update(gfx_ctx, &state.flare, naive.SUN_DIRECTION)
+	naive.crosshair_update(gfx_ctx, &state.crosshair, &ctx.input)
+	naive.physics_draw(&state.physics, gfx_ctx, ctx.blend)
 	gfx.render(gfx_ctx)
+}
+
+forest_fixed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
+	state := cast(^Forest_State)demo.state
+	naive.physics_step(&state.physics, delta_time)
 }
 
 // Distance from the camera to a cluster centre; span in chunks, (i, j) cluster index.
@@ -198,7 +224,7 @@ forest_build_terrain :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster
 		for dx in 0 ..< TERRAIN_SPAN {
 			cx, cz := i * TERRAIN_SPAN + dx, j * TERRAIN_SPAN + dz
 			naive.terrain_chunk(cx, cz, &cluster.data.verts, &cluster.data.idx)
-			placements_chunk(cx, cz, &state.placements)
+			naive.placements_chunk(cx, cz, &state.placements)
 		}
 	}
 	cluster.mesh = forest_upload(gfx_ctx, &cluster.data, ox, oz)
@@ -265,13 +291,15 @@ forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Forest_State)demo.state
 	gfx.renderer_clear_passes(&gfx_ctx.renderer, .Post)
+	gfx.renderer_update_light(&gfx_ctx.renderer, gfx.DEFAULT_LIGHT_DIRECTION)
+	naive.crosshair_destroy(gfx_ctx, &state.crosshair)
 	naive.flare_destroy(gfx_ctx, &state.flare)
 	for &cluster in state.terrain {
 		delete(cluster.data.verts)
 		delete(cluster.data.idx)
 	}
 	for &cluster in state.grass do delete(cluster.items)
-	for index in 0 ..< VARIANT_COUNT {
+	for index in 0 ..< naive.VARIANT_COUNT {
 		delete(state.variant_data[index].verts)
 		delete(state.variant_data[index].idx)
 	}
@@ -281,6 +309,9 @@ forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 		delete(state.tuft_data[index].verts)
 		delete(state.tuft_data[index].idx)
 	}
+	ball_pos, _ := phys.body_pose(state.physics.balls[0].track.body)
+	log.infof("forest ball y=%.3f ground=%.3f", ball_pos.y, naive.terrain_height(ball_pos.x, ball_pos.z))
+	naive.physics_destroy(&state.physics, gfx_ctx)
 	gfx.material_destroy(&state.material)
 	free(state)
 }
