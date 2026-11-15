@@ -2,12 +2,14 @@ package engine
 
 import "gfx"
 import input "input"
+import "jobs"
 import input_sdl "input/adapters/sdl"
 import sdl "vendor:sdl3"
 
 // Everything a scene touches: GPU device, input system, clock, loop state.
 Context :: struct {
 	gfx:             gfx.Device,
+	jobs:            jobs.Pool, // CPU worker pool; see jobs package rules
 	input:           input.System,
 	using clock:     Clock,
 	running:         bool,

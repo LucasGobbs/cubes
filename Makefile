@@ -52,6 +52,7 @@ test-engine: default-shaders
 	$(ODIN) test src/engine/gfx/sdl_gpu
 	$(ODIN) test src/engine
 	$(ODIN) test src/engine/physics
+	$(ODIN) test src/engine/jobs
 
 test-engine-optimized: default-shaders
 	$(ODIN) test src/engine/gfx $(RELEASE_FLAGS)
@@ -59,6 +60,7 @@ test-engine-optimized: default-shaders
 	$(ODIN) test src/engine/gfx/sdl_gpu $(RELEASE_FLAGS)
 	$(ODIN) test src/engine $(RELEASE_FLAGS)
 	$(ODIN) test src/engine/physics $(RELEASE_FLAGS)
+	$(ODIN) test src/engine/jobs $(RELEASE_FLAGS)
 
 build: shaders
 	$(ODIN) build $(SRC) -out:$(BIN) $(RELEASE_FLAGS) $(EDITOR_DEFINE)
