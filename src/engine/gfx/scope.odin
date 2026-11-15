@@ -42,6 +42,12 @@ scope_begin :: proc(gfx_ctx: ^Device) {
 	append(&gfx_ctx.scope_draw_marks, len(gfx_ctx.draws))
 }
 
+// First index of gfx_ctx.draws owned by the innermost open scope: with a scene stack only the
+// top scene's draws are extracted (0 when no scope is open).
+scope_draw_base :: proc(gfx_ctx: ^Device) -> int {
+	return gfx_ctx.scope_draw_marks[len(gfx_ctx.scope_draw_marks) - 1] if len(gfx_ctx.scope_draw_marks) > 0 else 0
+}
+
 scope_end :: proc(gfx_ctx: ^Device) {
 	assert(len(gfx_ctx.scopes) > 0, "scope_end without scope_begin")
 	resize(&gfx_ctx.draws, pop(&gfx_ctx.scope_draw_marks))

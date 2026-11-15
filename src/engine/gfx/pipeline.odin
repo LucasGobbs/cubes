@@ -6,14 +6,16 @@ import goose_sdl "sdl_gpu"
 import sdl "vendor:sdl3"
 
 Draw_Parameters :: struct {
-	view_projection: matrix[4, 4]f32,
+	view_projection:       matrix[4, 4]f32,
 	model_transform: matrix[4, 4]f32,
 	material:        ^Material,
 	// Start of this run's transforms in the instance storage buffer
 	// (instanced pipelines only; 0 otherwise).
 	camera_position: [3]f32,
 	first_instance:  u32,
-	fog:             [4]f32, // rgb = linear fog color, a = view distance (<= 0 = off)
+	fog:                   [4]f32, // rgb = linear fog color, a = view distance (<= 0 = off)
+	light_view_projection: matrix[4, 4]f32, // sun shadow map transform; valid when shadow_enabled
+	shadow_enabled:        bool,
 }
 
 Draw_Context :: struct {
@@ -37,6 +39,7 @@ Graphics_Pipeline_Desc :: struct {
 	vertex:            goose.GraphicsParameters,
 	fragment:          goose.GraphicsParameters,
 	vertex_attributes: []goose.VertexAttribute,
+	// stride 0 + no attributes = vertex pulling from storage buffers. Set both or neither.
 	vertex_stride:     u32,
 	depth_test:        bool,
 	depth_write:       bool,
@@ -48,6 +51,8 @@ Graphics_Pipeline_Desc :: struct {
 	// transparency. A pipeline with neither depth flag is created without a
 	// depth-stencil target, matching depth-less overlay passes.
 	blend:             bool,
+	// Additive blending (src SRC_ALPHA, dst ONE, ADD); alpha keeps dst alpha. Mutually exclusive with blend.
+	additive:          bool,
 	// Render target format; .INVALID (zero) = swapchain format. Set to
 	// renderer.post_format for overlays that draw into postfx outputs.
 	color_format:      sdl.GPUTextureFormat,
@@ -66,6 +71,11 @@ Graphics_Pipeline_Desc :: struct {
 	// Only ever bound in passes that render to 1x targets (overlay/present
 	// passes). Skips building the MSAA variant.
 	single_sample:     bool,
+	// Depth-only pipeline (shadow passes): no color target, so it binds to a pass with no color attachment.
+	depth_only:        bool,
+	// Hardware depth bias (shadow casters): constant in depth-resolution units, slope scaled by polygon slope. 0/0 = off.
+	depth_bias_constant: f32,
+	depth_bias_slope:    f32,
 	bind_draw:         Pipeline_Bind_Draw_Proc,
 	bind_skinned_storage: Pipeline_Bind_Skinned_Storage_Proc,
 	user_data:         rawptr,
@@ -93,7 +103,8 @@ draw_push_uniform :: proc(draw_context: ^Draw_Context, binding: goose.UniformBlo
 pipeline_create :: proc(gfx_ctx: ^Device, desc: Graphics_Pipeline_Desc) -> Pipeline_Handle {
 	assert(desc.vertex.stage == .Vertex)
 	assert(desc.fragment.stage == .Fragment)
-	assert(len(desc.vertex_attributes) > 0 && desc.vertex_stride > 0)
+	assert((desc.vertex_stride == 0) == (len(desc.vertex_attributes) == 0))
+	assert(!(desc.blend && desc.additive))
 	attributes, attributes_ok := goose_adapters.convert_vertex_attributes(
 		desc.vertex_attributes,
 		context.temp_allocator,
@@ -110,7 +121,17 @@ pipeline_create :: proc(gfx_ctx: ^Device, desc: Graphics_Pipeline_Desc) -> Pipel
 	color_target := sdl.GPUColorTargetDescription {
 		format = desc.color_format if desc.color_format != .INVALID else sdl.GetGPUSwapchainTextureFormat(gfx_ctx.gpu, gfx_ctx.window),
 	}
-	if desc.blend {
+	if desc.additive {
+		color_target.blend_state = {
+			src_color_blendfactor = .SRC_ALPHA,
+			dst_color_blendfactor = .ONE,
+			color_blend_op = .ADD,
+			src_alpha_blendfactor = .ZERO,
+			dst_alpha_blendfactor = .ONE,
+			alpha_blend_op = .ADD,
+		}
+		color_target.blend_state.enable_blend = true
+	} else if desc.blend {
 		color_target.blend_state = {
 			src_color_blendfactor = .SRC_ALPHA,
 			dst_color_blendfactor = .ONE_MINUS_SRC_ALPHA,
@@ -128,18 +149,24 @@ pipeline_create :: proc(gfx_ctx: ^Device, desc: Graphics_Pipeline_Desc) -> Pipel
 		slot  = 0,
 		pitch = desc.vertex_stride,
 	}
+	// Vertex-pulled pipelines bind no vertex buffers; the shader reads storage buffers by SV_VertexID.
+	num_vertex_buffers: u32 = 1 if desc.vertex_stride > 0 else 0
+	vertex_buffer_descriptions: ^sdl.GPUVertexBufferDescription = &buffer_description if desc.vertex_stride > 0 else nil
 	info := sdl.GPUGraphicsPipelineCreateInfo {
 			vertex_shader = vertex_shader,
 			fragment_shader = fragment_shader,
 			primitive_type = .TRIANGLELIST,
 			vertex_input_state = {
-				num_vertex_buffers = 1,
-				vertex_buffer_descriptions = &buffer_description,
+				num_vertex_buffers = num_vertex_buffers,
+				vertex_buffer_descriptions = vertex_buffer_descriptions,
 				num_vertex_attributes = u32(len(attributes)),
 				vertex_attributes = raw_data(attributes),
 			},
 			rasterizer_state = {
 				cull_mode = desc.cull_mode,
+				enable_depth_bias = desc.depth_bias_constant != 0 || desc.depth_bias_slope != 0,
+				depth_bias_constant_factor = desc.depth_bias_constant,
+				depth_bias_slope_factor = desc.depth_bias_slope,
 				front_face = desc.front_face,
 			},
 			depth_stencil_state = {
@@ -148,7 +175,7 @@ pipeline_create :: proc(gfx_ctx: ^Device, desc: Graphics_Pipeline_Desc) -> Pipel
 				compare_op = depth_compare,
 			},
 			target_info = {
-				num_color_targets = 1,
+				num_color_targets = 0 if desc.depth_only else 1,
 				color_target_descriptions = &color_target,
 				has_depth_stencil_target = has_depth,
 				depth_stencil_format = .D32_FLOAT if has_depth else .INVALID,

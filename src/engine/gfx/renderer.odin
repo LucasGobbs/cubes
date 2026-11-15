@@ -1,10 +1,12 @@
 package gfx
 
 import "core:math/linalg"
+import "core:math"
 import "core:log"
 import "core:mem"
 import "core:slice"
 import "core:time"
+import "../jobs"
 import loader "loader"
 import sdl "vendor:sdl3"
 
@@ -13,6 +15,13 @@ MSAA_SAMPLES :: sdl.GPUSampleCount._4
 
 // Skinned instances per frame; each owns MAX_JOINTS palette matrices.
 MAX_SKINNED_INSTANCES :: 64
+
+// Sun shadow map: square texels, box side and light-space depth range in world units.
+SHADOW_MAP_SIZE :: 2048
+SHADOW_EXTENT :: 120
+SHADOW_DEPTH :: 300
+// Light direction restored when a scene that set its own sun is destroyed.
+DEFAULT_LIGHT_DIRECTION :: [3]f32{0.4, 1.0, 0.6}
 
 Renderer :: struct {
 	// Device owns native resources and must outlive Renderer.
@@ -77,6 +86,10 @@ Renderer :: struct {
 	// CPU time of the last frame's prepare and flush (benchmark mode reads these).
 	prepare_time:    time.Duration,
 	flush_time:      time.Duration,
+	extract_time:    time.Duration,
+	shadow_time:     time.Duration,
+	// Worker pool for parallel extract; nil = serial. Borrowed from the host.
+	jobs:            ^jobs.Pool,
 
 	// Cached only during an active pass.
 	bound_pipeline:  Pipeline_Handle,
@@ -88,6 +101,28 @@ Renderer :: struct {
 	pool:            Texture_Pool,
 	post_sampler:    Sampler_Handle,
 	post_format:     sdl.GPUTextureFormat,
+	// Scene hooks run in registration order around the scene pass (see Scene_Hook).
+	scene_hooks:     [dynamic]Scene_Hook,
+	// Sun shadow map: depth-only pass before the scene pass (renderer_draw_shadow).
+	// Conventional Z (clear 1, LESS), not reverse-Z. light_direction is unit, toward the light.
+	shadow_enabled:            bool,
+	shadow_map:                Texture_Handle, // D32_FLOAT, SHADOW_MAP_SIZE^2, sampled later
+	shadow_sampler:            Sampler_Handle, // comparison sampler for the scene pass
+	shadow_pipeline:           Pipeline_Handle,
+	shadow_instanced_pipeline: Pipeline_Handle,
+	light_direction:           [3]f32,
+	light_view_projection:     matrix[4, 4]f32,
+}
+
+// Engine systems hook the frame around the scene pass (see renderer_draw_submitted).
+Scene_Hook :: struct {
+	name:   string,
+	// Runs outside any pass with the frame command buffer open: compute dispatch and uploader work allowed.
+	before: proc(renderer: ^Renderer, user: rawptr),
+	// Runs inside the scene pass after all draw items: renderer.pass and renderer.view_projection are valid, depth is testable.
+	draw:   proc(renderer: ^Renderer, user: rawptr),
+	// Borrowed: the owner keeps it alive while registered. Either proc may be nil.
+	user:   rawptr,
 }
 
 // Layers render in declaration order inside the pass: everything in WORLD
@@ -113,6 +148,9 @@ DrawItem :: struct {
 	layer:     Render_Layer,
 	// Skinned items only: the pose sampled for this instance (borrowed).
 	pose:      ^Pose,
+	// Off-screen shadow caster: sorted after the visible items of its (mesh, material) run;
+	// the main pass skips it, the shadow pass draws it.
+	shadow_only: bool,
 }
 
 Renderer_Load_Desc :: struct {
@@ -176,6 +214,31 @@ renderer_create :: proc(gfx_ctx: ^Device) -> Renderer {
 	}
 	assert(renderer.post_format != .INVALID, "no texture format supports compute write + sampler + color target")
 	renderer.post_sampler = sampler_create(gfx_ctx, SAMPLER_LINEAR_CLAMP)
+	renderer.shadow_enabled = true
+	renderer.light_direction = linalg.normalize(DEFAULT_LIGHT_DIRECTION)
+	renderer.shadow_map = texture_create_with_usage(
+		gfx_ctx,
+		SHADOW_MAP_SIZE,
+		SHADOW_MAP_SIZE,
+		.D32_FLOAT,
+		{.DEPTH_STENCIL_TARGET, .SAMPLER},
+	)
+	// SDL3 GPU has no runtime query for comparison samplers; they are core in every backend.
+	renderer.shadow_sampler = sampler_create(
+		gfx_ctx,
+		sdl.GPUSamplerCreateInfo {
+			min_filter = .LINEAR, // bilinear comparison = hardware 2x2 PCF
+			mag_filter = .LINEAR,
+			address_mode_u = .CLAMP_TO_EDGE,
+			address_mode_v = .CLAMP_TO_EDGE,
+			address_mode_w = .CLAMP_TO_EDGE,
+			compare_op = .LESS_OR_EQUAL,
+			enable_compare = true,
+		},
+	)
+	renderer.shadow_pipeline = create_shadow_pipeline(gfx_ctx)
+	renderer.shadow_instanced_pipeline = create_shadow_instanced_pipeline(gfx_ctx)
+	renderer_update_light(&renderer, renderer.light_direction)
 	return renderer
 }
 
@@ -234,10 +297,15 @@ renderer_destroy :: proc(renderer: ^Renderer) {
 	texture_destroy(renderer.gfx_ctx, renderer.scene_color)
 	texture_destroy(renderer.gfx_ctx, renderer.scene_depth)
 	texture_destroy(renderer.gfx_ctx, renderer.scene_color_msaa)
+	texture_destroy(renderer.gfx_ctx, renderer.shadow_map)
+	sampler_destroy(renderer.gfx_ctx, renderer.shadow_sampler)
+	pipeline_destroy(renderer.gfx_ctx, renderer.shadow_pipeline)
+	pipeline_destroy(renderer.gfx_ctx, renderer.shadow_instanced_pipeline)
 	delete(renderer.pool.entries)
 	for slot in Pass_Slot do delete(renderer.passes[slot])
 	uploader_destroy(&renderer.uploader)
 	delete(renderer.draw_items)
+	delete(renderer.scene_hooks)
 	renderer^ = {}
 }
 
@@ -255,11 +323,16 @@ renderer_resize_targets :: proc(renderer: ^Renderer, width, height: u32) {
 
 renderer_load :: proc(renderer: ^Renderer, desc: Renderer_Load_Desc) -> Model {
 	assert(len(desc.model_path) > 0)
-	assert(Resource_Handle(desc.pipeline).generation != 0)
 	imported, ok := loader.model_import_from_gltf(desc.model_path)
 	assert(ok, "renderer_load: model import failed")
 	defer loader.model_import_destroy(&imported)
-	model := model_create(renderer.gfx_ctx, &imported, desc.pipeline)
+	return renderer_load_imported(renderer, &imported, desc.pipeline)
+}
+
+// GPU side of renderer_load for a model already decoded (possibly on a job thread). Does not free `imported`.
+renderer_load_imported :: proc(renderer: ^Renderer, imported: ^loader.ImportedModel, pipeline: Pipeline_Handle) -> Model {
+	assert(Resource_Handle(pipeline).generation != 0)
+	model := model_create(renderer.gfx_ctx, imported, pipeline)
 	model_upload_to_gpu(&model, &renderer.uploader)
 	return model
 }
@@ -326,22 +399,148 @@ renderable_beyond :: proc(eye: Vec3, mesh: ^Mesh, transform: matrix[4, 4]f32, di
 
 Extract_View :: struct {
 	planes:        [4][4]f32,
+	light_planes:  [4][4]f32, // sun box side planes; casters outside the camera frustum but inside these still cast
 	view_distance: f32,
+	shadows:       bool,
 }
 
 renderer_begin_extract :: proc(renderer: ^Renderer) -> Extract_View {
-	// fog.a doubles as view distance (<= 0 = off): geometry past it is fully fogged, so skipping it is invisible.
-	return {planes = frustum_planes(camera_view_projection(&renderer.camera)), view_distance = renderer.fog.a}
+	view := Extract_View {
+		planes        = frustum_planes(camera_view_projection(&renderer.camera)),
+		// fog.a doubles as view distance (<= 0 = off): geometry past it is fully fogged, so skipping it is invisible.
+		view_distance = renderer.fog.a,
+		shadows       = renderer.shadow_enabled,
+	}
+	if renderer.shadow_enabled {
+		// The light box is centred on the camera, which is final at extract.
+		renderer_update_light(renderer, renderer.light_direction)
+		view.light_planes = frustum_planes(renderer.light_view_projection)
+	}
+	return view
+}
+
+// Hooks run in registration order; user is borrowed.
+renderer_add_scene_hook :: proc(renderer: ^Renderer, hook: Scene_Hook) {
+	append(&renderer.scene_hooks, hook)
+}
+
+// Removes every hook registered with this user pointer, keeping the order of the rest.
+renderer_remove_scene_hook :: proc(renderer: ^Renderer, user: rawptr) {
+	for i := len(renderer.scene_hooks) - 1; i >= 0; i -= 1 {
+		if renderer.scene_hooks[i].user == user do ordered_remove(&renderer.scene_hooks, i)
+	}
+}
+
+// Conventional-Z orthographic (NDC depth in [0, 1], view looks down -z). The
+// main pass is reverse-Z, so the shadow map must not reuse camera_perspective.
+shadow_ortho :: proc(l, r, b, t, n, f: f32) -> (m: matrix[4, 4]f32) {
+	m[0, 0] = 2 / (r - l)
+	m[0, 3] = -(r + l) / (r - l)
+	m[1, 1] = 2 / (t - b)
+	m[1, 3] = -(t + b) / (t - b)
+	m[2, 2] = -1 / (f - n)
+	m[2, 3] = -n / (f - n)
+	m[3, 3] = 1
+	return
+}
+
+// Rebuilds light_view_projection for the sun direction (unit, toward the light),
+// centered on the camera. The box center snaps to shadow texels in light space
+// so the shadows do not shimmer while the camera moves.
+renderer_update_light :: proc(renderer: ^Renderer, direction: [3]f32) {
+	dir := linalg.normalize(direction)
+	renderer.light_direction = dir
+	forward := -dir
+	world_up := Vec3{0, 1, 0}
+	if abs(dir.y) > 0.99 do world_up = {0, 0, 1}
+	right := linalg.normalize(linalg.cross(forward, world_up))
+	up := linalg.cross(right, forward)
+	center := renderer.camera.position
+	texel := SHADOW_EXTENT / f32(SHADOW_MAP_SIZE)
+	snap_x := math.round(linalg.dot(center, right) / texel) * texel - linalg.dot(center, right)
+	snap_y := math.round(linalg.dot(center, up) / texel) * texel - linalg.dot(center, up)
+	eye := center + right * snap_x + up * snap_y - forward * (SHADOW_DEPTH / 2)
+	view := linalg.matrix4_look_at_f32(eye, eye + forward, world_up)
+	half := f32(SHADOW_EXTENT / 2)
+	renderer.light_view_projection = shadow_ortho(-half, half, -half, half, 0, SHADOW_DEPTH) * view
+}
+
+// Depth-only pass from the sun into shadow_map, before the scene pass. Only
+// opaque WORLD items cast shadows; skinned items are skipped (no skinned depth pipeline yet).
+renderer_draw_shadow :: proc(renderer: ^Renderer) {
+	assert(renderer.pass == nil)
+	gfx_ctx := renderer.gfx_ctx
+	depth_target := sdl.GPUDepthStencilTargetInfo {
+		texture     = texture_get(gfx_ctx, renderer.shadow_map).handle,
+		load_op     = .CLEAR,
+		clear_depth = 1, // conventional Z: 1 is far
+		store_op    = .STORE, // sampled later by the scene pass
+	}
+	renderer.pass = sdl.BeginGPURenderPass(gfx_ctx.command_buffer, nil, 0, &depth_target)
+	assert(renderer.pass != nil)
+	renderer.view_projection = renderer.light_view_projection
+	renderer.pass_msaa = false
+	renderer.bound_pipeline = {}
+	renderer.bound_material = nil
+	if len(renderer.instance_transforms) > 0 do renderer_bind_static_instances(renderer)
+
+	bound_shadow: Pipeline_Handle
+	index := 0
+	for index < len(renderer.draw_items) {
+		item := &renderer.draw_items[index]
+		material_pipeline := pipeline_get(gfx_ctx, item.material.pipeline)
+		if item.layer != .WORLD || material_pipeline.skinned {
+			index += 1
+			continue
+		}
+		shadow := renderer.shadow_instanced_pipeline if material_pipeline.instanced else renderer.shadow_pipeline
+		if bound_shadow != shadow {
+			sdl.BindGPUGraphicsPipeline(renderer.pass, pipeline_native(pipeline_get(gfx_ctx, shadow), false))
+			bound_shadow = shadow
+		}
+		if !material_pipeline.instanced {
+			pipeline_bind_draw(gfx_ctx, shadow, gfx_ctx.command_buffer, {view_projection = renderer.light_view_projection, model_transform = item.transform})
+			mesh_draw(gfx_ctx, item.mesh, renderer.pass)
+			index += 1
+			continue
+		}
+		run_end := index + 1
+		for run_end < len(renderer.draw_items) {
+			other := &renderer.draw_items[run_end]
+			if other.layer != .WORLD || other.mesh != item.mesh || other.material != item.material do break
+			run_end += 1
+		}
+		pipeline_bind_draw(gfx_ctx, shadow, gfx_ctx.command_buffer, {view_projection = renderer.light_view_projection, first_instance = renderer.instance_offsets[index]})
+		mesh_draw_instanced(gfx_ctx, item.mesh, renderer.pass, u32(run_end - index), 0)
+		index = run_end
+	}
+	renderer_end_pass(renderer)
 }
 
 renderer_draw_submitted :: proc(renderer: ^Renderer) {
+	// Before hooks sit outside prepare/flush timing and before the pass opens.
+	for hook in renderer.scene_hooks {
+		if hook.before != nil do hook.before(renderer, hook.user)
+	}
 	start := time.tick_now()
 	renderer_prepare(renderer)
 	renderer.prepare_time = time.tick_since(start)
+	if renderer.shadow_enabled {
+		shadow_start := time.tick_now()
+		renderer_draw_shadow(renderer)
+		renderer.shadow_time = time.tick_since(shadow_start)
+	} else do renderer.shadow_time = 0
 	renderer_begin_pass(renderer, camera_view_projection(&renderer.camera))
 	start = time.tick_now()
 	renderer_flush(renderer)
 	renderer.flush_time = time.tick_since(start)
+	for hook in renderer.scene_hooks {
+		if hook.draw == nil do continue
+		hook.draw(renderer, hook.user)
+		// Hook may bind its own pipelines; drop the cache so the next draw rebinds.
+		renderer.bound_pipeline = {}
+		renderer.bound_material = nil
+	}
 	renderer_end_pass(renderer)
 }
 
@@ -352,7 +551,9 @@ Extract_Proc :: #type proc(renderer: ^Renderer, user: rawptr)
 renderer_render_frame :: proc(renderer: ^Renderer, extract: Extract_Proc, user: rawptr) {
 	renderer_begin_frame(renderer)
 	if renderer.gfx_ctx.swapchain != nil {
+		extract_start := time.tick_now()
 		extract(renderer, user)
+		renderer.extract_time = time.tick_since(extract_start)
 		renderer_draw_submitted(renderer)
 		final := renderer_run_post(renderer)
 		renderer_present(renderer, final)
@@ -378,6 +579,11 @@ renderer_prepare :: proc(renderer: ^Renderer) {
 	for i < len(renderer.draw_items) {
 		item := renderer.draw_items[i]
 		pipeline := pipeline_get(renderer.gfx_ctx, item.material.pipeline)
+		if pipeline.skinned && item.shadow_only {
+			append(&renderer.instance_offsets, 0) // no skinned shadow pipeline: keep offsets aligned, upload nothing
+			i += 1
+			continue
+		}
 		if pipeline.skinned {
 			assert(item.pose != nil, "skinned draw item without pose")
 			if len(renderer.skinned_transforms) >= MAX_SKINNED_INSTANCES {
@@ -589,6 +795,8 @@ renderer_draw_item :: proc(renderer: ^Renderer, item: ^DrawItem) {
 		{
 			view_projection = renderer.view_projection,
 			camera_position = renderer.camera.position,
+			light_view_projection = renderer.light_view_projection,
+			shadow_enabled = renderer.shadow_enabled,
 			fog = renderer.fog,
 			model_transform = item.transform,
 			material = material,
@@ -636,6 +844,8 @@ renderer_draw_instanced_run :: proc(
 		{
 			view_projection = renderer.view_projection,
 			camera_position = renderer.camera.position,
+			light_view_projection = renderer.light_view_projection,
+			shadow_enabled = renderer.shadow_enabled,
 			fog = renderer.fog,
 			model_transform = {},
 			material = material,
@@ -663,12 +873,13 @@ renderer_submit :: proc(
 	transform: matrix[4, 4]f32,
 	layer: Render_Layer = .WORLD,
 	pose: ^Pose = nil,
+	shadow_only := false,
 ) {
 	assert(renderer.pass == nil)
 	assert(mesh != nil && material != nil)
 	append_elem(
 		&renderer.draw_items,
-		DrawItem{mesh = mesh, material = material, transform = transform, layer = layer, pose = pose},
+		DrawItem{mesh = mesh, material = material, transform = transform, layer = layer, pose = pose, shadow_only = shadow_only},
 	)
 }
 
@@ -696,9 +907,10 @@ renderer_sort_draw_items :: proc(items: []DrawItem) {
 		material_index := dense_index(&unique_materials, item.material)
 		mesh_index := dense_index(&unique_meshes, item.mesh)
 		pipeline := u64(Resource_Handle(item.material.pipeline).index)
-		assert(material_index < 1 << 20 && mesh_index < 1 << 20 && pipeline < 1 << 16)
+		assert(material_index < 1 << 20 && mesh_index < 1 << 19 && pipeline < 1 << 16)
 		entries[index] = {
-			key   = u64(item.layer) << 56 | pipeline << 40 | u64(material_index) << 20 | u64(mesh_index),
+			// layer | pipeline | material | mesh | shadow_only: shadow-only items trail their own run.
+			key   = u64(item.layer) << 57 | pipeline << 41 | u64(material_index) << 21 | u64(mesh_index) << 1 | u64(item.shadow_only ? 1 : 0),
 			index = u32(index),
 		}
 	}
@@ -754,6 +966,10 @@ renderer_flush :: proc(renderer: ^Renderer) {
 	skinned_bound := false
 	for index < len(renderer.draw_items) {
 		item := &renderer.draw_items[index]
+		if item.shadow_only {
+			index += 1
+			continue
+		}
 		pipeline := pipeline_get(renderer.gfx_ctx, item.material.pipeline)
 		if !pipeline.instanced {
 			renderer_draw_item(renderer, item)
@@ -775,7 +991,7 @@ renderer_flush :: proc(renderer: ^Renderer) {
 		run_end := index + 1
 		for run_end < len(renderer.draw_items) {
 			other := &renderer.draw_items[run_end]
-			if other.mesh != item.mesh || other.material != item.material do break
+			if other.mesh != item.mesh || other.material != item.material || other.shadow_only do break
 			run_end += 1
 		}
 		renderer_draw_instanced_run(

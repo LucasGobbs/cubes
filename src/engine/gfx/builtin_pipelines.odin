@@ -103,6 +103,71 @@ create_textured_skinned_pipeline :: proc(gfx_ctx: ^Device) -> Pipeline_Handle {
 	)
 }
 
+// Depth-only pipelines for the sun shadow map (conventional Z, not reverse-Z).
+// Culling off so single-sided casters (ground, sea) still shadow.
+create_shadow_pipeline :: proc(gfx_ctx: ^Device) -> Pipeline_Handle {
+	attributes := default_shadow_depth_vertex_attributes(VertexData)
+	return pipeline_create(gfx_ctx, {
+		vertex = default_shadow_depth_vertex(),
+		fragment = default_shadow_depth_fragment(),
+		vertex_attributes = attributes[:],
+		vertex_stride = u32(size_of(VertexData)),
+		depth_test = true,
+		depth_write = true,
+		depth_compare = .LESS,
+		cull_mode = .NONE,
+		depth_bias_constant = 1.0,
+		depth_bias_slope = 1.5,
+		single_sample = true,
+		depth_only = true,
+		bind_draw = bind_shadow_draw,
+	})
+}
+
+create_shadow_instanced_pipeline :: proc(gfx_ctx: ^Device) -> Pipeline_Handle {
+	attributes := default_shadow_depth_instanced_vertex_attributes(VertexData)
+	return pipeline_create(gfx_ctx, {
+		vertex = default_shadow_depth_instanced_vertex(),
+		fragment = default_shadow_depth_instanced_fragment(),
+		vertex_attributes = attributes[:],
+		vertex_stride = u32(size_of(VertexData)),
+		depth_test = true,
+		depth_write = true,
+		depth_compare = .LESS,
+		cull_mode = .NONE,
+		depth_bias_constant = 1.0,
+		depth_bias_slope = 1.5,
+		instanced = true,
+		single_sample = true,
+		depth_only = true,
+		bind_draw = bind_shadow_instanced_draw,
+	})
+}
+
+bind_shadow_draw :: proc(
+	user_data: rawptr,
+	draw_context: ^Draw_Context,
+	parameters: Draw_Parameters,
+) {
+	_ = user_data
+	uniforms := DefaultShadowDepthVertexUniformBlock {
+		data = {mvp = parameters.view_projection * parameters.model_transform},
+	}
+	draw_push_uniform(draw_context, DEFAULT_SHADOW_DEPTH_VERTEX_UNIFORM_BLOCK, &uniforms)
+}
+
+bind_shadow_instanced_draw :: proc(
+	user_data: rawptr,
+	draw_context: ^Draw_Context,
+	parameters: Draw_Parameters,
+) {
+	_ = user_data
+	uniforms := DefaultShadowDepthInstancedVertexUniformBlock {
+		data = {view_projection = parameters.view_projection, first_instance = parameters.first_instance},
+	}
+	draw_push_uniform(draw_context, DEFAULT_SHADOW_DEPTH_INSTANCED_VERTEX_UNIFORM_BLOCK, &uniforms)
+}
+
 bind_textured_instanced_draw :: proc(
 	user_data: rawptr,
 	draw_context: ^Draw_Context,
@@ -218,6 +283,16 @@ bind_textured_material :: proc(
 set_unlit_color :: proc(material: ^Material, tint: [4]f32) {
 	uniforms := DefaultUnlitColorFragmentUniformBlock {
 		data = {tint = color_srgb_to_linear(tint)},
+	}
+	material_set_uniform(material, DEFAULT_UNLIT_COLOR_FRAGMENT_UNIFORM_BLOCK, &uniforms)
+}
+
+// Like set_unlit_color, then multiplies linear rgb by intensity (>1 = HDR, feeds bloom).
+set_emissive_color :: proc(material: ^Material, tint: [4]f32, intensity: f32) {
+	linear := color_srgb_to_linear(tint)
+	linear.rgb *= intensity
+	uniforms := DefaultUnlitColorFragmentUniformBlock {
+		data = {tint = linear},
 	}
 	material_set_uniform(material, DEFAULT_UNLIT_COLOR_FRAGMENT_UNIFORM_BLOCK, &uniforms)
 }

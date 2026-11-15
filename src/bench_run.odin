@@ -1,3 +1,6 @@
+// Baseline (phase 0, 5 s, 1512x982, msaa 4x), cpu ms avg:
+//   forest_instanced: frame 5.8-6.4 (p95 16.4-16.7), draws 119, instances 11168, prepare 2.0, extract 0.95-0.98, shadow 0.09, flush 0.08
+//   benchmark:        frame 5.1-8.3 (p95 9.4-13.4), draws 36, instances 2127, prepare 0.48-0.60, extract 0 (not via draws extract), shadow 0.03, flush 0.03
 // Benchmark mode, `./main <scene> --bench <seconds>`: runs the scene for that
 // long without input, then prints frame, draw-call and CPU stats and exits.
 package main
@@ -19,6 +22,8 @@ Bench_Run :: struct {
 	draws:      [dynamic]f64,
 	triangles:  [dynamic]f64,
 	prepare_ms: [dynamic]f64,
+	extract_ms: [dynamic]f64,
+	shadow_ms:  [dynamic]f64,
 	flush_ms:   [dynamic]f64,
 	instances:  int, // last frame
 }
@@ -39,7 +44,9 @@ bench_record :: proc(bench: ^Bench_Run, gfx_ctx: ^gfx.Device, delta_time: f32) {
 	append(&bench.triangles, f64(renderer.triangles))
 	append(&bench.prepare_ms, time.duration_milliseconds(renderer.prepare_time))
 	append(&bench.flush_ms, time.duration_milliseconds(renderer.flush_time))
-	bench.instances = len(renderer.instance_transforms)
+	append(&bench.extract_ms, time.duration_milliseconds(renderer.extract_time))
+	append(&bench.shadow_ms, time.duration_milliseconds(renderer.shadow_time))
+	bench.instances = renderer.instance_count
 }
 
 bench_done :: proc(bench: ^Bench_Run) -> bool {
@@ -77,6 +84,8 @@ bench_report :: proc(bench: ^Bench_Run, gfx_ctx: ^gfx.Device, scene_name: string
 	draws := bench_stat(bench.draws[:])
 	prepare := bench_stat(bench.prepare_ms[:])
 	flush := bench_stat(bench.flush_ms[:])
+	extract := bench_stat(bench.extract_ms[:])
+	shadow := bench_stat(bench.shadow_ms[:])
 	triangles := bench_stat(bench.triangles[:])
 	fmt.printf(
 		"benchmark  scene=%s  window=%dx%d  msaa=%s  duration=%.2fs  frames=%d\n",
@@ -112,6 +121,8 @@ bench_report :: proc(bench: ^Bench_Run, gfx_ctx: ^gfx.Device, scene_name: string
 		prepare.max,
 	)
 	fmt.printf("  cpu flush    avg %.3f   p95 %.3f   max %.3f ms\n", flush.avg, flush.p95, flush.max)
+	fmt.printf("  cpu extract  avg %.3f   p95 %.3f   max %.3f ms\n", extract.avg, extract.p95, extract.max)
+	fmt.printf("  cpu shadow   avg %.3f   p95 %.3f   max %.3f ms\n", shadow.avg, shadow.p95, shadow.max)
 }
 
 // Config.after_frame: records one frame and stops the run once the duration is met.

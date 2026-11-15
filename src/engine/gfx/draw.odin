@@ -7,6 +7,7 @@
 package gfx
 
 import "core:math/linalg"
+import "../jobs"
 import loader "loader"
 
 // A Draw is one renderable object: mesh + material + transform, submitted
@@ -96,17 +97,103 @@ playback_destroy :: proc(p: ^Playback) {
 	p^ = {}
 }
 
-// Skipped when hidden; culled by frustum and view distance when d.cull.
-renderer_submit_draw :: proc(renderer: ^Renderer, view: ^Extract_View, d: ^Draw) {
+// Pure visibility test, safe on worker threads. Skipped when hidden; culled by frustum and view
+// distance when d.cull. A draw the camera culls still counts as a shadow-only caster when it
+// lies inside the sun box.
+draw_visibility :: proc(view: ^Extract_View, eye: Vec3, d: ^Draw) -> (visible, shadow_only: bool) {
 	if d.hidden do return
-	if d.cull && renderable_culled(&view.planes, d.mesh, d.transform) do return
-	if d.cull && view.view_distance > 0 && renderable_beyond(renderer.camera.position, d.mesh, d.transform, view.view_distance) do return
-	renderer_submit(renderer, d.mesh, d.material, d.transform, d.layer, d.pose)
+	if d.cull && renderable_culled(&view.planes, d.mesh, d.transform) {
+		if !view.shadows || d.layer != .WORLD || renderable_culled(&view.light_planes, d.mesh, d.transform) do return
+		return true, true
+	}
+	if d.cull && view.view_distance > 0 && renderable_beyond(eye, d.mesh, d.transform, view.view_distance) do return
+	return true, false
+}
+
+renderer_submit_draw :: proc(renderer: ^Renderer, view: ^Extract_View, d: ^Draw) {
+	visible, shadow_only := draw_visibility(view, renderer.camera.position, d)
+	if visible do renderer_submit(renderer, d.mesh, d.material, d.transform, d.layer, d.pose, shadow_only)
+}
+
+// Below this many draws the serial loop beats the job round trip.
+// shortcut: threshold is a guess; raise it to the measured break-even (see phase 3 bench).
+PARALLEL_CULL_MIN :: 512
+
+@(private = "file")
+Cull_Range :: struct {
+	last:    int, // zero = no range starts at this index
+	visible: int,
+}
+
+@(private = "file")
+Cull_Job :: struct {
+	view:     ^Extract_View,
+	eye:      Vec3,
+	draws:    []Draw, // direct
+	ptrs:     []^Draw, // indirect (indirect = true)
+	indirect: bool,
+	items:    []DrawItem, // range [first, last) writes its visible items from items[first]
+	ranges:   []Cull_Range, // indexed by a range's first draw
+}
+
+@(private = "file")
+cull_draw :: proc(job: ^Cull_Job, i: int) -> ^Draw {
+	return job.ptrs[i] if job.indirect else &job.draws[i]
+}
+
+@(private = "file")
+cull_range :: proc(data: rawptr, first, last: int) {
+	job := (^Cull_Job)(data)
+	n := first
+	for i in first ..< last {
+		d := cull_draw(job, i)
+		visible, shadow_only := draw_visibility(job.view, job.eye, d)
+		if !visible do continue
+		job.items[n] = DrawItem{mesh = d.mesh, material = d.material, transform = d.transform, layer = d.layer, pose = d.pose, shadow_only = shadow_only}
+		n += 1
+	}
+	job.ranges[first] = {last, n - first}
+}
+
+// Culls on the job pool when set and the list is large; items land in list order either way.
+@(private = "file")
+submit_culled :: proc(renderer: ^Renderer, view: ^Extract_View, job: ^Cull_Job) {
+	count := len(job.ptrs) if job.indirect else len(job.draws)
+	if renderer.jobs == nil || count < PARALLEL_CULL_MIN {
+		for i in 0 ..< count do renderer_submit_draw(renderer, view, cull_draw(job, i))
+		return
+	}
+	assert(renderer.pass == nil)
+	job.view, job.eye = view, renderer.camera.position
+	// Workers write straight into spare draw_items capacity; the visible prefixes are then packed down.
+	base := len(renderer.draw_items)
+	resize(&renderer.draw_items, base + count)
+	job.items = renderer.draw_items[base:]
+	job.ranges = make([]Cull_Range, count, context.temp_allocator)
+	jobs.parallel_for(renderer.jobs, count, job, cull_range, 128)
+	write := 0
+	for i := 0; i < count; {
+		r := job.ranges[i]
+		if write != i do copy(job.items[write:], job.items[i:i + r.visible])
+		write += r.visible
+		i = r.last
+	}
+	resize(&renderer.draw_items, base + write)
+}
+
+renderer_submit_draws :: proc(renderer: ^Renderer, view: ^Extract_View, draws: []Draw) {
+	job := Cull_Job{draws = draws}
+	submit_culled(renderer, view, &job)
+}
+
+renderer_submit_draw_ptrs :: proc(renderer: ^Renderer, view: ^Extract_View, draws: []^Draw) {
+	job := Cull_Job{ptrs = draws, indirect = true}
+	submit_culled(renderer, view, &job)
 }
 
 renderer_extract_draws :: proc(renderer: ^Renderer, draws: []Draw) {
 	view := renderer_begin_extract(renderer)
-	for &d in draws do renderer_submit_draw(renderer, &view, &d)
+	renderer_submit_draws(renderer, &view, draws)
 }
 
 renderer_render_draws :: proc(renderer: ^Renderer, draws: []Draw) {
@@ -181,5 +268,6 @@ render :: proc(gfx_ctx: ^Device) {
 
 @(private = "file")
 draws_extract_proc :: proc(renderer: ^Renderer, user: rawptr) {
-	renderer_extract_draws(renderer, (^Device)(user).draws[:])
+	gfx_ctx := (^Device)(user)
+	renderer_extract_draws(renderer, gfx_ctx.draws[scope_draw_base(gfx_ctx):])
 }

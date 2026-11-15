@@ -34,6 +34,8 @@ import "core:reflect"
 import "core:slice"
 import "core:strings"
 import gfx "gfx"
+import "jobs"
+import particles "particles"
 
 Vec3 :: gfx.Vec3
 
@@ -125,6 +127,9 @@ Name :: struct {
 	value: string,
 }
 
+// Emitter spawned at the entity Transform position; needs a World with a Device.
+Particle_Emitter :: particles.Emitter_Desc
+
 Component :: union {
 	Transform,
 	Model,
@@ -135,10 +140,12 @@ Component :: union {
 	Sprite_Anim,
 	Health,
 	Name,
+	Particle_Emitter,
 }
 
 World :: struct {
 	gfx_ctx:  ^gfx.Device, // nil is fine for worlds that only hold Transforms (tests)
+	jobs:     ^jobs.Pool, // borrowed from the renderer; nil = serial
 	slots:    [dynamic]Slot,
 	free:     [dynamic]u32,
 	types:    [dynamic]Entity_Type_Info,
@@ -147,6 +154,7 @@ World :: struct {
 	// Effects are heap-allocated on first use: render passes point at them.
 	bloom:    ^gfx.Bloom,
 	blur:     ^gfx.Blur,
+	particles: ^particles.System, // lazy like bloom/blur: created on the first Particle_Emitter
 	// 2D batch and view: the batch is created on the first frame with a Camera_2D
 	// and its render pass keeps its address, so the World must not move after that.
 	batch:     Maybe(gfx.Batch),
@@ -162,11 +170,12 @@ Slot :: struct {
 	playback:   Maybe(gfx.Playback), // skinned Models only
 	type:       Entity_Type, // 0 when the entity has no registered type
 	state:      rawptr,
+	emitter:    Maybe(particles.Emitter_Handle), // this entity's emitter; nil when none
 }
 
 // Use world_create; a zero World has no asset cache.
 world_create :: proc(gfx_ctx: ^gfx.Device) -> World {
-	return World{gfx_ctx = gfx_ctx, assets = {models = make(map[string]^Model_Asset)}}
+	return World{gfx_ctx = gfx_ctx, jobs = gfx_ctx.renderer.jobs if gfx_ctx != nil else nil, assets = {models = make(map[string]^Model_Asset)}}
 }
 
 // Registers a per-entity state type. create runs after spawn, tick once per
@@ -280,6 +289,8 @@ world_count :: proc(world: ^World, type: Entity_Type) -> int {
 entity_add_component :: proc(world: ^World, id: Entity_Id, component: Component) {
 	assert(world_valid(world, id), "engine: entity_add_component on invalid entity")
 	slot := &world.slots[id.index]
+	// Replacing an emitter: drop the old one; slot_resolve builds the new one.
+	if _, ok := component.(Particle_Emitter); ok do remove_emitter(world, slot)
 	set_component(slot, component)
 	sync_transform(slot)
 	slot_resolve(world, slot)
@@ -298,6 +309,7 @@ entity_remove_component :: proc(world: ^World, id: Entity_Id, $T: typeid) {
 		}
 	}
 	if T == Model do remove_renderable(slot)
+	if T == Particle_Emitter do remove_emitter(world, slot)
 	sync_transform(slot)
 	slot_resolve(world, slot)
 }
@@ -322,6 +334,7 @@ world_destroy_entity :: proc(world: ^World, id: Entity_Id) {
 		// The destroy proc may have destroyed other entities, or this one.
 		if !world_valid(world, id) do return
 	}
+	remove_emitter(world, &world.slots[id.index])
 	destroy_slot(&world.slots[id.index])
 	append(&world.free, id.index)
 }
@@ -352,6 +365,10 @@ world_destroy :: proc(world: ^World) {
 	assets_destroy(world)
 	free(world.bloom)
 	free(world.blur)
+	if world.particles != nil {
+		particles.system_destroy(world.particles)
+		world.particles = nil
+	}
 	world^ = {}
 }
 
@@ -369,13 +386,29 @@ world_update :: proc(world: ^World, dt: f32) {
 		info.tick(world, Entity_Id{u32(index), slot.generation}, slot.state, dt)
 	}
 	world.updating = false
+	playbacks := make([dynamic]^gfx.Playback, 0, 0, context.temp_allocator)
 	for &slot in world.slots {
 		slot.born = false
 		if !slot.alive do continue
 		sync_transform(&slot)
-		if playback, ok := &slot.playback.(gfx.Playback); ok do gfx.playback_tick(playback, dt)
+		if handle, ok := slot.emitter.?; ok {
+			// Emitter follows its entity's Transform.
+			if emitter := particles.emitter_get(world.particles, handle); emitter != nil do emitter.desc.position = slot_component(&slot, Transform).position
+		}
+		if playback, ok := &slot.playback.(gfx.Playback); ok do append(&playbacks, playback)
 		advance_sprite_anim(&slot, dt)
 	}
+	// Each Playback owns its pose, so the ranges are disjoint.
+	Tick :: struct {
+		playbacks: []^gfx.Playback,
+		dt:        f32,
+	}
+	tick := Tick{playbacks[:], dt}
+	jobs.parallel_for(world.jobs, len(playbacks), &tick, proc(data: rawptr, first, last: int) {
+		tick := (^Tick)(data)
+		for p in tick.playbacks[first:last] do gfx.playback_tick(p, tick.dt)
+	}, 8)
+	if world.particles != nil do particles.system_update(world.particles, dt)
 	update_camera(world)
 	update_camera_2d(world)
 }
@@ -389,9 +422,11 @@ world_render :: proc(world: ^World) {
 world_extract :: proc(renderer: ^gfx.Renderer, user: rawptr) {
 	world := (^World)(user)
 	view := gfx.renderer_begin_extract(renderer)
+	draws := make([dynamic]^gfx.Draw, 0, len(world.slots), context.temp_allocator)
 	for &slot in world.slots {
-		if slot.alive && slot.draw.mesh != nil do gfx.renderer_submit_draw(renderer, &view, &slot.draw)
+		if slot.alive && slot.draw.mesh != nil do append(&draws, &slot.draw)
 	}
+	gfx.renderer_submit_draw_ptrs(renderer, &view, draws[:])
 }
 
 // Sprite_Draw is one queued sprite; sort keys are resolved before drawing.
@@ -642,6 +677,14 @@ sync_transform :: proc(slot: ^Slot) {
 // after every change to the slot's components.
 @(private = "file")
 slot_resolve :: proc(world: ^World, slot: ^Slot) {
+	if emitter := slot_component(slot, Particle_Emitter); emitter != nil && slot.emitter == nil {
+		assert(world.gfx_ctx != nil, "engine: Particle_Emitter needs a world with a Device")
+		// One system serves every emitter; created on the first one, like bloom/blur.
+		if world.particles == nil do world.particles = particles.system_create(&world.gfx_ctx.renderer)
+		desc := emitter^
+		desc.position = slot_component(slot, Transform).position
+		slot.emitter = particles.emitter_add(world.particles, desc)
+	}
 	if model := slot_component(slot, Model); model != nil && slot.draw.mesh == nil {
 		assert(world.gfx_ctx != nil, "engine: Model needs a world with a Device")
 		asset := asset_model(world, model.path)
@@ -676,6 +719,12 @@ remove_renderable :: proc(slot: ^Slot) {
 	if playback, ok := &slot.playback.(gfx.Playback); ok do gfx.playback_destroy(playback)
 	slot.playback = nil
 	slot.draw = {}
+}
+
+@(private = "file")
+remove_emitter :: proc(world: ^World, slot: ^Slot) {
+	if handle, ok := slot.emitter.?; ok do particles.emitter_remove(world.particles, handle)
+	slot.emitter = nil
 }
 
 @(private = "file")

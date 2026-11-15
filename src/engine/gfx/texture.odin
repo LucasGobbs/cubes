@@ -107,6 +107,11 @@ texture_destroy :: proc(gfx_ctx: ^Device, handle: Texture_Handle) {
 texture_load :: proc(gfx_ctx: ^Device, path: string, srgb := true, mipmaps := true) -> Texture_Handle {
 	image := loader.image_load(path)
 	defer loader.image_destroy(&image)
+	return texture_create_from_image(gfx_ctx, &image, srgb, mipmaps)
+}
+
+// Uploads a decoded image (blocking). Does not free `image`.
+texture_create_from_image :: proc(gfx_ctx: ^Device, image: ^loader.ImageData, srgb := true, mipmaps := true) -> Texture_Handle {
 	handle := texture_create_rgba8(gfx_ctx, image.width, image.height, srgb, mipmaps)
 	texture := texture_get(gfx_ctx, handle)
 	texture._temporary_raw_data = image.pixels
