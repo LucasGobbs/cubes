@@ -10,6 +10,7 @@ package forest_instanced
 
 import "core:math"
 import "core:math/linalg"
+import "core:slice"
 import gfx "../../engine/gfx"
 import default "../../engine/default"
 import input "../../engine/input"
@@ -18,6 +19,7 @@ import shader_parameters "../../shader_parameters"
 import engine "../../engine"
 import "core:log"
 import phys "../../engine/physics"
+import "../../engine/jobs"
 
 CHUNK_SIZE :: naive.CHUNK_SIZE
 TERRAIN_SPAN :: 4 // chunks per terrain cluster side (64 m)
@@ -33,6 +35,7 @@ GRASS_MAX :: naive.GRASS_MAX
 START_RADIUS :: naive.START_RADIUS
 BUILD_BUDGET :: 6 // per tick; a terrain cluster costs TERRAIN_COST, a grass cluster 1
 TERRAIN_COST :: 3
+MAX_BUILDING :: 8 // jobs in flight at once, terrain and grass together
 
 // Mesh keeps slices into Mesh_Data, so both live until destroy.
 Mesh_Data :: struct {
@@ -40,10 +43,15 @@ Mesh_Data :: struct {
 	idx:   [dynamic]u32,
 }
 
+Build_State :: enum { Empty, Building, Ready, Built } // Ready: job done, main-thread finish pending
+
 Terrain_Cluster :: struct {
-	built: bool,
-	data:  Mesh_Data,
-	mesh:  gfx.Mesh,
+	state:      Build_State,
+	group:      jobs.Group,
+	i, j:       int,
+	data:       Mesh_Data,
+	placements: [dynamic]naive.Instance, // job output, freed by the finish
+	mesh:       gfx.Mesh,
 }
 
 Grass_Item :: struct {
@@ -52,9 +60,12 @@ Grass_Item :: struct {
 }
 
 Grass_Cluster :: struct {
-	built: bool,
-	state: int, // 0 hidden, 1 near LOD, 2 far LOD
-	items: [dynamic]Grass_Item,
+	state:   Build_State,
+	group:   jobs.Group,
+	i, j:    int,
+	lod:     int, // 0 hidden, 1 near LOD, 2 far LOD
+	scratch: [dynamic]Grass_Instance, // job output, freed by the finish
+	items:   [dynamic]Grass_Item,
 }
 
 Forest_State :: struct {
@@ -67,8 +78,6 @@ Forest_State :: struct {
 	grass:            [GRASS_SIDE * GRASS_SIDE]Grass_Cluster,
 	tuft_data:        [TUFT_COUNT]Variant_Data,
 	tuft_mesh:        [TUFT_COUNT]gfx.Mesh,
-	grass_scratch:    [dynamic]Grass_Instance,
-	placements:       [dynamic]naive.Instance, // scratch, reused per chunk
 	time:             f32,
 	flare:            naive.Flare,
 	crosshair:        naive.Crosshair, // C: toggles the screen-centre cross
@@ -126,7 +135,7 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 
 	naive.physics_create(&state.physics, gfx_ctx, &state.material, .Placements)
 	state.ball_action = input.button(&ctx.input, "forest_instanced.ball", .B, "Launch ball")
-	forest_stream(state, gfx_ctx, 1 << 20, START_RADIUS)
+	forest_stream(state, gfx_ctx, &ctx.jobs, 1 << 20, START_RADIUS, wait_all = true)
 	return true
 }
 
@@ -161,7 +170,7 @@ forest_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 	if input.pressed(&ctx.input, state.ball_action) do naive.physics_launch(&state.physics, gfx_ctx)
 	fog := naive.FOG_COLOR
 	gfx_ctx.renderer.fog = {fog.r, fog.g, fog.b, FOG_DISTANCE}
-	forest_stream(state, gfx_ctx, BUILD_BUDGET, BUILD_RADIUS)
+	forest_stream(state, gfx_ctx, &ctx.jobs, BUILD_BUDGET, BUILD_RADIUS)
 	naive.flare_update(gfx_ctx, &state.flare, naive.SUN_DIRECTION)
 	naive.crosshair_update(gfx_ctx, &state.crosshair, &ctx.input)
 	naive.physics_draw(&state.physics, gfx_ctx, ctx.blend)
@@ -181,82 +190,175 @@ cluster_distance :: proc(camera: [3]f32, i, j, span: int) -> (distance, ox, oz: 
 	return math.sqrt(dx * dx + dz * dz), ox, oz
 }
 
-// Builds missing ground clusters near the camera and picks each grass LOD.
-// `budget` counts work units per call (a terrain cluster is TERRAIN_COST).
+// Builds ground clusters near the camera on the job pool and picks each grass LOD.
+// Per tick: finish ready builds (main thread, within `budget` work units; a terrain
+// cluster is TERRAIN_COST), start new jobs, then apply grass LOD to built clusters.
+// wait_all starts every in-range build without the MAX_BUILDING cap and blocks until
+// all are finished, so the first frame is complete.
 // shortcut: built clusters are never freed (tree draws included); add
 // eviction with a GPU idle wait if memory matters.
-forest_stream :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, budget: int, radius: f32) {
+forest_stream :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, pool: ^jobs.Pool, budget: int, radius: f32, wait_all := false) {
 	budget := budget
 	camera := gfx.camera(gfx_ctx).position
-	extra := f32(TERRAIN_SPAN) * CHUNK_SIZE * 0.7 // cluster centre -> far corner
-	for index in 0 ..< len(state.terrain) {
-		i, j := index % TERRAIN_SIDE, index / TERRAIN_SIDE
-		distance, ox, oz := cluster_distance(camera, i, j, TERRAIN_SPAN)
-		cluster := &state.terrain[index]
-		if cluster.built || distance > radius + extra || budget < TERRAIN_COST do continue
-		budget -= TERRAIN_COST
-		forest_build_terrain(state, gfx_ctx, cluster, i, j, ox, oz)
+	if wait_all {
+		forest_start(state, pool, camera, radius, max(int))
+		forest_wait(state, pool)
+		budget = max(int)
 	}
+	forest_finish(state, gfx_ctx, budget)
+	if !wait_all do forest_start(state, pool, camera, radius, MAX_BUILDING)
+	forest_apply_grass_lod(state, gfx_ctx, camera)
+}
 
-	extra = f32(GRASS_SPAN) * CHUNK_SIZE * 0.7
-	for index in 0 ..< len(state.grass) {
-		i, j := index % GRASS_SIDE, index / GRASS_SIDE
-		distance, _, _ := cluster_distance(camera, i, j, GRASS_SPAN)
-		cluster := &state.grass[index]
-		want := cluster.state // hysteresis between the near and far distances
-		if distance > GRASS_MAX + extra do want = 0
-		else if distance < GRASS_NEAR + extra do want = 1
-		else if distance > GRASS_FAR + extra do want = 2
-		else if want == 0 do want = 2
-		if want == cluster.state do continue
-		if !cluster.built {
-			if budget <= 0 do continue
-			budget -= 1
-			forest_build_grass(state, gfx_ctx, cluster, i, j)
+Build_Candidate :: struct {
+	distance: f32,
+	grass:    bool,
+	index:    int,
+}
+
+// Starts jobs for the nearest Empty in-range clusters until `limit` are in flight.
+forest_start :: proc(state: ^Forest_State, pool: ^jobs.Pool, camera: [3]f32, radius: f32, limit: int) {
+	building := 0
+	for &cluster in state.terrain do building += int(cluster.state == .Building)
+	for &cluster in state.grass do building += int(cluster.state == .Building)
+	slots := limit - building
+	if slots <= 0 do return
+
+	candidates := make([dynamic]Build_Candidate, context.temp_allocator)
+	terrain_extra := f32(TERRAIN_SPAN) * CHUNK_SIZE * 0.7 // cluster centre -> far corner
+	for &cluster, index in state.terrain {
+		if cluster.state != .Empty do continue
+		distance, _, _ := cluster_distance(camera, index % TERRAIN_SIDE, index / TERRAIN_SIDE, TERRAIN_SPAN)
+		if distance > radius + terrain_extra do continue
+		append(&candidates, Build_Candidate{distance, false, index})
+	}
+	grass_extra := f32(GRASS_SPAN) * CHUNK_SIZE * 0.7
+	for &cluster, index in state.grass {
+		if cluster.state != .Empty do continue
+		distance, _, _ := cluster_distance(camera, index % GRASS_SIDE, index / GRASS_SIDE, GRASS_SPAN)
+		if distance > GRASS_MAX + grass_extra do continue // no grass wanted here
+		append(&candidates, Build_Candidate{distance, true, index})
+	}
+	slice.sort_by(candidates[:], proc(a, b: Build_Candidate) -> bool { return a.distance < b.distance })
+	for candidate in candidates[:min(slots, len(candidates))] {
+		if candidate.grass {
+			forest_start_grass(state, pool, candidate.index)
+		} else {
+			forest_start_terrain(state, pool, candidate.index)
 		}
-		grass_apply_lod(state, gfx_ctx, cluster, want)
 	}
 }
 
-forest_build_terrain :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster: ^Terrain_Cluster, i, j: int, ox, oz: f32) {
-	clear(&state.placements)
+forest_start_terrain :: proc(state: ^Forest_State, pool: ^jobs.Pool, index: int) {
+	cluster := &state.terrain[index]
+	cluster.i, cluster.j = index % TERRAIN_SIDE, index / TERRAIN_SIDE
+	cluster.state = .Building
+	jobs.run(pool, &cluster.group, terrain_job, rawptr(cluster))
+}
+
+// Worker: CPU only. Fills cluster.data and cluster.placements; the finish uploads them.
+terrain_job :: proc(data: rawptr) {
+	cluster := (^Terrain_Cluster)(data)
 	for dz in 0 ..< TERRAIN_SPAN {
 		for dx in 0 ..< TERRAIN_SPAN {
-			cx, cz := i * TERRAIN_SPAN + dx, j * TERRAIN_SPAN + dz
+			cx, cz := cluster.i * TERRAIN_SPAN + dx, cluster.j * TERRAIN_SPAN + dz
 			naive.terrain_chunk(cx, cz, &cluster.data.verts, &cluster.data.idx)
-			naive.placements_chunk(cx, cz, &state.placements)
+			naive.placements_chunk(cx, cz, &cluster.placements)
 		}
 	}
+}
+
+forest_start_grass :: proc(state: ^Forest_State, pool: ^jobs.Pool, index: int) {
+	cluster := &state.grass[index]
+	cluster.i, cluster.j = index % GRASS_SIDE, index / GRASS_SIDE
+	cluster.state = .Building
+	jobs.run(pool, &cluster.group, grass_job, rawptr(cluster))
+}
+
+// Worker: CPU only. Fills cluster.scratch; the finish creates the hidden draws.
+grass_job :: proc(data: rawptr) {
+	cluster := (^Grass_Cluster)(data)
+	for dz in 0 ..< GRASS_SPAN {
+		for dx in 0 ..< GRASS_SPAN {
+			grass_placements(cluster.i * GRASS_SPAN + dx, cluster.j * GRASS_SPAN + dz, &cluster.scratch)
+		}
+	}
+}
+
+// Blocks until every in-flight build has drained (helps run jobs).
+forest_wait :: proc(state: ^Forest_State, pool: ^jobs.Pool) {
+	for &cluster in state.terrain {
+		if cluster.state == .Building do jobs.wait(pool, &cluster.group)
+	}
+	for &cluster in state.grass {
+		if cluster.state == .Building do jobs.wait(pool, &cluster.group)
+	}
+}
+
+// Main thread: finishes jobs that are done, within budget.
+forest_finish :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, budget: int) {
+	budget := budget
+	for &cluster in state.terrain {
+		if cluster.state == .Building && jobs.done(&cluster.group) do cluster.state = .Ready
+		if cluster.state != .Ready || budget < TERRAIN_COST do continue
+		budget -= TERRAIN_COST
+		forest_build_terrain(state, gfx_ctx, &cluster)
+	}
+	for &cluster in state.grass {
+		if cluster.state == .Building && jobs.done(&cluster.group) do cluster.state = .Ready
+		if cluster.state != .Ready || budget <= 0 do continue
+		budget -= 1
+		forest_build_grass(state, gfx_ctx, &cluster)
+	}
+}
+
+// Main thread: upload the ground mesh, then one draw per tree/rock/bush.
+forest_build_terrain :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster: ^Terrain_Cluster) {
+	ox, oz := naive.chunk_origin(cluster.i * TERRAIN_SPAN, cluster.j * TERRAIN_SPAN)
 	cluster.mesh = forest_upload(gfx_ctx, &cluster.data, ox, oz)
-	cluster.built = true
+	cluster.state = .Built
 
 	gfx.draw_create(gfx_ctx, {mesh = &cluster.mesh, material = &state.material, position = {ox, 0, oz}})
 
 	// One draw per tree/rock/bush, sharing the variant meshes.
-	for instance in state.placements {
+	for instance in cluster.placements {
 		rotation := linalg.quaternion_angle_axis_f32(instance.yaw, {0, 1, 0})
 		scale := instance.scale
 		gfx.draw_create(gfx_ctx, {mesh = &state.variant_mesh[instance.variant], material = &state.material, position = instance.position, rotation = rotation, scale = {scale, scale, scale}})
 	}
+	delete(cluster.placements)
+	cluster.placements = {}
 }
 
-// One draw per grass clump/flower, sharing the tuft meshes. Created hidden;
-// grass_apply_lod shows them.
-forest_build_grass :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster: ^Grass_Cluster, i, j: int) {
-	clear(&state.grass_scratch)
-	for dz in 0 ..< GRASS_SPAN {
-		for dx in 0 ..< GRASS_SPAN {
-			grass_placements(i * GRASS_SPAN + dx, j * GRASS_SPAN + dz, &state.grass_scratch)
-		}
-	}
-	for instance in state.grass_scratch {
+// Main thread: one draw per grass clump/flower, sharing the tuft meshes. Created
+// hidden; grass_apply_lod shows them.
+forest_build_grass :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster: ^Grass_Cluster) {
+	for instance in cluster.scratch {
 		rotation := linalg.quaternion_angle_axis_f32(instance.yaw, {0, 1, 0})
 		scale := instance.scale
 		index := gfx.draw_create(gfx_ctx, {mesh = &state.tuft_mesh[instance.lod1], material = &state.material, position = instance.position, rotation = rotation, scale = {scale, scale, scale}})
 		gfx_ctx.draws[index].hidden = true
 		append(&cluster.items, Grass_Item{index, instance})
 	}
-	cluster.built = true
+	delete(cluster.scratch)
+	cluster.scratch = {}
+	cluster.state = .Built
+}
+
+// Picks the LOD of every built grass cluster (hysteresis between near and far).
+forest_apply_grass_lod :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, camera: [3]f32) {
+	extra := f32(GRASS_SPAN) * CHUNK_SIZE * 0.7
+	for index in 0 ..< len(state.grass) {
+		cluster := &state.grass[index]
+		if cluster.state != .Built do continue
+		distance, _, _ := cluster_distance(camera, index % GRASS_SIDE, index / GRASS_SIDE, GRASS_SPAN)
+		want := cluster.lod
+		if distance > GRASS_MAX + extra do want = 0
+		else if distance < GRASS_NEAR + extra do want = 1
+		else if distance > GRASS_FAR + extra do want = 2
+		else if want == 0 do want = 2
+		if want != cluster.lod do grass_apply_lod(state, gfx_ctx, cluster, want)
+	}
 }
 
 // want: 0 hidden (skipped on submit), 1 near LOD, 2 far LOD.
@@ -268,7 +370,7 @@ grass_apply_lod :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster: ^Gr
 		variant := item.instance.lod0 if want == 1 else item.instance.lod1
 		draw.mesh = &state.tuft_mesh[variant]
 	}
-	cluster.state = want
+	cluster.lod = want
 }
 
 // Moves world-space vertices to cluster-local x/z (so the mesh bound sits near
@@ -290,6 +392,7 @@ forest_upload :: proc(gfx_ctx: ^gfx.Device, data: ^Mesh_Data, ox, oz: f32) -> gf
 forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Forest_State)demo.state
+	forest_wait(state, &ctx.jobs) // jobs write cluster slots: wait before anything is freed
 	gfx.renderer_clear_passes(&gfx_ctx.renderer, .Post)
 	gfx.renderer_update_light(&gfx_ctx.renderer, gfx.DEFAULT_LIGHT_DIRECTION)
 	naive.crosshair_destroy(gfx_ctx, &state.crosshair)
@@ -297,14 +400,16 @@ forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	for &cluster in state.terrain {
 		delete(cluster.data.verts)
 		delete(cluster.data.idx)
+		delete(cluster.placements)
 	}
-	for &cluster in state.grass do delete(cluster.items)
+	for &cluster in state.grass {
+		delete(cluster.items)
+		delete(cluster.scratch)
+	}
 	for index in 0 ..< naive.VARIANT_COUNT {
 		delete(state.variant_data[index].verts)
 		delete(state.variant_data[index].idx)
 	}
-	delete(state.placements)
-	delete(state.grass_scratch)
 	for index in 0 ..< TUFT_COUNT {
 		delete(state.tuft_data[index].verts)
 		delete(state.tuft_data[index].idx)

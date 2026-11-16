@@ -161,7 +161,7 @@ physics_collider_add :: proc(body: b3.BodyId, inst: Instance) {
 }
 
 // Colliders from the mesher's own trees: trunk capsules and rock spheres as recorded by
-// trees_chunk, for every chunk in the collider region. Same call order as forest_build_static
+// trees_chunk, for every chunk in the collider region. Same call order as the chunk bake job
 // (terrain verts count toward the tree vertex cap), so the set matches the drawn trees.
 physics_mesh_trees_add :: proc(body: b3.BodyId) {
 	verts := make([dynamic]gfx.VertexData, 0, 4096)

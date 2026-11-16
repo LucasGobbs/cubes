@@ -5,11 +5,13 @@
 package forest_naive
 
 import "core:math"
+import "core:slice"
 import gfx "../../engine/gfx"
 import default "../../engine/default"
 import input "../../engine/input"
 import shader_parameters "../../shader_parameters"
 import engine "../../engine"
+import jobs "../../engine/jobs"
 
 SUN_DIRECTION :: [3]f32{-0.559, 0.764, 0.322} // unit; measured by aiming the crosshair at the skybox sun (F1 `look`)
 FOG_DISTANCE :: 560.0 // also the renderer's view distance: farther chunks are culled
@@ -18,9 +20,10 @@ GRASS_NEAR :: 42.0 // dense grass inside; hysteresis keeps LOD from flickering
 GRASS_FAR :: 52.0
 GRASS_MAX :: 95.0 // no grass past this; the terrain colour carries the meadow
 BUILD_PER_FRAME :: 6 // chunk meshes baked per tick once streaming
+BUILD_IN_FLIGHT :: 8 // chunk bakes running on the job pool at once
 START_RADIUS :: 140.0 // baked before the first frame; the rest streams in under fog
 FOG_COLOR :: [3]f32{0.62, 0.78, 0.95}
-SHADOW_BIAS :: 0.002 // depth bias in shadow-map [0,1] units (~0.6 m over SHADOW_DEPTH)
+SHADOW_BIAS :: 0.0005 // receiver depth bias in shadow-map [0,1] units (~0.15 m over SHADOW_DEPTH); casters add hardware slope bias
 
 Mesh_Data :: struct {
 	verts: [dynamic]gfx.VertexData,
@@ -29,14 +32,25 @@ Mesh_Data :: struct {
 
 // Mesh keeps slices into Mesh_Data, so both live until destroy.
 Chunk :: struct {
-	static_built:  bool,
-	static_data:   Mesh_Data,
-	static_mesh:   gfx.Mesh,
-	grass_entity:  int, // -1 until the first grass mesh exists
-	grass_lod:     int,
-	grass_built:   [2]bool,
-	grass_data:    [2]Mesh_Data,
-	grass_mesh:    [2]gfx.Mesh,
+	static_job:   Build,
+	static_data:  Mesh_Data,
+	static_mesh:  gfx.Mesh,
+	grass_entity: int, // -1 until the first grass mesh exists
+	grass_lod:    int,
+	grass_job:    [2]Build,
+	grass_data:   [2]Mesh_Data,
+	grass_mesh:   [2]gfx.Mesh,
+}
+
+// One async bake. The job fills mesh.verts and indices (context.allocator); the main
+// thread uploads them in finish and frees indices. mesh points into the chunk, which never moves.
+Build :: struct {
+	state:   enum { Empty, Building, Built },
+	group:   jobs.Group,
+	cx, cz:  int,
+	lod:     int, // grass only
+	mesh:    ^Mesh_Data,
+	indices: [dynamic]u32,
 }
 
 Forest_State :: struct {
@@ -93,7 +107,7 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	crosshair_create(gfx_ctx, &state.crosshair, input.button(&ctx.input, "forest.crosshair", .C, "Toggle crosshair")) // after flare: flare resets After_Scene
 	showcase_create(gfx_ctx)
 
-	forest_stream(state, gfx_ctx, 1 << 20, START_RADIUS)
+	forest_stream(state, gfx_ctx, &ctx.jobs, 1 << 20, START_RADIUS, true)
 	return true
 }
 
@@ -129,7 +143,7 @@ forest_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) 
 	}
 	if input.pressed(&ctx.input, state.ball_action) do physics_launch(&state.physics, gfx_ctx)
 	gfx_ctx.renderer.fog = {FOG_COLOR.r, FOG_COLOR.g, FOG_COLOR.b, FOG_DISTANCE}
-	forest_stream(state, gfx_ctx, BUILD_PER_FRAME, BUILD_RADIUS)
+	forest_stream(state, gfx_ctx, &ctx.jobs, BUILD_PER_FRAME, BUILD_RADIUS)
 	flare_update(gfx_ctx, &state.flare, SUN_DIRECTION)
 	crosshair_update(gfx_ctx, &state.crosshair, &ctx.input)
 	physics_draw(&state.physics, gfx_ctx, ctx.blend)
@@ -141,43 +155,166 @@ forest_fixed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time:
 	physics_step(&state.physics, delta_time)
 }
 
-// Bakes missing meshes for chunks near the camera (nearest-first is not
-// needed: the initial pass fills the whole radius) and picks each grass LOD.
+// Chunk bakes run on the job pool; the main thread finishes them (upload, draw).
+// Per tick: finish landed bakes (budget), apply each chunk's grass LOD once that LOD is
+// built, then start the nearest Empty slots (at most BUILD_IN_FLIGHT in flight). `eager`
+// starts every in-range bake, waits, and finishes them all (used once, at create).
 // shortcut: built chunks are never freed, so flying the whole world holds
 // ~400 MB of vertices; add eviction (with a GPU idle wait) if that matters.
-forest_stream :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, budget: int, radius: f32) {
-	budget := budget
+forest_stream :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, pool: ^jobs.Pool, budget: int, radius: f32, eager := false) {
 	camera := gfx.camera(gfx_ctx).position
+	limit := BUILD_IN_FLIGHT
+	if eager {
+		forest_start_builds(state, pool, camera, radius, max(int))
+		forest_wait_builds(state, pool)
+		limit = max(int)
+	}
+	forest_finish_builds(state, gfx_ctx, budget)
+	forest_apply_grass(state, gfx_ctx, camera, radius)
+	forest_start_builds(state, pool, camera, radius, limit)
+}
+
+// Distance is measured from the chunk centre; ox/oz is the chunk origin.
+chunk_distance :: proc(index: int, camera: [3]f32) -> (ox, oz, distance: f32) {
+	cx, cz := chunk_coords(index)
+	ox, oz = chunk_origin(cx, cz)
+	dx, dz := ox + CHUNK_SIZE / 2 - camera.x, oz + CHUNK_SIZE / 2 - camera.z
+	distance = math.sqrt(dx * dx + dz * dz)
+	return
+}
+
+chunk_coords :: proc(index: int) -> (cx, cz: int) {
+	return index % CHUNKS_PER_SIDE, index / CHUNKS_PER_SIDE
+}
+
+grass_lod_for :: proc(chunk: ^Chunk, distance: f32) -> int {
+	lod := chunk.grass_lod
+	if chunk.grass_entity < 0 do lod = 1
+	if distance < GRASS_NEAR do lod = 0
+	if distance > GRASS_FAR do lod = 1
+	return lod
+}
+
+// Starts bakes for the nearest Empty in-range slots until `limit` are in flight.
+forest_start_builds :: proc(state: ^Forest_State, pool: ^jobs.Pool, camera: [3]f32, radius: f32, limit: int) {
+	in_flight := 0
+	for &chunk in state.chunks {
+		if chunk.static_job.state == .Building do in_flight += 1
+		for lod in 0 ..< 2 do if chunk.grass_job[lod].state == .Building do in_flight += 1
+	}
+	if in_flight >= limit do return
+
+	Candidate :: struct {
+		distance: f32,
+		index:    int,
+		lod:      int, // -1: static
+	}
+	candidates := make([dynamic]Candidate, context.temp_allocator)
 	for index in 0 ..< len(state.chunks) {
-		cx, cz := index % CHUNKS_PER_SIDE, index / CHUNKS_PER_SIDE
-		ox, oz := chunk_origin(cx, cz)
-		dx, dz := ox + CHUNK_SIZE / 2 - camera.x, oz + CHUNK_SIZE / 2 - camera.z
-		distance := math.sqrt(dx * dx + dz * dz)
+		_, _, distance := chunk_distance(index, camera)
 		if distance > radius do continue
 		chunk := &state.chunks[index]
+		if chunk.static_job.state == .Empty do append(&candidates, Candidate{distance, index, -1})
+		if distance > GRASS_MAX do continue
+		lod := grass_lod_for(chunk, distance)
+		if chunk.grass_job[lod].state == .Empty do append(&candidates, Candidate{distance, index, lod})
+	}
+	slice.sort_by(candidates[:], proc(a, b: Candidate) -> bool { return a.distance < b.distance })
 
-		if !chunk.static_built {
-			if budget <= 0 do continue
-			budget -= 1
-			forest_build_static(state, gfx_ctx, chunk, cx, cz)
+	for candidate in candidates {
+		if in_flight >= limit do break
+		in_flight += 1
+		chunk := &state.chunks[candidate.index]
+		cx, cz := chunk_coords(candidate.index)
+		if candidate.lod < 0 {
+			build_start(pool, &chunk.static_job, build_static_job, cx, cz, 0, &chunk.static_data)
+		} else {
+			build_start(pool, &chunk.grass_job[candidate.lod], build_grass_job, cx, cz, candidate.lod, &chunk.grass_data[candidate.lod])
 		}
+	}
+}
 
+build_start :: proc(pool: ^jobs.Pool, b: ^Build, fn: jobs.Job_Proc, cx, cz, lod: int, mesh: ^Mesh_Data) {
+	b.state = .Building
+	b.cx, b.cz, b.lod, b.mesh = cx, cz, lod, mesh
+	jobs.run(pool, &b.group, fn, rawptr(b))
+}
+
+// Job procs: CPU only. Same calls, same order as the old main-thread bake.
+build_static_job :: proc(data: rawptr) {
+	b := cast(^Build)data
+	terrain_chunk(b.cx, b.cz, &b.mesh.verts, &b.indices)
+	trees_chunk(b.cx, b.cz, &b.mesh.verts, &b.indices, nil)
+}
+
+build_grass_job :: proc(data: rawptr) {
+	b := cast(^Build)data
+	grass_chunk(b.cx, b.cz, b.lod, &b.mesh.verts, &b.indices)
+}
+
+build_wait :: proc(pool: ^jobs.Pool, b: ^Build) {
+	if b.state == .Building do jobs.wait(pool, &b.group)
+}
+
+forest_wait_builds :: proc(state: ^Forest_State, pool: ^jobs.Pool) {
+	for &chunk in state.chunks {
+		build_wait(pool, &chunk.static_job)
+		for lod in 0 ..< 2 do build_wait(pool, &chunk.grass_job[lod])
+	}
+}
+
+// Main thread: landed bakes become meshes and draws. Each finish costs one budget unit.
+forest_finish_builds :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, budget: int) {
+	budget := budget
+	for &chunk in state.chunks {
+		if budget > 0 && chunk.static_job.state == .Building && jobs.done(&chunk.static_job.group) {
+			budget -= 1
+			forest_finish_static(state, gfx_ctx, &chunk)
+		}
+		for lod in 0 ..< 2 {
+			build := &chunk.grass_job[lod]
+			if budget > 0 && build.state == .Building && jobs.done(&build.group) {
+				budget -= 1
+				forest_finish_grass(gfx_ctx, &chunk, lod)
+			}
+		}
+	}
+}
+
+forest_finish_static :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, chunk: ^Chunk) {
+	build := &chunk.static_job
+	ox, oz := chunk_origin(build.cx, build.cz)
+	chunk.static_mesh = forest_upload(gfx_ctx, &chunk.static_data, build.indices[:], ox, oz)
+	delete(build.indices)
+	build.indices = {}
+	build.state = .Built
+	gfx.draw_create(gfx_ctx, {mesh = &chunk.static_mesh, material = &state.material, position = {ox, 0, oz}})
+}
+
+forest_finish_grass :: proc(gfx_ctx: ^gfx.Device, chunk: ^Chunk, lod: int) {
+	build := &chunk.grass_job[lod]
+	ox, oz := chunk_origin(build.cx, build.cz)
+	chunk.grass_mesh[lod] = forest_upload(gfx_ctx, &chunk.grass_data[lod], build.indices[:], ox, oz)
+	delete(build.indices)
+	build.indices = {}
+	build.state = .Built
+}
+
+// Applies each chunk's wanted grass LOD once that LOD is Built; until then the
+// current LOD keeps showing and the wanted one is re-checked next tick.
+forest_apply_grass :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, camera: [3]f32, radius: f32) {
+	for index in 0 ..< len(state.chunks) {
+		ox, oz, distance := chunk_distance(index, camera)
+		if distance > radius do continue
+		chunk := &state.chunks[index]
 		if chunk.grass_entity >= 0 {
 			// Out of range: hide the draw so it costs no fragments.
 			gfx_ctx.draws[chunk.grass_entity].hidden = distance > GRASS_MAX
 		}
 		if distance > GRASS_MAX do continue
-
-		lod := chunk.grass_lod
-		if chunk.grass_entity < 0 do lod = 1
-		if distance < GRASS_NEAR do lod = 0
-		if distance > GRASS_FAR do lod = 1
+		lod := grass_lod_for(chunk, distance)
 		if chunk.grass_entity >= 0 && lod == chunk.grass_lod do continue
-		if !chunk.grass_built[lod] {
-			if budget <= 0 do continue
-			budget -= 1
-			forest_build_grass(state, gfx_ctx, chunk, cx, cz, lod)
-		}
+		if chunk.grass_job[lod].state != .Built do continue
 		chunk.grass_lod = lod
 		if chunk.grass_entity < 0 {
 			chunk.grass_entity = gfx.draw_create(gfx_ctx, {mesh = &chunk.grass_mesh[lod], material = &state.material, position = {ox, 0, oz}})
@@ -185,25 +322,6 @@ forest_stream :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, budget: int, r
 			gfx_ctx.draws[chunk.grass_entity].mesh = &chunk.grass_mesh[lod]
 		}
 	}
-}
-
-forest_build_static :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, chunk: ^Chunk, cx, cz: int) {
-	indices := make([dynamic]u32, context.temp_allocator)
-	terrain_chunk(cx, cz, &chunk.static_data.verts, &indices)
-	trees_chunk(cx, cz, &chunk.static_data.verts, &indices, nil)
-	ox, oz := chunk_origin(cx, cz)
-	chunk.static_mesh = forest_upload(gfx_ctx, &chunk.static_data, indices[:], ox, oz)
-	chunk.static_built = true
-
-	gfx.draw_create(gfx_ctx, {mesh = &chunk.static_mesh, material = &state.material, position = {ox, 0, oz}})
-}
-
-forest_build_grass :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, chunk: ^Chunk, cx, cz, lod: int) {
-	indices := make([dynamic]u32, context.temp_allocator)
-	grass_chunk(cx, cz, lod, &chunk.grass_data[lod].verts, &indices)
-	ox, oz := chunk_origin(cx, cz)
-	chunk.grass_mesh[lod] = forest_upload(gfx_ctx, &chunk.grass_data[lod], indices[:], ox, oz)
-	chunk.grass_built[lod] = true
 }
 
 // Moves world-space vertices to chunk-local x/z (so the mesh bound is centred
@@ -232,10 +350,14 @@ forest_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx.renderer_update_light(&gfx_ctx.renderer, gfx.DEFAULT_LIGHT_DIRECTION)
 	crosshair_destroy(gfx_ctx, &state.crosshair)
 	flare_destroy(gfx_ctx, &state.flare)
+	// Jobs write into chunk meshes and indices: drain every bake before any free.
+	forest_wait_builds(state, &ctx.jobs)
 	for &chunk in state.chunks {
+		delete(chunk.static_job.indices)
 		delete(chunk.static_data.verts)
 		delete(chunk.static_data.idx)
 		for lod in 0 ..< 2 {
+			delete(chunk.grass_job[lod].indices)
 			delete(chunk.grass_data[lod].verts)
 			delete(chunk.grass_data[lod].idx)
 		}
