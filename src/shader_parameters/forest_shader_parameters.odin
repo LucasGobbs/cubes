@@ -18,6 +18,8 @@ ForestVertexUniforms :: struct #max_field_align(16) {
 	camera_position: [4]f32,
 	time: [4]f32,
 	fog: [4]f32,
+	light_view_projection: matrix[4, 4]f32,
+	shadow_params: [4]f32,
 }
 
 #assert(offset_of(ForestVertexUniforms, view_projection) == 0)
@@ -25,20 +27,22 @@ ForestVertexUniforms :: struct #max_field_align(16) {
 #assert(offset_of(ForestVertexUniforms, camera_position) == 128)
 #assert(offset_of(ForestVertexUniforms, time) == 144)
 #assert(offset_of(ForestVertexUniforms, fog) == 160)
-#assert(size_of(ForestVertexUniforms) == 176)
+#assert(offset_of(ForestVertexUniforms, light_view_projection) == 176)
+#assert(offset_of(ForestVertexUniforms, shadow_params) == 240)
+#assert(size_of(ForestVertexUniforms) == 256)
 
 ForestVertexUniformBlock :: struct #max_field_align(16) {
 	data: ForestVertexUniforms,
 }
 
 #assert(offset_of(ForestVertexUniformBlock, data) == 0)
-#assert(size_of(ForestVertexUniformBlock) == 176)
+#assert(size_of(ForestVertexUniformBlock) == 256)
 
 FOREST_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 FOREST_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 FOREST_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 FOREST_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-FOREST_VERTEX_UNIFORM_BLOCK_SIZE :: 176
+FOREST_VERTEX_UNIFORM_BLOCK_SIZE :: 256
 FOREST_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = FOREST_VERTEX_UNIFORM_BLOCK_SPACE, binding = FOREST_VERTEX_UNIFORM_BLOCK_BINDING, slot = FOREST_VERTEX_UNIFORM_BLOCK_SLOT, count = FOREST_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -61,7 +65,7 @@ forest_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttribute {
 }
 
 FOREST_VERTEX_BINDINGS := [1]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 176},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 256},
 }
 
 forest_vertex :: proc() -> goose.GraphicsParameters {
@@ -88,7 +92,7 @@ forest_vertex :: proc() -> goose.GraphicsParameters {
 
 FOREST_FRAGMENT_CODE :: #load("../../shaders/generated/forest.frag.msl")
 
-FOREST_FRAGMENT_SAMPLERS :: 0
+FOREST_FRAGMENT_SAMPLERS :: 1
 FOREST_FRAGMENT_STORAGE_TEXTURES :: 0
 FOREST_FRAGMENT_STORAGE_BUFFERS :: 0
 FOREST_FRAGMENT_UNIFORM_BUFFERS :: 0
@@ -96,6 +100,14 @@ FOREST_FRAGMENT_UNIFORM_BUFFERS :: 0
 FOREST_FRAGMENT_UNIFORMS := []goose.UniformRef {
 	{
 	}
+}
+
+FOREST_FRAGMENT_SHADOW_MAP :: goose.TextureBinding {stage = .Fragment, location = {space = 0, binding = 0, slot = 0, count = 1}}
+FOREST_FRAGMENT_SHADOW_SAMPLER :: goose.SamplerBinding {stage = .Fragment, location = {space = 0, binding = 0, slot = 0, count = 1}}
+
+FOREST_FRAGMENT_BINDINGS := [2]goose.Binding {
+	{name = "shadow_map", stage = .Fragment, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}},
+	{name = "shadow_sampler", stage = .Fragment, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}},
 }
 
 forest_fragment :: proc() -> goose.GraphicsParameters {
@@ -115,7 +127,7 @@ forest_fragment :: proc() -> goose.GraphicsParameters {
 			storage_buffers = FOREST_FRAGMENT_STORAGE_BUFFERS,
 			uniform_buffers = FOREST_FRAGMENT_UNIFORM_BUFFERS,
 		},
-		bindings = {},
+		bindings = {data = &FOREST_FRAGMENT_BINDINGS[0], count = len(FOREST_FRAGMENT_BINDINGS)},
 		uniforms = FOREST_FRAGMENT_UNIFORMS,
 	}
 }
@@ -134,6 +146,8 @@ ForestVertexUniforms :: struct #max_field_align(16) {
 	camera_position: [4]f32,
 	time: [4]f32,
 	fog: [4]f32,
+	light_view_projection: matrix[4, 4]f32,
+	shadow_params: [4]f32,
 }
 
 #assert(offset_of(ForestVertexUniforms, view_projection) == 0)
@@ -141,20 +155,22 @@ ForestVertexUniforms :: struct #max_field_align(16) {
 #assert(offset_of(ForestVertexUniforms, camera_position) == 128)
 #assert(offset_of(ForestVertexUniforms, time) == 144)
 #assert(offset_of(ForestVertexUniforms, fog) == 160)
-#assert(size_of(ForestVertexUniforms) == 176)
+#assert(offset_of(ForestVertexUniforms, light_view_projection) == 176)
+#assert(offset_of(ForestVertexUniforms, shadow_params) == 240)
+#assert(size_of(ForestVertexUniforms) == 256)
 
 ForestVertexUniformBlock :: struct #max_field_align(16) {
 	data: ForestVertexUniforms,
 }
 
 #assert(offset_of(ForestVertexUniformBlock, data) == 0)
-#assert(size_of(ForestVertexUniformBlock) == 176)
+#assert(size_of(ForestVertexUniformBlock) == 256)
 
 FOREST_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 FOREST_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 FOREST_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 FOREST_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-FOREST_VERTEX_UNIFORM_BLOCK_SIZE :: 176
+FOREST_VERTEX_UNIFORM_BLOCK_SIZE :: 256
 FOREST_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = FOREST_VERTEX_UNIFORM_BLOCK_SPACE, binding = FOREST_VERTEX_UNIFORM_BLOCK_BINDING, slot = FOREST_VERTEX_UNIFORM_BLOCK_SLOT, count = FOREST_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -177,7 +193,7 @@ forest_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttribute {
 }
 
 FOREST_VERTEX_BINDINGS := [1]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 176},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 256},
 }
 
 forest_vertex :: proc() -> goose.GraphicsParameters {
@@ -204,7 +220,7 @@ forest_vertex :: proc() -> goose.GraphicsParameters {
 
 FOREST_FRAGMENT_CODE :: #load("../../shaders/generated/forest.frag.hlsl")
 
-FOREST_FRAGMENT_SAMPLERS :: 0
+FOREST_FRAGMENT_SAMPLERS :: 1
 FOREST_FRAGMENT_STORAGE_TEXTURES :: 0
 FOREST_FRAGMENT_STORAGE_BUFFERS :: 0
 FOREST_FRAGMENT_UNIFORM_BUFFERS :: 0
@@ -212,6 +228,14 @@ FOREST_FRAGMENT_UNIFORM_BUFFERS :: 0
 FOREST_FRAGMENT_UNIFORMS := []goose.UniformRef {
 	{
 	}
+}
+
+FOREST_FRAGMENT_SHADOW_MAP :: goose.TextureBinding {stage = .Fragment, location = {space = 0, binding = 0, slot = 0, count = 1}}
+FOREST_FRAGMENT_SHADOW_SAMPLER :: goose.SamplerBinding {stage = .Fragment, location = {space = 0, binding = 0, slot = 0, count = 1}}
+
+FOREST_FRAGMENT_BINDINGS := [2]goose.Binding {
+	{name = "shadow_map", stage = .Fragment, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}},
+	{name = "shadow_sampler", stage = .Fragment, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}},
 }
 
 forest_fragment :: proc() -> goose.GraphicsParameters {
@@ -231,7 +255,7 @@ forest_fragment :: proc() -> goose.GraphicsParameters {
 			storage_buffers = FOREST_FRAGMENT_STORAGE_BUFFERS,
 			uniform_buffers = FOREST_FRAGMENT_UNIFORM_BUFFERS,
 		},
-		bindings = {},
+		bindings = {data = &FOREST_FRAGMENT_BINDINGS[0], count = len(FOREST_FRAGMENT_BINDINGS)},
 		uniforms = FOREST_FRAGMENT_UNIFORMS,
 	}
 }
@@ -250,6 +274,8 @@ ForestVertexUniforms :: struct #max_field_align(16) {
 	camera_position: [4]f32,
 	time: [4]f32,
 	fog: [4]f32,
+	light_view_projection: matrix[4, 4]f32,
+	shadow_params: [4]f32,
 }
 
 #assert(offset_of(ForestVertexUniforms, view_projection) == 0)
@@ -257,20 +283,22 @@ ForestVertexUniforms :: struct #max_field_align(16) {
 #assert(offset_of(ForestVertexUniforms, camera_position) == 128)
 #assert(offset_of(ForestVertexUniforms, time) == 144)
 #assert(offset_of(ForestVertexUniforms, fog) == 160)
-#assert(size_of(ForestVertexUniforms) == 176)
+#assert(offset_of(ForestVertexUniforms, light_view_projection) == 176)
+#assert(offset_of(ForestVertexUniforms, shadow_params) == 240)
+#assert(size_of(ForestVertexUniforms) == 256)
 
 ForestVertexUniformBlock :: struct #max_field_align(16) {
 	data: ForestVertexUniforms,
 }
 
 #assert(offset_of(ForestVertexUniformBlock, data) == 0)
-#assert(size_of(ForestVertexUniformBlock) == 176)
+#assert(size_of(ForestVertexUniformBlock) == 256)
 
 FOREST_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 FOREST_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 FOREST_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 FOREST_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-FOREST_VERTEX_UNIFORM_BLOCK_SIZE :: 176
+FOREST_VERTEX_UNIFORM_BLOCK_SIZE :: 256
 FOREST_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = FOREST_VERTEX_UNIFORM_BLOCK_SPACE, binding = FOREST_VERTEX_UNIFORM_BLOCK_BINDING, slot = FOREST_VERTEX_UNIFORM_BLOCK_SLOT, count = FOREST_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -293,7 +321,7 @@ forest_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttribute {
 }
 
 FOREST_VERTEX_BINDINGS := [1]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 176},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 256},
 }
 
 forest_vertex :: proc() -> goose.GraphicsParameters {
@@ -320,7 +348,7 @@ forest_vertex :: proc() -> goose.GraphicsParameters {
 
 FOREST_FRAGMENT_CODE :: #load("../../shaders/generated/forest.frag.spv")
 
-FOREST_FRAGMENT_SAMPLERS :: 0
+FOREST_FRAGMENT_SAMPLERS :: 1
 FOREST_FRAGMENT_STORAGE_TEXTURES :: 0
 FOREST_FRAGMENT_STORAGE_BUFFERS :: 0
 FOREST_FRAGMENT_UNIFORM_BUFFERS :: 0
@@ -328,6 +356,14 @@ FOREST_FRAGMENT_UNIFORM_BUFFERS :: 0
 FOREST_FRAGMENT_UNIFORMS := []goose.UniformRef {
 	{
 	}
+}
+
+FOREST_FRAGMENT_SHADOW_MAP :: goose.TextureBinding {stage = .Fragment, location = {space = 0, binding = 1, slot = 0, count = 1}}
+FOREST_FRAGMENT_SHADOW_SAMPLER :: goose.SamplerBinding {stage = .Fragment, location = {space = 0, binding = 2, slot = 0, count = 1}}
+
+FOREST_FRAGMENT_BINDINGS := [2]goose.Binding {
+	{name = "shadow_map", stage = .Fragment, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 1, slot = 0, count = 1}},
+	{name = "shadow_sampler", stage = .Fragment, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 2, slot = 0, count = 1}},
 }
 
 forest_fragment :: proc() -> goose.GraphicsParameters {
@@ -347,7 +383,7 @@ forest_fragment :: proc() -> goose.GraphicsParameters {
 			storage_buffers = FOREST_FRAGMENT_STORAGE_BUFFERS,
 			uniform_buffers = FOREST_FRAGMENT_UNIFORM_BUFFERS,
 		},
-		bindings = {},
+		bindings = {data = &FOREST_FRAGMENT_BINDINGS[0], count = len(FOREST_FRAGMENT_BINDINGS)},
 		uniforms = FOREST_FRAGMENT_UNIFORMS,
 	}
 }
