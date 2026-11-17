@@ -43,10 +43,9 @@ compute_pipeline_destroy :: proc(gfx_ctx: ^Device, handle: Compute_Pipeline_Hand
 	assert(handle_pool_release(&gfx_ctx.compute_pipeline_handles, raw))
 }
 
-// Dispatches compute work on the frame command buffer (between begin_frame
-// and end_frame, outside any render pass). SDL rule: read-write storage
-// textures are bound when the pass begins; sampled textures bind with a
-// sampler after the pipeline.
+// Dispatches compute work outside any render pass. SDL rule: read-write storage
+// textures and buffers bind when the pass begins; read-only buffers and sampled
+// textures bind after the pipeline.
 compute_dispatch :: proc(
 	gfx_ctx: ^Device,
 	pipeline: Compute_Pipeline_Handle,
@@ -55,6 +54,8 @@ compute_dispatch :: proc(
 	sampler: Sampler_Handle,
 	groups: [3]u32,
 	uniform_data: []byte = nil,
+	readonly_buffers: []Buffer_Handle = nil,
+	readwrite_buffers: []Buffer_Handle = nil,
 ) {
 	assert(gfx_ctx.frame_open && gfx_ctx.command_buffer != nil)
 
@@ -66,16 +67,33 @@ compute_dispatch :: proc(
 	for handle, index in write_textures {
 		rw_bindings[index] = {texture = texture_get(gfx_ctx, handle).handle}
 	}
+	rw_buffer_bindings := make(
+		[]sdl.GPUStorageBufferReadWriteBinding,
+		len(readwrite_buffers),
+		context.temp_allocator,
+	)
+	for handle, index in readwrite_buffers {
+		rw_buffer_bindings[index] = {buffer = buffer_get(gfx_ctx, handle).handle}
+	}
 	pass := sdl.BeginGPUComputePass(
 		gfx_ctx.command_buffer,
 		raw_data(rw_bindings),
 		u32(len(rw_bindings)),
-		nil,
-		0,
+		raw_data(rw_buffer_bindings),
+		u32(len(rw_buffer_bindings)),
 	)
 	assert(pass != nil)
 
 	sdl.BindGPUComputePipeline(pass, compute_pipeline_get(gfx_ctx, pipeline).handle)
+
+	if len(readonly_buffers) > 0 {
+		handles := make([]^sdl.GPUBuffer, len(readonly_buffers), context.temp_allocator)
+		for handle, index in readonly_buffers {
+			handles[index] = buffer_get(gfx_ctx, handle).handle
+		}
+		sdl.BindGPUComputeStorageBuffers(pass, 0, raw_data(handles), u32(len(handles)))
+	}
+
 	if len(uniform_data) > 0 {
 		sdl.PushGPUComputeUniformData(gfx_ctx.command_buffer, 0, raw_data(uniform_data), u32(len(uniform_data)))
 	}

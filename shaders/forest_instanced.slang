@@ -12,6 +12,8 @@ struct Uniforms {
     uint first_instance;
     float4 time; // x = seconds, yzw = sun direction
     float4 fog; // rgb = linear fog color, a = view distance (<= 0 = off)
+    float4x4 light_view_projection;
+    float4 shadow_params; // x = enabled, y = depth bias, z = shadow map texel size
 };
 
 [[vk::binding(0, 0)]]
@@ -21,6 +23,11 @@ cbuffer UniformBlock {
 
 [[vk::binding(1, 0)]]
 StructuredBuffer<float4x4> instance_transforms;
+
+[[vk::binding(2, 0)]]
+Texture2D shadow_map;
+[[vk::binding(3, 0)]]
+SamplerComparisonState shadow_sampler;
 
 struct VertexInput {
     [[vk::location(0)]] float3 position : POSITION;
@@ -38,6 +45,8 @@ struct VertexOutput {
     float kind : KIND;
     float height : HEIGHT;
     float3 sun : SUN;
+    float4 light_clip : LIGHT_CLIP;
+    float4 shadow_params : SHADOW_PARAMS;
 };
 
 // Travelling gust: a broad wave crossing the field plus a faster flutter.
@@ -81,8 +90,26 @@ VertexOutput vertexMain(VertexInput input, uint instance_id : SV_InstanceID) {
     float fog_t = data.fog.a > 0.0 ? saturate((d - 0.10 * data.fog.a) / (0.90 * data.fog.a) + valley * t) : 0.0;
     output.fog = float4(fog_color, smoothstep(0.0, 1.0, pow(fog_t, 1.4)) * 0.92); // 0.92: far terrain keeps some colour
     output.kind = kind;
+    output.light_clip = mul(data.light_view_projection, world);
+    output.shadow_params = data.shadow_params;
     output.height = input.uv.x;
     return output;
+}
+
+// Sun shadow: 3x3 PCF over the depth map. Off or outside the map = lit.
+float sun_shadow(float4 light_clip, float4 params) {
+    if (params.x < 0.5) return 1.0;
+    float3 ndc = light_clip.xyz / light_clip.w;
+    float2 uv = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    if (any(uv < 0.0) || any(uv > 1.0) || ndc.z > 1.0) return 1.0;
+    float z = ndc.z - params.y;
+    float sum = 0.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            sum += shadow_map.SampleCmpLevelZero(shadow_sampler, uv + float2(x, y) * params.z, z);
+        }
+    }
+    return sum / 9.0;
 }
 
 [shader("fragment")]
@@ -100,7 +127,10 @@ float4 pixelMain(VertexOutput input, bool front : SV_IsFrontFace) : SV_Target0 {
     } else if (input.kind > 1.5) {
         base = base * lerp(0.78, 1.18, input.height);
     }
-    float3 color = base * lerp(shade * 0.85, sun_color * 0.92, lit);
+    float3 ambient = shade * 0.85;
+    float3 sun_term = sun_color * 0.92;
+    float shadow = sun_shadow(input.light_clip, input.shadow_params);
+    float3 color = base * lerp(ambient, sun_term, lit * shadow);
     float rim = pow(1.0 - saturate(dot(n, normalize(input.to_camera))), 3.0);
     color += float3(0.55, 0.70, 0.95) * rim * 0.10 * (input.kind > 0.5 ? 1.0 : 0.4);
     return float4(lerp(color, input.fog.rgb, input.fog.a), 1.0);

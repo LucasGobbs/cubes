@@ -121,7 +121,7 @@ model_add :: proc(gfx_ctx: ^Device, desc: Model_Desc) -> ^Model {
 	if desc.texture == nil do texture = model_texture(model)
 	tint := desc.tint
 	if tint == {} do tint = {1, 1, 1, 1}
-	material_bind_kind(gfx_ctx, &model.material, desc.kind, texture, desc.sampler, tint)
+	material_bind_kind(gfx_ctx, &model.material, desc.kind, texture, desc.sampler, tint, 1)
 	scope_defer(gfx_ctx, model_release, model)
 	return model
 }

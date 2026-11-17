@@ -27,6 +27,9 @@ Material_Kind :: enum u8 {
 	Unlit,
 	Textured_Instanced,
 	Textured_Skinned,
+	Toon,
+	Glass,
+	Emissive,
 }
 
 // Zero value = trilinear. Presets are created once per Device, paused from scenes.
@@ -46,7 +49,8 @@ Material_Desc :: struct {
 	kind:    Material_Kind,
 	texture: Texture_Source, // required for textured kinds
 	sampler: Sampler_Preset,
-	tint:    [4]f32, // Unlit only; zero = white
+	tint:     [4]f32, // Unlit, Emissive, Glass (alpha = base opacity); sRGB, zero = white
+	emission: f32, // Emissive only: HDR intensity multiplier, zero = 1. Above the bloom threshold it glows
 }
 
 // Low-level: wraps a custom pipeline. Caller owns it; call material_destroy.
@@ -61,6 +65,8 @@ material_create :: proc(gfx_ctx: ^Device, desc: Material_Desc) -> ^Material {
 	material^ = material_make(builtin_material_pipeline(gfx_ctx, desc.kind))
 	tint := desc.tint
 	if tint == {} do tint = {1, 1, 1, 1}
+	emission := desc.emission
+	if emission == 0 do emission = 1
 	material_bind_kind(
 		gfx_ctx,
 		material,
@@ -68,6 +74,7 @@ material_create :: proc(gfx_ctx: ^Device, desc: Material_Desc) -> ^Material {
 		resolve_texture(gfx_ctx, desc.texture),
 		desc.sampler,
 		tint,
+		emission,
 	)
 	scope_defer(gfx_ctx, material_release, material)
 	return material
@@ -88,13 +95,17 @@ material_bind_kind :: proc(
 	texture: Texture_Handle,
 	sampler: Sampler_Preset,
 	tint: [4]f32,
+	emission: f32,
 ) {
 	s := builtin_sampler(gfx_ctx, sampler)
 	switch kind {
 	case .Textured:           bind_textured_material(material, texture, s)
 	case .Textured_Instanced: bind_textured_instanced_material(material, texture, s)
 	case .Textured_Skinned:   bind_textured_skinned_material(material, texture, s)
+	case .Toon:               bind_toon_material(material, texture, s)
+	case .Glass:              set_glass_color(material, tint)
 	case .Unlit:              set_unlit_color(material, tint)
+	case .Emissive:           set_emissive_color(material, tint, emission)
 	}
 }
 
@@ -109,6 +120,9 @@ resolve_texture :: proc(gfx_ctx: ^Device, source: Texture_Source) -> Texture_Han
 
 // Cached for the Device lifetime. Paused so no scene scope owns it; gfx.destroy sweeps it.
 builtin_material_pipeline :: proc(gfx_ctx: ^Device, kind: Material_Kind) -> Pipeline_Handle {
+	// Emissive is an Unlit draw with HDR tint: share its pipeline.
+	kind := kind
+	if kind == .Emissive do kind = .Unlit
 	slot := &gfx_ctx.material_pipelines[kind]
 	if Resource_Handle(slot^).generation == 0 {
 		gfx_ctx.scope_paused += 1
@@ -118,6 +132,9 @@ builtin_material_pipeline :: proc(gfx_ctx: ^Device, kind: Material_Kind) -> Pipe
 		case .Unlit:              slot^ = create_unlit_pipeline(gfx_ctx)
 		case .Textured_Instanced: slot^ = create_textured_instanced_pipeline(gfx_ctx)
 		case .Textured_Skinned:   slot^ = create_textured_skinned_pipeline(gfx_ctx)
+		case .Toon:               slot^ = create_toon_pipeline(gfx_ctx)
+		case .Glass:              slot^ = create_glass_pipeline(gfx_ctx)
+		case .Emissive:           unreachable() // remapped to .Unlit above
 		}
 	}
 	return slot^

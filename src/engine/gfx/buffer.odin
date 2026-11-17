@@ -51,13 +51,28 @@ buffer_stage :: proc(
 }
 
 buffer_create :: proc(gfx_ctx: ^Device, size: u32, usage: sdl.GPUBufferUsageFlag) -> Buffer_Handle {
+	return buffer_create_usage(gfx_ctx, size, {usage})
+}
+
+buffer_create_usage :: proc(gfx_ctx: ^Device, size: u32, usage: sdl.GPUBufferUsageFlags) -> Buffer_Handle {
 	resource := Buffer {
-		handle = sdl.CreateGPUBuffer(gfx_ctx.gpu, {usage = {usage}, size = size}),
+		handle = sdl.CreateGPUBuffer(gfx_ctx.gpu, {usage = usage, size = size}),
 		size   = size,
-		usage  = {usage},
+		usage  = usage,
 	}
 	assert(resource.handle != nil)
 	return buffer_add(gfx_ctx, resource)
+}
+
+// Creates a zero-filled buffer staged for the Uploader. The staged slice is
+// heap-allocated and caller-owned: delete it after the upload flush, then nil
+// _temporary_raw_data. buffer_destroy does not free it.
+buffer_create_zeroed :: proc(gfx_ctx: ^Device, size: u32, usage: sdl.GPUBufferUsageFlags) -> Buffer_Handle {
+	handle := buffer_create_usage(gfx_ctx, size, usage)
+	resource := buffer_get(gfx_ctx, handle)
+	resource.length = 0
+	resource._temporary_raw_data = make([]byte, size)
+	return handle
 }
 
 // Registers a native buffer in the pool. Split out so tests run without a GPU.
