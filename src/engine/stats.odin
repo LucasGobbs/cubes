@@ -48,8 +48,8 @@ stats: Stats
 stats_create :: proc(ctx: ^Context) {
 	gfx_ctx := &ctx.gfx
 	inputs := &ctx.input
-	stats.action = input.button(inputs, "app.stats", .F1)
-	stats.dump_action = input.button(inputs, "app.stats_dump", .P) // with the panel open, logs its lines
+	stats.action = input.button(inputs, "app.stats", .F1, "Toggle controls + stats")
+	stats.dump_action = input.button(inputs, "app.stats_dump", .P, "Dump stats log") // with the panel open, logs its lines
 
 	font, ok := gfx.font_create(gfx_ctx, "static/fonts/andale-mono.ttf")
 	assert(ok)
@@ -100,6 +100,7 @@ stats_tick :: proc(ctx: ^Context, delta_time: f32, scene_name: string) {
 
 	renderer := &gfx_ctx.renderer
 	camera := gfx.camera(gfx_ctx).position
+	forward := gfx.camera(gfx_ctx).direction
 	lo, hi, sum := f32(1e9), f32(0), f32(0)
 	for fps in stats.history {
 		lo, hi, sum = min(lo, fps), max(hi, fps), sum + fps
@@ -124,6 +125,7 @@ stats_tick :: proc(ctx: ^Context, delta_time: f32, scene_name: string) {
 		),
 		fmt.tprintf("window  %dx%d  msaa %s", gfx_ctx.window_size.x, gfx_ctx.window_size.y, renderer.msaa_enabled ? "4x" : "off"),
 		fmt.tprintf("camera  %.1f %.1f %.1f", camera.x, camera.y, camera.z),
+		fmt.tprintf("look    %.3f %.3f %.3f", forward.x, forward.y, forward.z),
 	}
 	if input.pressed(inputs, stats.dump_action) {
 		for line in lines do log.infof("stats| %s", line)
@@ -137,8 +139,9 @@ stats_tick :: proc(ctx: ^Context, delta_time: f32, scene_name: string) {
 	panel_height := line_height * len(lines) + STATS_GRAPH_HEIGHT + 3 * STATS_PADDING
 	// The window can be smaller than the targets sized at startup (fullscreen
 	// transitions, menu bar), and the blit crops to it: anchor to what is visible.
-	visible_height: i32
-	_ = sdl.GetWindowSize(gfx_ctx.window, nil, &visible_height)
+	visible_width, visible_height: i32
+	_ = sdl.GetWindowSize(gfx_ctx.window, &visible_width, &visible_height)
+	visible_width = min(visible_width, gfx_ctx.window_size.x)
 	visible_height = min(visible_height, gfx_ctx.window_size.y)
 	left := f32(STATS_MARGIN)
 	top := f32(visible_height) - STATS_MARGIN - panel_height
@@ -148,14 +151,7 @@ stats_tick :: proc(ctx: ^Context, delta_time: f32, scene_name: string) {
 	solid := [2]f32{gfx.FONT_WHITE_U, gfx.FONT_WHITE_V}
 	stats_push_rect(gfx_ctx, left, top, left + panel_width, top + panel_height, solid, STATS_BACKGROUND)
 	for line, index in lines {
-		y := top + STATS_PADDING + line_height * f32(index) + f32(stats.font.baseline)
-		x := left + STATS_PADDING
-		quads: [dynamic]gfx.Font_Quad
-		quads.allocator = context.temp_allocator
-		gfx.font_layout(&stats.font, line, &x, &y, &quads)
-		for quad in quads {
-			stats_push_rect(gfx_ctx, quad.x0, quad.y0, quad.x1, quad.y1, {}, {1, 1, 1, 1}, quad)
-		}
+		stats_push_text(gfx_ctx, left + STATS_PADDING, top + STATS_PADDING + line_height * f32(index), line, {1, 1, 1, 1})
 	}
 
 	// Graph: solid frame lines on top/bottom, dotted average, fps polyline.
@@ -179,6 +175,7 @@ stats_tick :: proc(ctx: ^Context, delta_time: f32, scene_name: string) {
 	for x := gx0; x < gx1; x += 8 { // dotted average, drawn over the curve
 		stats_push_rect(gfx_ctx, x, mid - 0.5, min(x + 4, gx1), mid + 1.5, solid, {1, 0.85, 0.3, 1})
 	}
+	help_panel_draw(gfx_ctx, inputs, f32(visible_width), f32(visible_height))
 	gfx.mesh_update_unindexed(&gfx_ctx.renderer, &stats.mesh, stats.vertices[:])
 }
 
@@ -228,6 +225,17 @@ stats_push_rect :: proc(
 		gfx.VertexData{position = p2, color = color, uv = uv2},
 		gfx.VertexData{position = p3, color = color, uv = uv3},
 	)
+}
+
+// Text whose line top is `top` (y-down) and left edge `x`, in the stats font.
+stats_push_text :: proc(gfx_ctx: ^gfx.Device, x, top: f32, text: string, color: [4]f32) {
+	pen_x, pen_y := x, top + f32(stats.font.baseline)
+	quads: [dynamic]gfx.Font_Quad
+	quads.allocator = context.temp_allocator
+	gfx.font_layout(&stats.font, text, &pen_x, &pen_y, &quads)
+	for quad in quads {
+		stats_push_rect(gfx_ctx, quad.x0, quad.y0, quad.x1, quad.y1, {}, color, quad)
+	}
 }
 
 stats_draw :: proc(ctx: ^gfx.Pass_Ctx, _: rawptr) {

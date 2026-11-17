@@ -14,6 +14,7 @@ import "core:log"
 import "core:math/linalg"
 import "core:mem/virtual"
 import "core:os"
+import "particles"
 
 // Name of the camera entity in the World. The file's camera is keyed by it.
 CAMERA_NAME :: "__camera"
@@ -55,6 +56,7 @@ Entity_Def :: struct {
 	flip_y:         bool `json:"flip_y,omitempty"`,
 	anim:           Maybe(Sprite_Anim_Def) `json:"anim,omitempty"`,
 	health:         Maybe(Health_Def) `json:"health,omitempty"`,
+	particles:      Maybe(particles.Emitter_Desc) `json:"particles,omitempty"`,
 }
 
 Sprite_Anim_Def :: struct {
@@ -143,6 +145,10 @@ entity_components :: proc(entity: Entity_Def, key: string) -> []Component {
 		if anim, has := entity.anim.?; has do append(&list, Sprite_Anim{first = anim.first, last = anim.last, fps = anim.fps, loop = anim.loop})
 	}
 	if health, has := entity.health.?; has do append(&list, Health{current = health.current, max = health.max})
+	if emitter, has := entity.particles.?; has {
+		emitter.position = {} // World overrides from Transform
+		append(&list, Particle_Emitter(emitter))
+	}
 	return list[:]
 }
 
