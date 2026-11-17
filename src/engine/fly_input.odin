@@ -15,11 +15,11 @@ Fly_Controls :: struct {
 
 fly_controls_create :: proc(inp: ^input.System, prefix: string) -> Fly_Controls {
 	controls := Fly_Controls {
-		move   = input.add_axis_2d(inp, fmt.tprintf("{}.move", prefix)),
-		boost  = input.button(inp, fmt.tprintf("{}.boost", prefix), .LSHIFT),
-		up     = input.button(inp, fmt.tprintf("{}.up", prefix), .SPACE),
-		down   = input.button(inp, fmt.tprintf("{}.down", prefix), .LCTRL),
-		smooth = input.button(inp, fmt.tprintf("{}.smooth", prefix), .C),
+		move   = input.add_axis_2d(inp, fmt.tprintf("{}.move", prefix), "Fly move"),
+		boost  = input.button(inp, fmt.tprintf("{}.boost", prefix), .LSHIFT, "Fly boost"),
+		up     = input.button(inp, fmt.tprintf("{}.up", prefix), .SPACE, "Fly up"),
+		down   = input.button(inp, fmt.tprintf("{}.down", prefix), .LCTRL, "Fly down"),
+		smooth = input.button(inp, fmt.tprintf("{}.smooth", prefix), .C, "Toggle smooth camera"),
 	}
 	input.bind_button_axis_2d(inp, controls.move, {up = .W, down = .S, left = .A, right = .D, normalize = true})
 	return controls

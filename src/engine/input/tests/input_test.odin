@@ -190,3 +190,25 @@ input_move_2d_named_keys_resolve_axis :: proc(t: ^testing.T) {
 	input.update(&inputs)
 	testing.expect_value(t, input.axis_2d(&inputs, move), [2]f32{1, 1})
 }
+
+@(test)
+input_actions_list_descriptions_keys_and_rewind :: proc(t: ^testing.T) {
+	inputs := input.system_create(mock.create())
+	defer input.system_destroy(&inputs)
+	input.button(&inputs, "player.jump", .SPACE, "Jump")
+	input.move_2d(&inputs, "player.move", up = .W, down = .S, left = .A, right = .D, description = "Move")
+	click := input.button(&inputs, "ui.click", description = "Click")
+	input.bind_mouse_button(&inputs, click, .Left)
+	input.button(&inputs, "ui.idle")
+	mark := input.system_mark(&inputs)
+	input.button(&inputs, "player.dash", .LSHIFT, "Dash")
+	input.system_rewind(&inputs, mark)
+
+	actions := input.system_actions(&inputs)
+	testing.expect_value(t, len(actions), 4)
+	if len(actions) != 4 do return
+	testing.expect_value(t, actions[0], input.Action_Info{name = "player.jump", description = "Jump", keys = "SPACE"})
+	testing.expect_value(t, actions[1], input.Action_Info{name = "player.move", description = "Move", keys = "W/S/A/D"})
+	testing.expect_value(t, actions[2], input.Action_Info{name = "ui.click", description = "Click", keys = "MOUSE_Left"})
+	testing.expect_value(t, actions[3], input.Action_Info{name = "ui.idle", description = "", keys = ""})
+}

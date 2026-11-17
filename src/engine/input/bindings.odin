@@ -1,5 +1,9 @@
 package input
 
+import "base:runtime"
+import "core:fmt"
+import "core:strings"
+
 bind_key :: proc(system: ^System, action: Button_Action, key: Key) {
 	assert(button_action_is_valid(system, action))
 	assert(key_is_valid(key))
@@ -104,4 +108,46 @@ evaluate_button_axis_2d :: proc(system: ^System, desc: Button_Axis_2D_Desc) -> [
 		value *= INV_SQRT_TWO
 	}
 	return value
+}
+
+// Labels of every key and mouse button bound to a button action, '/'-joined.
+button_keys :: proc(system: ^System, action: Button_Action, allocator: runtime.Allocator) -> string {
+	b := strings.builder_make(allocator)
+	for binding in system.key_bindings {
+		if binding.action == action do append_label(&b, key_label(binding.key))
+	}
+	for binding in system.mouse_button_bindings {
+		if binding.action == action do append_label(&b, mouse_label(binding.button))
+	}
+	return strings.to_string(b)
+}
+
+// Labels of every axis binding (up, down, left, right per binding), '/'-joined.
+axis_keys :: proc(system: ^System, action: Axis_2D_Action, allocator: runtime.Allocator) -> string {
+	b := strings.builder_make(allocator)
+	for binding in system.button_axis_2d_bindings {
+		if binding.action != action do continue
+		append_label(&b, key_label(binding.desc.up))
+		append_label(&b, key_label(binding.desc.down))
+		append_label(&b, key_label(binding.desc.left))
+		append_label(&b, key_label(binding.desc.right))
+	}
+	return strings.to_string(b)
+}
+
+@(private = "file")
+append_label :: proc(b: ^strings.Builder, label: string) {
+	if strings.builder_len(b^) > 0 do strings.write_byte(b, '/')
+	strings.write_string(b, label)
+}
+
+// Enum member name; digit keys drop their enum underscore ("_1" -> "1").
+@(private = "file")
+key_label :: proc(key: Key) -> string {
+	return strings.trim_left(fmt.tprint(key), "_")
+}
+
+@(private = "file")
+mouse_label :: proc(button: Mouse_Button) -> string {
+	return fmt.tprintf("MOUSE_%v", button)
 }

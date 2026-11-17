@@ -22,28 +22,33 @@ system_destroy :: proc(system: ^System) {
 	system^ = {}
 }
 
-button :: proc(system: ^System, name: string, key := Key.UNKNOWN) -> Button_Action {
+button :: proc(system: ^System, name: string, key := Key.UNKNOWN, description := "") -> Button_Action {
 	assert(system.allocator.procedure != nil)
 	context.allocator = system.allocator
 	owned_name, err := strings.clone(name)
 	assert(err == nil)
 
+	system.action_serial += 1
 	action := Button_Action(len(system.button_actions))
-	append_elem(&system.button_actions, Button_Action_Data{name = owned_name})
+	append_elem(
+		&system.button_actions,
+		Button_Action_Data{name = owned_name, description = description, order = system.action_serial},
+	)
 	if key != .UNKNOWN do bind_key(system, action, key)
 	return action
 }
 
-add_axis_2d :: proc(system: ^System, name: string) -> Axis_2D_Action {
+add_axis_2d :: proc(system: ^System, name: string, description := "") -> Axis_2D_Action {
 	assert(system.allocator.procedure != nil)
 	context.allocator = system.allocator
 	owned_name, err := strings.clone(name)
 	assert(err == nil)
 
+	system.action_serial += 1
 	action := Axis_2D_Action(len(system.axis_2d_actions))
 	append_elem(
 		&system.axis_2d_actions,
-		Axis_2D_Action_Data{name = owned_name, owner_binding = -1},
+		Axis_2D_Action_Data{name = owned_name, description = description, owner_binding = -1, order = system.action_serial},
 	)
 	return action
 }
@@ -56,8 +61,9 @@ move_2d :: proc(
 	system: ^System,
 	name: string,
 	up, down, left, right: Key,
+	description := "",
 ) -> Axis_2D_Action {
-	action := add_axis_2d(system, name)
+	action := add_axis_2d(system, name, description)
 	bind_button_axis_2d(
 		system,
 		action,
@@ -98,6 +104,49 @@ retain_bindings :: proc(bindings: ^[dynamic]$B, action_count: int) {
 		}
 	}
 	resize(bindings, kept)
+}
+
+// Lists every live action: buttons and axes merged in creation order. `name` and
+// `description` alias system memory (invalid after system_rewind/destroy); `keys`
+// and the slice come from allocator.
+system_actions :: proc(system: ^System, allocator := context.temp_allocator) -> []Action_Info {
+	infos := make(
+		[dynamic]Action_Info,
+		0,
+		len(system.button_actions) + len(system.axis_2d_actions),
+		allocator,
+	)
+	bi, ai := 0, 0
+	for bi < len(system.button_actions) || ai < len(system.axis_2d_actions) {
+		take_button :=
+			ai >= len(system.axis_2d_actions) ||
+			(bi < len(system.button_actions) &&
+					system.button_actions[bi].order < system.axis_2d_actions[ai].order)
+		if take_button {
+			action := system.button_actions[bi]
+			append(
+				&infos,
+				Action_Info {
+					name        = action.name,
+					description = action.description,
+					keys        = button_keys(system, Button_Action(bi), allocator),
+				},
+			)
+			bi += 1
+		} else {
+			action := system.axis_2d_actions[ai]
+			append(
+				&infos,
+				Action_Info {
+					name        = action.name,
+					description = action.description,
+					keys        = axis_keys(system, Axis_2D_Action(ai), allocator),
+				},
+			)
+			ai += 1
+		}
+	}
+	return infos[:]
 }
 
 update :: proc(system: ^System) {

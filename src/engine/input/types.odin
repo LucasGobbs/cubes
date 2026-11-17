@@ -301,12 +301,16 @@ Button_Action_Data :: struct {
 	name:          string,
 	state:         Button_State,
 	previous_down: bool,
+	description:   string,
+	order:         u64,
 }
 
 Axis_2D_Action_Data :: struct {
 	name:          string,
 	state:         Axis_2D_State,
 	owner_binding: int,
+	description:   string,
+	order:         u64,
 }
 
 Key_Binding :: struct {
@@ -326,6 +330,12 @@ Button_Axis_2D_Binding :: struct {
 	last_actuation_serial: u64,
 }
 
+// Read-only snapshot of one action, as listed by system_actions.
+Action_Info :: struct {
+	name, description: string,
+	keys:              string,
+}
+
 System :: struct {
 	allocator:               runtime.Allocator,
 	adapter:                 Adapter,
@@ -342,4 +352,5 @@ System :: struct {
 	button_axis_2d_bindings: [dynamic]Button_Axis_2D_Binding,
 	frame_index:             u64,
 	actuation_serial:        u64,
+	action_serial:           u64,
 }
