@@ -1,0 +1,7 @@
+{
+  "name": "Boat",
+  "camera": {
+    "position": [0, 10, 40],
+    "look_at": [0, 0, 0]
+  }
+}

@@ -1,7 +1,7 @@
 // CPU mirror of shaders/sea.slang surface height. Boats read this so they sit
 // on the same waves the sea mesh is displaced by.
 // wave_height in shaders/sea.slang (vertex path, fine=false). Keep in sync.
-package benchmark
+package sea
 
 import "core:math"
 import "core:math/linalg"
@@ -67,7 +67,7 @@ sea_smoothstep :: proc(e0, e1, x: f32) -> f32 {
 // Surface height and horizontal gradient at p. dist is camera distance, which
 // fades each wave. Only the sine waves and broad swell, the part the mesh
 // displaces; the fine swell is shading-only (see wave_height in sea.slang).
-sea_surface_height :: proc(p: [2]f32, time, dist: f32) -> (h: f32, grad: [2]f32) {
+surface_height :: proc(p: [2]f32, time, dist: f32) -> (h: f32, grad: [2]f32) {
 	wavelength := f32(70)
 	angle := f32(0.3)
 	for _ in 0 ..< SEA_WAVE_COUNT {

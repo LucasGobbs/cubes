@@ -10,9 +10,9 @@ import "core:math/rand"
 import gfx "../../engine/gfx"
 import default "../../engine/default"
 import input "../../engine/input"
-import shader_parameters "../../shader_parameters"
 import sdl "vendor:sdl3"
 import engine "../../engine"
+import sea "../sea"
 
 BENCH_STEP :: 10 // per boat model, per keypress
 
@@ -61,10 +61,6 @@ DRAGON_SCALE :: 0.6
 DRAGON_RING_RADIUS :: 450
 FLEET_CENTER_Z :: -135 // middle of the boat spawn area in benchmark_populate
 
-// Flat unlit sea, far larger than the view so its edge never shows at the horizon.
-SEA_HALF :: 2000
-SEA_Y :: -0.6
-SEA_CELLS :: 400 // 10-unit cells: coarser aliases the 32-unit waves the mesh displaces
 FOG_VIEW_DISTANCE :: 700
 BOAT_DRAFT :: 0.1 // boat origin height above sea level at rest
 
@@ -83,7 +79,7 @@ Benchmark_State :: struct {
 	base_draws:       int,
 	sea_pipeline:     gfx.Pipeline_Handle,
 	sea_material:     gfx.Material,
-	sea_time:         f32,
+	sea_state:        sea.State,
 	boats:            [dynamic]Boat_Slot,
 	per_model:        int,
 	font:             gfx.Font,
@@ -120,9 +116,9 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx.set_present_mode(gfx_ctx, .IMMEDIATE)
 
 	inputs := &ctx.input
-	state.add_action = input.button(inputs, "benchmark.add", .EQUALS)
-	state.subtract_action = input.button(inputs, "benchmark.subtract", .MINUS)
-	state.fog_action = input.button(inputs, "benchmark.fog", .V)
+	state.add_action = input.button(inputs, "benchmark.add", .EQUALS, "Add entities")
+	state.subtract_action = input.button(inputs, "benchmark.subtract", .MINUS, "Remove entities")
+	state.fog_action = input.button(inputs, "benchmark.fog", .V, "Toggle fog")
 
 	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
 	boat_paths := BOAT_PATHS
@@ -142,9 +138,9 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.text_mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
 
 	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
-	state.sea_pipeline = sea_pipeline_create(gfx_ctx, state)
+	state.sea_pipeline = sea.pipeline_create(gfx_ctx, &state.sea_state)
 	state.sea_material = gfx.material_make(state.sea_pipeline)
-	gfx.draw_create(gfx_ctx, {mesh = sea_mesh_data(), material = &state.sea_material})
+	gfx.draw_create(gfx_ctx, {mesh = sea.mesh_data(), material = &state.sea_material})
 	state.base_draws = len(gfx_ctx.draws)
 
 	rand.reset(1) // fixed layout: every run draws the same fleet, so results compare
@@ -230,65 +226,6 @@ benchmark_push_text :: proc(
 	}
 }
 
-sea_mesh_data :: proc() -> gfx.Mesh_Data {
-	n :: SEA_CELLS + 1
-	cell :: f32(2 * SEA_HALF) / SEA_CELLS
-	vertices := make([dynamic]gfx.VertexData, 0, n * n, context.temp_allocator)
-	for z in 0 ..< n {
-		for x in 0 ..< n {
-			position := gfx.Vec3{-SEA_HALF + f32(x) * cell, SEA_Y, -SEA_HALF + f32(z) * cell}
-			append(&vertices, gfx.VertexData{position = position})
-		}
-	}
-	indices := make([dynamic]u32, 0, SEA_CELLS * SEA_CELLS * 6, context.temp_allocator)
-	stride := u32(n)
-	for z in 0 ..< SEA_CELLS {
-		for x in 0 ..< SEA_CELLS {
-			i := u32(z * n + x)
-			append(&indices, i, i + stride, i + 1, i + 1, i + stride, i + stride + 1)
-		}
-	}
-	return gfx.Mesh_Data{vertices = vertices[:], indices = indices[:]}
-}
-
-sea_pipeline_create :: proc(gfx_ctx: ^gfx.Device, state: ^Benchmark_State) -> gfx.Pipeline_Handle {
-	attributes := shader_parameters.sea_vertex_attributes(gfx.VertexData)
-	return gfx.pipeline_create(
-		gfx_ctx,
-		{
-			vertex = shader_parameters.sea_vertex(),
-			fragment = shader_parameters.sea_fragment(),
-			vertex_attributes = attributes[:],
-			vertex_stride = u32(size_of(gfx.VertexData)),
-			depth_test = true,
-			depth_write = true,
-			cull_mode = .BACK,
-			bind_draw = sea_bind_draw,
-			user_data = state,
-		},
-	)
-}
-
-// Pushes per-draw transforms and the time the wave field advances on.
-sea_bind_draw :: proc(
-	user_data: rawptr,
-	draw_context: ^gfx.Draw_Context,
-	parameters: gfx.Draw_Parameters,
-) {
-	state := cast(^Benchmark_State)user_data
-	camera := parameters.camera_position
-	uniforms := shader_parameters.SeaVertexUniformBlock {
-		data = {
-			mvp = parameters.view_projection * parameters.model_transform,
-			model = parameters.model_transform,
-			camera_position = {camera.x, camera.y, camera.z, 1},
-			time = {state.sea_time, 0, 0, 0},
-			fog = parameters.fog,
-		},
-	}
-	gfx.draw_push_uniform(draw_context, shader_parameters.SEA_VERTEX_UNIFORM_BLOCK, &uniforms)
-}
-
 benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	gfx_ctx := &ctx.gfx
 	state := cast(^Benchmark_State)demo.state
@@ -306,21 +243,16 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 	fog_rgb := gfx.color_srgb_to_linear({0.671, 0.757, 0.949, 1}) // skybox horizon; matches `sky` in sea.slang
 	gfx_ctx.renderer.fog = state.fog_on ? {fog_rgb.r, fog_rgb.g, fog_rgb.b, FOG_VIEW_DISTANCE} : [4]f32{}
 
-	state.sea_time += delta_time
+	state.sea_state.time += delta_time
 	camera := gfx_ctx.renderer.camera.position
 	for boat in state.boats {
-		flat := gfx.Vec3{boat.x, SEA_Y, boat.z}
-		h, grad := sea_surface_height(flat.xz, state.sea_time, linalg.distance(camera, flat))
-		normal := linalg.normalize(gfx.Vec3{-grad.x, 1, -grad.y})
-		tilt := linalg.quaternion_angle_axis_f32(
-			math.acos(clamp(normal.y, -1, 1)),
-			linalg.normalize0(linalg.cross(gfx.Vec3{0, 1, 0}, normal)),
-		)
+		flat := gfx.Vec3{boat.x, sea.Y, boat.z}
+		h, grad := sea.surface_height(flat.xz, state.sea_state.time, linalg.distance(camera, flat))
 		gfx.draw_move(
 			gfx_ctx,
 			boat.draw,
-			{boat.x, SEA_Y + h + BOAT_DRAFT, boat.z},
-			tilt * boat.yaw,
+			{boat.x, sea.Y + h + BOAT_DRAFT, boat.z},
+			sea.tilt(grad) * boat.yaw,
 			{boat.scale, boat.scale, boat.scale},
 		)
 	}

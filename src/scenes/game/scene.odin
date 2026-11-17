@@ -39,7 +39,7 @@ game_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state := new(Game_State)
 	demo.state = state
 
-	state.move = input.move_2d(&ctx.input, "game.move", up = .W, down = .S, left = .A, right = .D)
+	state.move = input.move_2d(&ctx.input, "game.move", up = .W, down = .S, left = .A, right = .D, description = "Move player")
 
 	state.world = engine.world_create(gfx_ctx)
 	// Player first: its slot ticks before enemies, so enemies chase this frame's position.

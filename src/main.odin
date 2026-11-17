@@ -1,5 +1,5 @@
 // Entry point: forwards to one scene picked by CLI argument, e.g.
-// `./main simple` or `make run ARGS=simple`. Defaults to "benchmark".
+// `./main skinned` or `make run ARGS=skinned`. Defaults to "benchmark".
 // Number keys 1-9 switch scene at runtime (order of SCENES); M toggles MSAA.
 // `./main benchmark --bench 10` runs 10 seconds without input, prints stats, exits.
 // Fullscreen at desktop size by default (skips the compositor); `--WINDOWED` opts out.
