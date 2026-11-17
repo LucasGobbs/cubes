@@ -7,6 +7,7 @@ import "core:log"
 import "core:os"
 import "gfx"
 import "input"
+import "jobs"
 import sdl "vendor:sdl3"
 
 // Number keys bind the first MAX_SCENE_KEYS scenes (1-9, 0); the rest open only
@@ -25,6 +26,9 @@ Config :: struct {
 	after_frame: proc(ctx: ^Context, scene_name: string, dt: f32, user: rawptr), // may call request_quit
 	before_exit: proc(ctx: ^Context, scene_name: string, user: rawptr), // after the loop, before teardown
 	user:        rawptr,
+	// Drawn while a scene loads behind the covered transition: called every frame inside the
+	// open frame (extract time), with the load fraction 0..1. nil = a progress bar in the overlay.
+	loading_screen: proc(ctx: ^Context, progress: f32, user: rawptr),
 	fixed_hz:          f32, // Scene.fixed_tick rate; 0 = 30
 	max_fixed_updates: int, // steps per frame cap; 0 = 5
 }
@@ -34,6 +38,9 @@ Config :: struct {
 @(private) fixed_accumulator: f32
 @(private) switch_count: int
 @(private) quit_action, msaa_action: input.Button_Action
+@(private) shift_action, pop_action: input.Button_Action // dev: Shift+number pushes, Backspace pops
+@(private) preload: ^Load_Context // preload_scene: the single in-flight/finished preload
+@(private) dropped_loads: [dynamic]^Load_Context // replaced preloads finishing in the background
 @(private) switch_actions: [MAX_SCENE_KEYS]input.Button_Action
 // Input state before the scene registered its own actions; switching rewinds
 // to it so scenes do not accumulate dead actions and bindings.
@@ -60,15 +67,26 @@ host_run :: proc(config: Config, scene: Scene) {
 	// Fullscreen skips the compositor (~2 ms floor, 16 ms spikes); --WINDOWED opts out.
 	created := context_create(&ctx, config.title, config.width, config.height, config.fullscreen, config.resizable, config.cursor)
 	assert(created)
+	jobs.init(&ctx.jobs)
+	ctx.gfx.renderer.jobs = &ctx.jobs
 
-	quit_action = input.button(&ctx.input, "app.quit", .ESCAPE)
-	msaa_action = input.button(&ctx.input, "app.msaa", .M)
+	quit_action = input.button(&ctx.input, "app.quit", .ESCAPE, "Quit")
+	msaa_action = input.button(&ctx.input, "app.msaa", .M, "Toggle MSAA")
+	shift_action = input.button(&ctx.input, "app.push_modifier", .LSHIFT, "Hold with a scene number to push it")
+	input.bind_key(&ctx.input, shift_action, .RSHIFT)
+	pop_action = input.button(&ctx.input, "app.pop", .BACKSPACE, "Pop scene")
 	for index in 0 ..< switch_count {
-		switch_actions[index] = input.button(&ctx.input, config.scenes[index].name, input.Key(int(input.Key._1) + index))
+		switch_actions[index] = input.button(&ctx.input, config.scenes[index].name, input.Key(int(input.Key._1) + index), config.scenes[index].name)
 	}
 	transition_create(&ctx.gfx)
 	stats_create(&ctx)
 	scene_input_mark = input.system_mark(&ctx.input)
+	if host_scene.load != nil {
+		// Startup has no transition to hide the wait: load synchronously.
+		loaded, ok := load_finish(load_start(&ctx.jobs, host_scene, config.start))
+		assert(ok, "start scene failed to load")
+		host_scene = loaded
+	}
 	scene_ok := host_scene_create(&ctx, &host_scene)
 	assert(scene_ok)
 
@@ -78,6 +96,9 @@ host_run :: proc(config: Config, scene: Scene) {
 	transition_destroy(&ctx.gfx)
 	stats_destroy(&ctx.gfx) // before the device goes: it frees GPU resources
 	host_scene_destroy(&ctx, &host_scene)
+	host_stack_destroy(&ctx)
+	host_loads_destroy()
+	jobs.destroy(&ctx.jobs) // before the device goes
 	context_destroy(&ctx)
 }
 
@@ -118,11 +139,17 @@ host_tick :: proc(ctx: ^Context, delta_time: f32) {
 		on := gfx.renderer_set_msaa(renderer, !renderer.msaa_enabled)
 		log.infof("MSAA %s", on ? "4x" : (renderer.msaa_supported ? "off" : "unsupported"))
 	}
+	shift := input.down(&ctx.input, shift_action)
 	for index in 0 ..< switch_count {
-		if index != current_scene && input.pressed(&ctx.input, switch_actions[index]) {
-			change_scene(host_config.scenes[index].name, .Fade, 0.5)
-		}
+		if !input.pressed(&ctx.input, switch_actions[index]) do continue
+		// shortcut: transition picked by target index, cycles through the grid ones
+		transitions := [?]Scene_Transition{.Dots, .Dots_Wave, .Squares, .Circle, .Diamond, .Blinds}
+		transition := transitions[index % len(transitions)]
+		if shift do push_scene(host_config.scenes[index].name, .Keep, transition, 0.8)
+		else if index != current_scene do change_scene(host_config.scenes[index].name, transition, 0.8)
 	}
+	if input.pressed(&ctx.input, pop_action) do pop_scene(.Dots, 0.8)
+	host_loads_tick(ctx)
 	camera_update(ctx, delta_time)
 	if transition_tick(ctx, scene, delta_time) do return
 	stats_tick(ctx, delta_time, scene.name)
@@ -151,23 +178,45 @@ host_tick :: proc(ctx: ^Context, delta_time: f32) {
 	if host_config.after_frame != nil do host_config.after_frame(ctx, scene.name, delta_time, host_config.user)
 }
 
-// Tears the running scene down and starts another without restarting the
-// device. Runs at the top of a tick, so no frame or pass is open.
-host_scene_switch :: proc(ctx: ^Context, scene: ^Scene, index: int) {
-	log.infof("switching scene: %s -> %s", host_config.scenes[current_scene].name, host_config.scenes[index].name)
-	_ = sdl.WaitForGPUIdle(ctx.gfx.gpu) // the old scene's buffers may still be in flight
-	host_scene_destroy(ctx, scene)
-	input.system_rewind(&ctx.input, scene_input_mark)
-	fixed_accumulator = 0
-	gfx.set_present_mode(&ctx.gfx, .IMMEDIATE)
-
-	next, _ := scene_lookup(host_config.scenes, host_config.scenes[index].name)
-	scene^ = next
-	current_scene = index
-	if !host_scene_create(ctx, scene) {
-		log.errorf("scene %q failed to create", host_config.scenes[index].name)
-		request_quit(ctx)
+// preload_scene: starts the named scene's load now. One preload at a time; a replaced one finishes
+// in the background and frees its state (see load_discard).
+host_preload :: proc(ctx: ^Context, name: string) {
+	if preload != nil && preload.name == name do return
+	scene, found := scene_lookup(host_config.scenes, name)
+	if !found {
+		log.errorf("preload_scene: unknown scene %q", name)
+		return
 	}
+	if scene.load == nil do return // nothing to do ahead of time
+	if preload != nil do append(&dropped_loads, preload)
+	preload = load_start(&ctx.jobs, scene, name)
+}
+
+// The preload for `name`, handed over to the caller; nil when there is none.
+host_take_preload :: proc(name: string) -> ^Load_Context {
+	if preload == nil || preload.name != name do return nil
+	lc := preload
+	preload = nil
+	return lc
+}
+
+host_loads_tick :: proc(ctx: ^Context) {
+	if name, ok := take_preload_request(); ok do host_preload(ctx, name)
+	for i := len(dropped_loads) - 1; i >= 0; i -= 1 {
+		if !jobs.done(&dropped_loads[i].group) do continue
+		load_discard(dropped_loads[i])
+		unordered_remove(&dropped_loads, i)
+	}
+}
+
+// At exit: wait for and free every load nobody consumed.
+host_loads_destroy :: proc() {
+	if preload != nil do load_discard(preload)
+	preload = nil
+	for lc in dropped_loads do load_discard(lc)
+	delete(dropped_loads)
+	if transition.lc != nil do load_discard(transition.lc)
+	transition.lc = nil
 }
 
 host_scene_create :: proc(ctx: ^Context, scene: ^Scene) -> bool {

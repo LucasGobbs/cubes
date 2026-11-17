@@ -14,3 +14,4 @@ dist/
 # goose shader output (make shaders / make default-shaders)
 shaders/generated/
 src/engine/gfx/generated/
+.cache/

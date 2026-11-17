@@ -24,9 +24,9 @@ capture above).
 
 ```
 make build                     # release binary ./main
-make run ARGS=models           # scenes: simple, editor, models, skinned, postfx, game, platform, forest_naive, forest_instanced, benchmark (default); fullscreen by default
+make run ARGS=skinned           # scenes: skinned, game, forest_naive, forest_instanced, benchmark (default); fullscreen by default
 make run ARGS="benchmark --bench 10"  # run 10 s without input, print fps/draws/triangles/CPU stats, exit
-make run ARGS="models --WINDOWED"     # windowed (goes through the compositor)
+make run ARGS="skinned --WINDOWED"     # windowed (goes through the compositor)
 make editor                    # debug build with the microui editor overlay
 make test                      # shader generation + all test packages
 make dist                      # dist/: binary + static/ assets
@@ -44,10 +44,20 @@ repo root (the `make` targets do this) or from inside `dist/`.
 
 A scene can be plain data: `src/scenes/<name>/scene.json` (name, camera with optional bloom,
 entities with model, clip, position, rotation in degrees, scale; see
-`src/engine/scene_def.odin`). Register it in `SCENES` with `file = "..."`; `src/scenes/data/`
-runs it, `postfx` is one. Game code switches scenes with
+`src/engine/scene_def.odin`). An entry in `SCENES` with no `make` runs from its JSON alone.
+Game code switches scenes with
 `engine.change_scene("forest_instanced", .Fade, 0.6)` (`Cut`, `Fade`, `Fade_White`, `Wipe`);
 the host runs the transition (`src/transition.odin`) and swaps when the screen is covered.
+
+`engine.push_scene(name, policy)` runs a scene on top of the current one and `engine.pop_scene()`
+returns to it (dev keys: Shift+number pushes with `.Keep`, Backspace pops). The policy says what
+happens to the scene underneath: `.Keep` stays alive in memory, `.Disk` writes itself with
+`Scene.suspend` to `.cache/scene_stack/` and is recreated + `Scene.resume`d on pop (data scenes
+have both hooks), `.Discard` is destroyed and recreated from scratch.
+A scene may set `Scene.load`, which runs on a job thread before `create` (CPU work only: parse,
+decode; see the rules in `src/engine/jobs/jobs.odin`). The transition stays covered with a progress
+bar (or `Config.loading_screen`) until it finishes; `engine.preload_scene(name)` starts it early.
+Data scenes decode their models and textures in parallel this way.
 
 ## Forest scenes
 

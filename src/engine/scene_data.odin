@@ -24,24 +24,74 @@ Data_State :: struct {
 }
 
 data_scene :: proc(definition: string) -> Scene {
-	return {name = definition, definition = definition, create = data_create, tick = data_tick, destroy = data_destroy}
+	return {
+		name = definition,
+		definition = definition,
+		load = data_load,
+		unload = data_unload,
+		create = data_create,
+		tick = data_tick,
+		destroy = data_destroy,
+		suspend = data_suspend,
+		resume = data_resume,
+	}
 }
 
-data_create :: proc(scene: ^Scene, ctx: ^Context) -> bool {
+// Job thread: parses the definition, then decodes every model and texture it lists in parallel.
+data_load :: proc(scene: ^Scene, lc: ^Load_Context) -> bool {
 	state := new(Data_State)
 	if !scene_file_load(&state.file, scene.definition) {
 		free(state)
 		return false
 	}
+	scene.state = state
+	load_progress(lc, 0.1)
+	asset_prefetch_def(lc, &state.file.def)
+	return true
+}
+
+// A load that was dropped before create: its parsed file and unconsumed decodes.
+data_unload :: proc(scene: ^Scene) {
+	state := cast(^Data_State)scene.state
+	asset_prefetch_discard_def(&state.file.def)
+	scene_file_destroy(&state.file)
+	free(state)
+	scene.state = nil
+}
+
+data_create :: proc(scene: ^Scene, ctx: ^Context) -> bool {
+	state := cast(^Data_State)scene.state // set by data_load; nil when the scene was not loaded async
+	if state == nil {
+		state = new(Data_State)
+		if !scene_file_load(&state.file, scene.definition) {
+			free(state)
+			return false
+		}
+	}
 	state.mtime, _ = os.last_write_time_by_name(scene.definition)
-	state.ctrl = input.button(&ctx.input, "data.ctrl", .LCTRL)
+	state.ctrl = input.button(&ctx.input, "data.ctrl", .LCTRL, "Hold with S to save")
 	input.bind_key(&ctx.input, state.ctrl, .RCTRL)
-	state.save = input.button(&ctx.input, "data.save", .S)
+	state.save = input.button(&ctx.input, "data.save", .S, "Save scene data")
 	scene.state = state
 	data_set_name(scene, state, state.file.def.name)
 	state.world = world_create(&ctx.gfx)
 	world_spawn_scene(&state.world, &state.file.def)
 	return true
+}
+
+// Stack_Policy.Disk: the live World as a scene file.
+data_suspend :: proc(scene: ^Scene, ctx: ^Context, path: string) -> bool {
+	state := cast(^Data_State)scene.state
+	return world_save_scene(&state.world, &state.file.def, path)
+}
+
+// Applies the suspended file to the freshly created World (entities are matched by name).
+data_resume :: proc(scene: ^Scene, ctx: ^Context, path: string) -> bool {
+	state := cast(^Data_State)scene.state
+	file: Scene_File
+	if !scene_file_load(&file, path) do return false
+	defer scene_file_destroy(&file)
+	return world_apply_scene(&state.world, &file.def)
 }
 
 // Scene.name is read every frame (title, stats): it must own its text, not borrow the JSON arena.
