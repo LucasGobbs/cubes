@@ -1,4 +1,4 @@
-// City step 2: a window atlas from a compute pass, shown on a row of cubes and a poster.
+// City step 4: CPU-generated buildings (cube, blocky, modern, classic) in a gallery row, textured with the window atlas.
 package city
 
 import engine "../../engine"
@@ -17,6 +17,7 @@ City_State :: struct {
 	window:     Window_Texture,
 	sampler:    gfx.Sampler_Handle,
 	seed:       u32,
+	gallery:    engine.Actor_Id, // the row's Raw_Draw; respawned when R re-rolls the seed
 	shape:      u32, // window shape 0..7, T steps it, R keeps it
 	regenerate: bool, // the before-hook regenerates the atlas when set
 	reroll:     input.Button_Action,
@@ -37,7 +38,7 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	demo.state = state
 	state.world = engine.world_create(&ctx.gfx)
 	ctx.gfx.renderer.clear_color = CITY_CLEAR_COLOR
-	engine.camera_fly(ctx, {0, 56, 90}, {0, 56, -30}, CITY_CAMERA_SPEED)
+	engine.camera_fly(ctx, {0, 40, 135}, {0, 22, 0}, CITY_CAMERA_SPEED)
 
 	state.window = window_texture_create(&ctx.gfx)
 	state.sampler = gfx.sampler_create(&ctx.gfx, WINDOW_SAMPLER)
@@ -50,11 +51,11 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		state.window.texture,
 		state.sampler,
 	)
-	engine.spawn(&state.world, engine.Raw_Draw{mesh = gallery_mesh(), material = &state.material})
 
 	state.seed = CITY_SEED_START
 	state.shape = window_shape_for_seed(state.seed)
 	state.regenerate = true
+	gallery_spawn(state)
 	state.reroll = input.button(&ctx.input, "city.reroll", .R, "Re-roll city")
 	state.next_shape = input.button(&ctx.input, "city.shape", .T, "Next window shape")
 	gfx.renderer_add_scene_hook(&ctx.gfx.renderer, gfx.Scene_Hook{name = "city_windows", before = city_before, user = state})
@@ -79,6 +80,8 @@ city_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 		s ~= s << 5
 		state.seed = s
 		state.regenerate = true
+		gallery_despawn(state)
+		gallery_spawn(state)
 	}
 	if input.pressed(&ctx.input, state.next_shape) {
 		state.shape = (state.shape + 1) % WINDOW_SHAPE_COUNT
