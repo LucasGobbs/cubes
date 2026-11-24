@@ -1,10 +1,10 @@
 // Scene registry: a Scene_Entry maps a name to its Odin constructor. Every scene
-// has a JSON definition src/scenes/<name>/scene.json (display name, start camera;
-// data scenes also list their actors). An entry without `make` is run entirely
+// has an optional JSON definition src/scenes/<name>/scene.json (display name, start
+// camera; data scenes also list their actors). An entry without `make` is run entirely
 // from its JSON by data_scene.
 package engine
 
-import "core:log"
+import "core:os"
 import "core:strings"
 
 Scene_Entry :: struct {
@@ -24,7 +24,8 @@ scene_lookup :: proc(entries: []Scene_Entry, name: string) -> (Scene, bool) {
 		if entry.make == nil do return data_scene(strings.clone(path)), true
 
 		scene := entry.make()
-		// Code scenes only borrow the name and camera; the file is not kept.
+		// Code scenes may omit the file; built-in defaults stand in for it.
+		if !os.exists(path) do return scene, true
 		file: Scene_File
 		if scene_file_load(&file, path) {
 			defer scene_file_destroy(&file)
@@ -33,8 +34,6 @@ scene_lookup :: proc(entries: []Scene_Entry, name: string) -> (Scene, bool) {
 				look_at, _ := camera.look_at.?
 				scene.start_camera = Camera_Start{camera.position, look_at}
 			}
-		} else {
-			log.warnf("scene %q: no definition file, using built-in defaults", name)
 		}
 		return scene, true
 	}

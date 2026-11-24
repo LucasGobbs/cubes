@@ -15,3 +15,7 @@ dist/
 shaders/generated/
 src/engine/gfx/generated/
 .cache/
+# stray local artifacts
+/forest_naive
+/.baseline.txt
+/omp-session-*.html
