@@ -1,4 +1,4 @@
-// City step 11: cars on every street, animated in the vertex shader. Night view gets them with the streetlights. Dev view draws streets. Night sky on a camera-following lampshade.
+// City step 12 (polish): auto-orbit camera for recording, F1 stats. Keys: R re-roll city, G dev view (streets), B bloom, F distance fog, O auto-orbit, WASD/mouse fly, F1 stats, P log stats, Q/E scene.
 package city
 
 import engine "../../engine"
@@ -52,6 +52,8 @@ City_State :: struct {
 	toggle_fog:   input.Button_Action,
 	bloom_on:     bool,
 	fog_on:       bool,
+	orbit:        City_Orbit,
+	toggle_orbit: input.Button_Action,
 }
 
 city_scene :: proc() -> engine.Scene {
@@ -68,6 +70,7 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	demo.state = state
 	state.world = engine.world_create(&ctx.gfx)
 	engine.camera_fly(ctx, {512, 220, 1250}, {512, 90, 300}, CITY_CAMERA_SPEED)
+	orbit_set(&state.orbit, ctx, CITY_ORBIT_START)
 
 	state.window = window_texture_create(&ctx.gfx)
 	state.sampler = gfx.sampler_create(&ctx.gfx, WINDOW_SAMPLER)
@@ -123,6 +126,7 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.toggle_dev = input.button(&ctx.input, "city.dev", .G, "Toggle dev view (streets)")
 	state.toggle_bloom = input.button(&ctx.input, "city.bloom", .B, "Toggle bloom")
 	state.toggle_fog = input.button(&ctx.input, "city.fog", .F, "Toggle distance fog")
+	state.toggle_orbit = input.button(&ctx.input, "city.orbit", .O, "Toggle auto-orbit camera")
 	gfx.renderer_add_scene_hook(&ctx.gfx.renderer, gfx.Scene_Hook{name = "city_windows", before = city_before, user = state})
 	return true
 }
@@ -158,6 +162,8 @@ city_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 		state.fog_on = !state.fog_on
 		city_apply_effects(state, &ctx.gfx.renderer)
 	}
+	if input.pressed(&ctx.input, state.toggle_orbit) do orbit_set(&state.orbit, ctx, !state.orbit.on)
+	orbit_update(&state.orbit, ctx, delta_time)
 	state.time += delta_time
 	engine.world_update(&state.world, delta_time)
 	engine.world_render(&state.world, ctx.blend)
