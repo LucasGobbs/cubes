@@ -7,7 +7,7 @@ import "core:math"
 import "core:math/linalg"
 
 BUILDING_ROOF :: [4]f32{0, 0, 0, 1} // roofs and spikes are black: the shader multiplies by vertex colour
-building_tints := [6][4]f32{{1, 0.94, 0.8, 1}, {1, 0.96, 0.82, 1}, {0.86, 0.92, 1, 1}, {1, 1, 1, 1}, {0.9, 1, 1, 1}, {1, 0.92, 0.95, 1}} // near white: warm white, yellow, pale blue, white, faint cyan, faint pink; the tile lamp colours dominate
+building_tints := [9][4]f32{{1, 0.94, 0.8, 1}, {1, 0.96, 0.82, 1}, {0.86, 0.92, 1, 1}, {1, 1, 1, 1}, {0.9, 1, 1, 1}, {1, 0.92, 0.95, 1}, {1, 0.72, 0.5, 1}, {0.72, 0.82, 1, 1}, {0.75, 1, 0.88, 1}} // mostly warm, near white: warm white, yellow, pale blue, white, faint cyan, faint pink; a few stronger: amber, slate blue, sea green; the tile lamp colours dominate
 BLOCKY_RECT_TRIES :: 16
 MODERN_SECTOR :: 9 // segments per 90 degrees
 MODERN_SEGMENTS :: 36 // 10 degrees each

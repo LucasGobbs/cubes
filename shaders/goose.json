@@ -69,6 +69,12 @@
       "fragment": "pixelMain"
     },
     {
+      "name": "city_beacons",
+      "source": "shaders/city_beacons.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
       "name": "city_sky_gen",
       "source": "shaders/city_sky_gen.slang",
       "compute": "computeMain"

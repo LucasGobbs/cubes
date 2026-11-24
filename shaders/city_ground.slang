@@ -46,7 +46,7 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     // Beyond the city (uv outside 0..1) the clamped texture would smear its edge row: draw dark outskirts instead.
     float3 city = pow(ground_texture.Sample(ground_sampler, input.uv).rgb, 2.2);
     float inside = step(0.0, input.uv.x) * step(input.uv.x, 1.0) * step(0.0, input.uv.y) * step(input.uv.y, 1.0);
-    float3 lit = lerp(float3(0.006, 0.006, 0.01), city, inside);
+    float3 lit = lerp(float3(0.0012, 0.0012, 0.002), city, inside);
 
     // Same ramp as city.slang: clear at 60% of the view distance, fully fogged at 100%.
     float dist = length(input.to_camera);

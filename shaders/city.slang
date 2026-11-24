@@ -56,6 +56,8 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     float2 uv = (float2(tile % 6, tile / 6) + frac(input.uv)) / 6.0;
     float4 texel = window_texture.SampleGrad(window_sampler, uv, grad_x, grad_y);
     float3 lit = pow(texel.rgb, 2.2) * input.color.rgb;
+    // Night grade: half-strength S-curve in linear light. Dim surfaces sink toward black; lit windows keep their level.
+    lit = lerp(lit, lit * lit * (3.0 - 2.0 * lit), 0.5);
 
     // Same ramp as sea.slang: clear at 60% of the view distance, fully fogged at 100%.
     float dist = length(input.to_camera);

@@ -7,11 +7,11 @@ import input "../../engine/input"
 import shader_parameters "../../shader_parameters"
 
 CITY_CLEAR_COLOR :: [4]f32{0.1, 0.45, 0.1, 1}
-CITY_NIGHT_COLOR :: [4]f32{0.01, 0.01, 0.02, 1}
+CITY_NIGHT_COLOR :: [4]f32{0.002, 0.002, 0.003, 1}
 CITY_CAMERA_SPEED :: 600 // units/s: crossing the 2048-unit city takes ~3.5 s
 CITY_SEED_START :: 1 // fixed start so a run is repeatable; R steps the seed
 CITY_DEV_START :: false // night view on start; G toggles the dev view (streets)
-CITY_FOG :: [4]f32{0.004, 0.005, 0.008, 3200} // linear rgb haze = the sky's lower band (city_sky.slang BELOW); fully fogged beyond the view distance
+CITY_FOG :: [4]f32{0.0015, 0.0018, 0.003, 3200} // linear rgb haze = the sky's lower band (city_sky.slang BELOW); fully fogged beyond the view distance
 
 City_State :: struct {
 	world:        engine.World,
@@ -35,11 +35,14 @@ City_State :: struct {
 	sky:          engine.Actor_Id, // the lampshade's Raw_Draw; only alive in the night view
 	lamps:        engine.Actor_Id, // the streetlights' Raw_Draw; only alive in the night view
 	cars:         engine.Actor_Id, // the cars' Raw_Draw; only alive in the night view
+	beacons:      engine.Actor_Id, // the aviation beacons and roof lights' Raw_Draw; only alive in the night view
 	road_material: gfx.Material, // unlit blue
 	lamp_material: gfx.Material, // streetlight billboards, HDR, additive
 	lamp_pipeline: gfx.Pipeline_Handle,
 	car_material: gfx.Material, // unlit lamp quads, HDR; the car shader sets the colours
 	car_pipeline: gfx.Pipeline_Handle,
+	beacon_material: gfx.Material, // beacon billboards, HDR, additive; the shader blinks them from time
+	beacon_pipeline: gfx.Pipeline_Handle,
 	time:         f32, // seconds, advanced in city_tick; the car shader reads it through user_data
 	bloom:        City_Bloom,
 	dev:          bool,
@@ -110,6 +113,8 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.bloom = city_bloom_create(&ctx.gfx)
 	state.car_pipeline = cars_pipeline_create(&ctx.gfx, state)
 	state.car_material = gfx.material_make(state.car_pipeline)
+	state.beacon_pipeline = beacons_pipeline_create(&ctx.gfx, state)
+	state.beacon_material = gfx.material_make(state.beacon_pipeline)
 	state.bloom_on = true
 	state.fog_on = true
 
@@ -178,6 +183,7 @@ city_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx.material_destroy(&state.road_material)
 	gfx.material_destroy(&state.lamp_material)
 	gfx.material_destroy(&state.car_material)
+	gfx.material_destroy(&state.beacon_material)
 	gfx.material_destroy(&state.sky_material)
 	gfx.material_destroy(&state.ground_material)
 	gfx.pipeline_destroy(&ctx.gfx, state.pipeline)
@@ -185,6 +191,7 @@ city_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx.pipeline_destroy(&ctx.gfx, state.ground_pipeline)
 	gfx.pipeline_destroy(&ctx.gfx, state.car_pipeline)
 	gfx.pipeline_destroy(&ctx.gfx, state.lamp_pipeline)
+	gfx.pipeline_destroy(&ctx.gfx, state.beacon_pipeline)
 	window_texture_destroy(&ctx.gfx, &state.window)
 	sky_texture_destroy(&ctx.gfx, &state.sky_texture)
 	gfx.sampler_destroy(&ctx.gfx, state.sampler)

@@ -1,5 +1,5 @@
 // Whole-city mesh from the plan: every building in one Mesh_Builder, one Raw_Draw. The dev view adds the streets
-// as a second Raw_Draw. The night view adds the cars (cars.odin).
+// as a second Raw_Draw. The night view adds the cars (cars.odin) and the beacons and roof lights (beacons.odin).
 package city
 
 import engine "../../engine"
@@ -69,13 +69,18 @@ city_build_mesh :: proc(p: ^Plan, seed: u32) -> Mesh_Builder {
 	b: Mesh_Builder
 	reserve(&b.vertices, len(p.buildings) * 64)
 	reserve(&b.indices, len(p.buildings) * 96)
-	for plot, i in p.buildings {
-		rng := rng_seed(seed ~ (u32(i + 1) * BUILDING_SEED_MIX))
-		rng_u32(&rng) // first output of a near-zero xorshift state is weakly mixed
-		origin := Vec3{f32(plot.x) + f32(plot.w) / 2, 0, f32(plot.z) + f32(plot.d) / 2}
-		building_proc(plot.kind)(&b, &rng, origin, {f32(plot.w), f32(plot.d)}, int(plot.stories))
-	}
+	for i in 0 ..< len(p.buildings) do building_emit(&b, p, seed, i)
 	return b
+}
+
+// Building i's geometry as the city mesh draws it. Its seeded stream depends only on (seed, i), so a caller that
+// replays a single building gets the same walls, clutter and antenna.
+building_emit :: proc(b: ^Mesh_Builder, p: ^Plan, seed: u32, i: int) {
+	plot := p.buildings[i]
+	rng := rng_seed(seed ~ (u32(i + 1) * BUILDING_SEED_MIX))
+	rng_u32(&rng) // first output of a near-zero xorshift state is weakly mixed
+	origin := Vec3{f32(plot.x) + f32(plot.w) / 2, 0, f32(plot.z) + f32(plot.d) / 2}
+	building_proc(plot.kind)(b, &rng, origin, {f32(plot.w), f32(plot.d)}, int(plot.stories))
 }
 
 city_build_roads :: proc(p: ^Plan) -> Mesh_Builder {
@@ -128,6 +133,7 @@ city_set_dev :: proc(state: ^City_State, renderer: ^gfx.Renderer, dev: bool) {
 		city_despawn_sky(state)
 		city_despawn_lamps(state)
 		city_despawn_cars(state)
+		city_despawn_beacons(state)
 		city_despawn_ground(state)
 		city_spawn_roads(state)
 		renderer.clear_color = CITY_CLEAR_COLOR
@@ -136,6 +142,7 @@ city_set_dev :: proc(state: ^City_State, renderer: ^gfx.Renderer, dev: bool) {
 		city_spawn_sky(state)
 		city_spawn_lamps(state)
 		city_spawn_cars(state)
+		city_spawn_beacons(state)
 		city_spawn_ground(state)
 		renderer.clear_color = CITY_NIGHT_COLOR
 	}
@@ -157,6 +164,7 @@ city_apply_effects :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 city_rebuild :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 	city_despawn(state)
 	city_despawn_cars(state)
+	city_despawn_beacons(state)
 	if state.dev {
 		city_despawn_roads(state)
 	} else {
@@ -171,6 +179,7 @@ city_rebuild :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 	} else {
 		city_spawn_lamps(state)
 		city_spawn_cars(state)
+		city_spawn_beacons(state)
 	}
 }
 

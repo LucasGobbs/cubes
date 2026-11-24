@@ -42,7 +42,7 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     float4 texel = sky_texture.Sample(sky_sampler, input.uv);
     // Vertex colour (1 at the horizon, 0 at the bottom ring) fades the part below the horizon to a dark blue-grey, not
     // to the red horizon glow.
-    static const float3 BELOW = float3(0.004, 0.005, 0.008); // = CITY_FOG rgb in scene.odin: keep equal, so the ground fogs into the sky
+    static const float3 BELOW = float3(0.0015, 0.0018, 0.003); // = CITY_FOG rgb in scene.odin: keep equal, so the ground fogs into the sky
     float3 glow = pow(texel.rgb, 2.2);
-    return float4(lerp(BELOW, glow, pow(input.color.r, 4.0)), 1.0);
+    return float4(lerp(BELOW, glow, pow(input.color.r, 6.0)), 1.0);
 }

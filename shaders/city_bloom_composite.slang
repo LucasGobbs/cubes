@@ -46,5 +46,8 @@ void computeMain(uint2 tid : SV_DispatchThreadID)
     float3 quarter_glow = level_quarter_image.SampleLevel(level_quarter_sampler, uv, 0).rgb;
     float3 eighth_glow = level_eighth_image.SampleLevel(level_eighth_sampler, uv, 0).rgb;
     float3 glow = half_glow * params.weights.x + quarter_glow * params.weights.y + eighth_glow * params.weights.z;
+    // Black floor: the haze lifts only what is above it, so dark streets and roofs stay near black.
+    static const float3 BLOOM_FLOOR = float3(0.012, 0.012, 0.016);
+    glow = max(glow - BLOOM_FLOOR, 0.0);
     output_image[tid] = float4(scene + glow * params.weights.w, 1.0);
 }

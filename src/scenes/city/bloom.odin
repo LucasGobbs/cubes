@@ -8,11 +8,11 @@ import gfx "../../engine/gfx"
 import shader_parameters "../../shader_parameters"
 import "core:mem"
 
-CITY_BLOOM_THRESHOLD :: 0.6 // lit windows, lamps and car lights pass; the lit sky and street do not
+CITY_BLOOM_THRESHOLD :: 0.7 // lit windows, lamps and car lights pass; the lit sky and street do not
 CITY_BLOOM_KNEE :: 0.3 // soft knee: the threshold ramps in over this band
 CITY_BLOOM_INTENSITY :: 1.0
 // Level weights added to the scene: half (tight halo), quarter, eighth (widest glow).
-CITY_BLOOM_WEIGHTS :: [3]f32{0.9, 1.3, 1.6}
+CITY_BLOOM_WEIGHTS :: [3]f32{0.9, 1.0, 0.7}
 // Blur radii in texels of each level: sigma = radius / 2. Eighth-res texels are 8 full-res pixels wide.
 CITY_BLOOM_RADIUS_HALF :: 3
 CITY_BLOOM_RADIUS_QUARTER :: 6

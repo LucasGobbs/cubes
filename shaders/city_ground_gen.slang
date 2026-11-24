@@ -44,7 +44,7 @@ void computeMain(uint2 tid : SV_DispatchThreadID)
 {
     int2 p = int2(tid);
     if (!is_road(p)) {
-        output_image[tid] = float4(0.01, 0.01, 0.015, 1.0);
+        output_image[tid] = float4(0.003, 0.003, 0.005, 1.0);
         return;
     }
 
@@ -64,6 +64,6 @@ void computeMain(uint2 tid : SV_DispatchThreadID)
     uint h = pcg(tid.x ^ (tid.y << 16));
     float grain = 0.8 + 0.2 * float(h) * INV_U32;
 
-    float3 asphalt = float3(0.22, 0.17, 0.12);
+    float3 asphalt = float3(0.13, 0.10, 0.07);
     output_image[tid] = float4(saturate(asphalt * grain * pool * reach), 1.0);
 }
