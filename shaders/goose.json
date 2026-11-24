@@ -60,6 +60,17 @@
       "name": "city_sky_gen",
       "source": "shaders/city_sky_gen.slang",
       "compute": "computeMain"
+    },
+    {
+      "name": "city_ground",
+      "source": "shaders/city_ground.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "city_ground_gen",
+      "source": "shaders/city_ground_gen.slang",
+      "compute": "computeMain"
     }
   ]
 }

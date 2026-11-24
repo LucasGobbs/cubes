@@ -117,12 +117,14 @@ city_set_dev :: proc(state: ^City_State, renderer: ^gfx.Renderer, dev: bool) {
 	if dev {
 		city_despawn_sky(state)
 		city_despawn_lamps(state)
+		city_despawn_ground(state)
 		city_spawn_roads(state)
 		renderer.clear_color = CITY_CLEAR_COLOR
 	} else {
 		city_despawn_roads(state)
 		city_spawn_sky(state)
 		city_spawn_lamps(state)
+		city_spawn_ground(state)
 		renderer.clear_color = CITY_NIGHT_COLOR
 	}
 	city_apply_effects(state, renderer)
@@ -140,7 +142,7 @@ city_apply_effects :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 }
 
 // Re-plans and re-spawns the city for state.seed, keeping the dev overlay in step.
-city_rebuild :: proc(state: ^City_State) {
+city_rebuild :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 	city_despawn(state)
 	if state.dev {
 		city_despawn_roads(state)
@@ -149,6 +151,7 @@ city_rebuild :: proc(state: ^City_State) {
 	}
 	plan_destroy(&state.plan)
 	state.plan = city_plan(state.seed)
+	ground_upload_roads(renderer, &state.ground_texture, state.plan.claimed)
 	city_spawn(state)
 	if state.dev {
 		city_spawn_roads(state)

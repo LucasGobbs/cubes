@@ -1,4 +1,4 @@
-// City step 9: night view gets streetlights, bloom (B) and distance fog (F). Night sky on a camera-following lampshade. Dev view draws streets.
+// City step 10: streets painted into a compute ground texture under the city (night view). Night view gets streetlights, bloom (B) and distance fog (F). Night sky on a camera-following lampshade. Dev view draws streets.
 package city
 
 import engine "../../engine"
@@ -26,6 +26,11 @@ City_State :: struct {
 	sky_sampler:  gfx.Sampler_Handle,
 	sky_pipeline: gfx.Pipeline_Handle,
 	sky_material: gfx.Material,
+	ground_texture:  Ground_Texture,
+	ground_sampler:  gfx.Sampler_Handle,
+	ground_pipeline: gfx.Pipeline_Handle,
+	ground_material: gfx.Material,
+	ground_draw:     engine.Actor_Id, // the street ground quad; only alive in the night view
 	seed:         u32,
 	plan:         Plan,
 	city:         engine.Actor_Id, // the buildings' Raw_Draw; respawned when R re-rolls the seed
@@ -82,6 +87,17 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		state.sky_texture.texture,
 		state.sky_sampler,
 	)
+	state.ground_texture = ground_texture_create(&ctx.gfx)
+	state.ground_sampler = gfx.sampler_create(&ctx.gfx, GROUND_SAMPLER)
+	state.ground_pipeline = ground_pipeline_create(&ctx.gfx)
+	state.ground_material = gfx.material_make(state.ground_pipeline)
+	gfx.material_bind_texture(
+		&state.ground_material,
+		shader_parameters.CITY_GROUND_FRAGMENT_GROUND_TEXTURE,
+		shader_parameters.CITY_GROUND_FRAGMENT_GROUND_SAMPLER,
+		state.ground_texture.texture,
+		state.ground_sampler,
+	)
 	state.road_material = gfx.material_make(gfx.builtin_material_pipeline(&ctx.gfx, .Unlit))
 	gfx.set_unlit_color(&state.road_material, ROAD_COLOR)
 	state.lamp_material = gfx.material_make(gfx.builtin_material_pipeline(&ctx.gfx, .Emissive))
@@ -93,6 +109,7 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.seed = CITY_SEED_START
 	state.regenerate = true
 	state.plan = city_plan(state.seed)
+	ground_upload_roads(&ctx.gfx.renderer, &state.ground_texture, state.plan.claimed)
 	city_spawn(state)
 	city_set_dev(state, &ctx.gfx.renderer, CITY_DEV_START)
 
@@ -111,6 +128,7 @@ city_before :: proc(renderer: ^gfx.Renderer, user: rawptr) {
 	state.regenerate = false
 	window_texture_generate(renderer.gfx_ctx, &state.window, state.seed)
 	sky_texture_generate(renderer.gfx_ctx, &state.sky_texture, state.seed)
+	ground_texture_generate(renderer.gfx_ctx, &state.ground_texture)
 }
 
 city_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
@@ -123,7 +141,7 @@ city_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 		s ~= s << 5
 		state.seed = s
 		state.regenerate = true
-		city_rebuild(state)
+		city_rebuild(state, &ctx.gfx.renderer)
 	}
 	if input.pressed(&ctx.input, state.toggle_dev) do city_set_dev(state, &ctx.gfx.renderer, !state.dev)
 	if input.pressed(&ctx.input, state.toggle_bloom) {
@@ -151,11 +169,15 @@ city_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx.material_destroy(&state.road_material)
 	gfx.material_destroy(&state.lamp_material)
 	gfx.material_destroy(&state.sky_material)
+	gfx.material_destroy(&state.ground_material)
 	gfx.pipeline_destroy(&ctx.gfx, state.pipeline)
 	gfx.pipeline_destroy(&ctx.gfx, state.sky_pipeline)
+	gfx.pipeline_destroy(&ctx.gfx, state.ground_pipeline)
 	window_texture_destroy(&ctx.gfx, &state.window)
 	sky_texture_destroy(&ctx.gfx, &state.sky_texture)
 	gfx.sampler_destroy(&ctx.gfx, state.sampler)
 	gfx.sampler_destroy(&ctx.gfx, state.sky_sampler)
+	gfx.sampler_destroy(&ctx.gfx, state.ground_sampler)
+	ground_texture_destroy(&ctx.gfx, &state.ground_texture)
 	free(state)
 }
