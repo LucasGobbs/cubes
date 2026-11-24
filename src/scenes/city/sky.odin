@@ -14,7 +14,7 @@ SKY_W :: 2048
 SKY_H :: 512
 SKY_SEGMENTS :: 64
 SKY_RADIUS :: 3500 // beyond the city and the sun shadow box; the far plane is infinite (reverse-Z)
-SKY_BOTTOM :: -1500 // below eye level: the lampshade has no floor; horizon colour continues down so no void shows
+SKY_BOTTOM :: -1500 // below eye level: the lampshade has no floor; it fades to dark blue-grey so no void shows
 SKY_TOP :: 1800
 SKY_ABOVE :: 30000 // zenith row stretched far up so the flat cap is never in view
 

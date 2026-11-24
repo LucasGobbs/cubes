@@ -1,18 +1,20 @@
-// Window atlas: 4x4 tiles of 512x512 texels (2048 x 2048). Each tile is 64x64 windows of 8 px, each window a 1 px
+// Window atlas: 6x6 tiles of 512x512 texels (3072 x 3072). Each tile is 64x64 windows of 8 px, each window a 1 px
 // black border around a 6x6 glass interior. A tile's look comes from a hash of (seed, tile index): its lit ratio,
-// its room size (windows per lit or dark room, rooms aligned to the tile grid with a per-tile offset), and its
-// window shape (one of 8 glass masks).
+// its room size (windows per lit or dark room, rooms aligned to the tile grid with a per-tile offset; office tiles
+// use full-width rooms, so whole floors light up), its window shape (one of 10 glass masks), its lamp colour
+// (warm, neutral, cool or rare green-white) and its curtain style (none, blinds, mullions or a cross).
 //
 // Lighting per window: its room is lit with probability lit_ratio. A window in a lit room is off with 8% chance,
 // a window in a dark room is on with 3% chance. Lit windows then get the detail below.
 //
-// Per window (all from the hash, deterministic): a brightness (lit: 0.55..1.0; dark: 0..15% spill), a warm base
-// tint, a fade from the top row (100%) to the bottom row (60%), and up to 3 dark furniture patches in the lower half.
+// Per window (all from the hash, deterministic): a brightness (lit: 0.55..1.0; dark: 0..15% spill), a lamp tint
+// (lamp colour, 0.9..1.0 of it), 8% of lit windows are a flat TV blue, a fade from the top row (100%) to the
+// bottom row (60%), up to 3 dark furniture patches in the lower half, and for blinds a dark row at a random height.
 // Per pixel: independent colour noise and a little grey noise.
 //
 // SDL_GPU binding order for compute: uniforms -> read-write storage textures.
 
-static const uint TILE_COUNT_SIDE = 4;
+static const uint TILE_COUNT_SIDE = 6; // must match TILE_COUNT_SIDE in window_texture.odin
 static const uint TILE_PX = 512;
 static const uint TILE_WINDOWS = 64; // windows per tile side
 static const uint WINDOW_PX = 8;
@@ -58,13 +60,19 @@ float next_rand(inout uint s) {
 // ######        ######         .####.          ##..##        ######
 // ######        ......         .####.          ##..##        .####.
 //
-// 5 arched      6 low strip    7 three panes
-// ..##..        ......         #.#.#.
-// .####.        ######         #.#.#.
-// ######        ######         #.#.#.
-// ######        ......         #.#.#.
-// ######        ......         #.#.#.
-// ######        ......         #.#.#.
+// 5 arched      6 low strip    7 three panes  8 double-hung  9 porthole
+// ..##..        ......         #.#.#.         ######         ..##..
+// .####.        ######         #.#.#.         ######         .####.
+// ######        ######         #.#.#.         ......         ######
+// ######        ......         #.#.#.         ######         ######
+// ######        ......         #.#.#.         ######         .####.
+// ######        ......         #.#.#.         ######         ..##..
+bool porthole(uint x, uint y) {
+    int dx = abs(2 * int(x) - 5);
+    int dy = abs(2 * int(y) - 5);
+    return dx * dx + dy * dy <= 26;
+}
+
 bool glass(uint shape, uint x, uint y) {
     switch (shape) {
         case 1: return y >= 2 && y <= 4;
@@ -74,7 +82,19 @@ bool glass(uint shape, uint x, uint y) {
         case 5: return (y == 0) ? (x >= 2 && x <= 3) : (y == 1) ? (x >= 1 && x <= 4) : true;
         case 6: return y == 1 || y == 2;
         case 7: return x % 2 == 0;
+        case 8: return y != 2;
+        case 9: return porthole(x, y);
         default: return true;
+    }
+}
+
+// Lamp colour per tile: 0 warm, 1 neutral, 2 cool, 3 green-white (rare).
+float3 lamp_colour(uint k) {
+    switch (k) {
+        case 0: return float3(1.0, 0.82, 0.5);
+        case 1: return float3(1.0, 0.95, 0.82);
+        case 2: return float3(0.78, 0.9, 1.0);
+        default: return float3(0.82, 1.0, 0.86);
     }
 }
 
@@ -109,18 +129,25 @@ struct TileParams {
     uint shape;
     uint off_x;
     uint off_y;
+    uint lamp;
+    uint curtain; // 0 none, 1 blinds, 2 mullions, 3 cross
 };
 
 TileParams tile_params(uint tile_index) {
     TileParams t;
     t.salt = pcg(pcg(tile_index ^ 0x7F4A7C15u) + params.seed);
     uint s = t.salt;
-    t.lit_ratio = lerp(0.15, 0.75, next_rand(s));
-    t.room_w = 1 + min(uint(next_rand(s) * 6.0), 5u);
+    t.lit_ratio = lerp(0.08, 0.9, next_rand(s));
+    float office_r = next_rand(s);
+    uint room_w = 1 + min(uint(next_rand(s) * 6.0), 5u);
+    t.room_w = office_r < 0.3 ? 128u : room_w; // office: a room spans the full row (rooms are 64 wide at most)
     t.room_h = 1 + min(uint(next_rand(s) * 3.0), 2u);
-    t.shape = min(uint(next_rand(s) * 8.0), 7u);
+    t.shape = min(uint(next_rand(s) * 10.0), 9u);
     t.off_x = min(uint(next_rand(s) * float(TILE_WINDOWS)), TILE_WINDOWS - 1);
     t.off_y = min(uint(next_rand(s) * float(TILE_WINDOWS)), TILE_WINDOWS - 1);
+    float lamp_r = next_rand(s);
+    t.lamp = lamp_r < 0.4 ? 0u : (lamp_r < 0.7 ? 1u : (lamp_r < 0.9 ? 2u : 3u));
+    t.curtain = min(uint(next_rand(s) * 4.0), 3u);
     return t;
 }
 
@@ -165,11 +192,18 @@ void computeMain(uint2 tid : SV_DispatchThreadID)
     float bright = lerp(0.55, 1.0, next_rand(s));
     float tint = next_rand(s);
     float spill = next_rand(s) * 0.15;
+    float tv_r = next_rand(s);
+    float blind_r = next_rand(s);
+    uint blind_row = min(uint(next_rand(s) * float(GLASS_PX)), GLASS_PX - 1);
     float level = lit ? bright : spill;
-    float3 base = lerp(float3(1.0, 0.95, 0.8), float3(1.0, 0.85, 0.55), tint);
+    float3 base = (lit && tv_r < 0.08) ? float3(0.5, 0.66, 1.0) : lamp_colour(t.lamp) * lerp(0.9, 1.0, tint);
 
     float fade = lerp(1.0, 0.6, float(y) / float(GLASS_PX - 1));
-    float3 color = base * level * fade * furniture_factor(h ^ 0xA5A5A5A5u, x, y);
+    float blinds = (t.curtain == 1 && lit && blind_r < 0.5 && y == blind_row) ? 0.2 : 1.0;
+    bool wide = t.shape == 0 || t.shape == 1 || t.shape == 4 || t.shape == 6;
+    float mullion = (t.curtain == 2 && wide && x == 2) ? 0.35 : 1.0;
+    float cross_bar = (t.curtain == 3 && (x == 2 || y == 2)) ? 0.35 : 1.0;
+    float3 color = base * level * fade * furniture_factor(h ^ 0xA5A5A5A5u, x, y) * blinds * mullion * cross_bar;
 
     // Per-pixel noise: +-10% per channel, plus +-3% grey.
     uint p = pcg(pcg(tid.x ^ (tid.y << 16)) + params.seed);

@@ -63,6 +63,12 @@
       "fragment": "pixelMain"
     },
     {
+      "name": "city_lights",
+      "source": "shaders/city_lights.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
       "name": "city_sky_gen",
       "source": "shaders/city_sky_gen.slang",
       "compute": "computeMain"
@@ -76,6 +82,11 @@
     {
       "name": "city_ground_gen",
       "source": "shaders/city_ground_gen.slang",
+      "compute": "computeMain"
+    },
+    {
+      "name": "city_bloom_composite",
+      "source": "shaders/city_bloom_composite.slang",
       "compute": "computeMain"
     }
   ]

@@ -12,7 +12,7 @@ static const uint SKY_H = 512;
 static const uint CLOUD_COUNT = 160;
 static const uint GROUP_SIDE = 8;
 static const float INV_U32 = 1.0 / 4294967296.0;
-static const float3 BLUE = float3(0.10, 0.20, 0.50);
+static const float3 BLUE = float3(0.05, 0.09, 0.22);
 static const float3 DARK = float3(0.02, 0.035, 0.12);
 static const float3 BLACK = float3(0.0, 0.0, 0.01);
 
@@ -52,20 +52,22 @@ float3 hsv2rgb(float3 c) {
     return c.z * lerp(float3(1.0, 1.0, 1.0), saturate(p - 1.0), c.y);
 }
 
-// Horizon glow: a warm hue from red through orange to yellow or magenta, with random saturation and value.
+// Horizon glow: dim amber to yellow-orange (never pure red), a quarter of seeds dim magenta. Desaturated so the band
+// reads as faint haze, not paint.
 float3 warm_colour(uint seed) {
     uint s = pcg(seed ^ 0x5EED1234u);
-    float hue = frac(lerp(-0.15, 0.16, next_rand(s)));
-    float sat = lerp(0.6, 0.9, next_rand(s));
-    float val = lerp(0.7, 1.0, next_rand(s));
+    bool magenta = next_rand(s) < 0.25;
+    float hue = magenta ? lerp(0.85, 0.93, next_rand(s)) : lerp(0.05, 0.13, next_rand(s));
+    float sat = magenta ? lerp(0.3, 0.45, next_rand(s)) : lerp(0.45, 0.65, next_rand(s));
+    float val = magenta ? lerp(0.22, 0.3, next_rand(s)) : lerp(0.3, 0.42, next_rand(s));
     float3 c = hsv2rgb(float3(hue, sat, val));
     float lum = dot(c, float3(0.3, 0.59, 0.11));
-    return lerp(c, float3(lum, lum, lum), 0.25); // a little less saturated, so the band reads as glow not paint
+    return lerp(c, float3(lum, lum, lum), 0.35);
 }
 
 // Height h: 0 at the zenith, 1 at the horizon.
 float3 gradient(float h, float3 warm) {
-    float3 c = lerp(warm, BLUE, smoothstep(0.0, 0.09, h)); // narrow warm band: lowest ~10% of the texture
+    float3 c = lerp(warm, BLUE, smoothstep(0.0, 0.07, h)); // narrow warm band: lowest ~7% of the texture
     c = lerp(c, DARK, smoothstep(0.12, 0.35, h));
     return lerp(c, BLACK, smoothstep(0.35, 0.65, h));
 }

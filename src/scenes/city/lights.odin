@@ -1,18 +1,20 @@
-// Streetlights: one star-shaped emissive lamp per spot along both kerbs of every street, merged into one mesh.
-// Lamps are night-only and are drawn unlit with an HDR tint, so bloom picks them up.
+// Streetlights: one camera-facing soft glow per spot along both kerbs of every street, merged into one mesh. The
+// glow is a billboard (shaders/city_lights.slang): a round falloff, HDR, drawn additively so bloom picks it up.
+// Lamps are night-only.
 package city
 
 import engine "../../engine"
+import gfx "../../engine/gfx"
+import shader_parameters "../../shader_parameters"
 import "core:log"
 
 LAMP_SPACING :: 8 // units between posts along a street
 LAMP_JITTER :: 1 // +- units along the street, from the seed
 LAMP_KERB :: 0.5 // unit cell centre inside the road edge
 LAMP_HEIGHT :: 4
-LAMP_STAR :: 1.2 // size of each star quad
-LAMP_TINT :: [4]f32{1, 0.5, 0.15, 1} // sodium orange, sRGB
-LAMP_EMISSION :: 1.8 // HDR multiplier: above the bloom threshold
 LAMP_SEED_MIX :: 0x7F4A7C15 // keeps lamp jitter independent of the building and sky streams
+LAMP_VERTICES :: 4 // one billboard quad per lamp
+LAMP_INDICES :: 6
 
 // Ground-level lamp spots as Vec3{x, LAMP_HEIGHT, z}, in road cells. Caller frees the array.
 // Intersections are left unlit: a spot inside another road's rect is dropped.
@@ -53,25 +55,49 @@ lamp_in_other_road :: proc(p: ^Plan, pos: Vec3, own: int) -> bool {
 	return false
 }
 
-// Star: a flat quad plus two crossed upright quads, each emitted with both windings (unlit draws cull BACK).
+// One quad per lamp. Every corner keeps the lamp centre as position; colour.rg carries the corner, which the shader
+// expands into a camera-facing billboard.
 lamps_build_mesh :: proc(positions: []Vec3) -> Mesh_Builder {
 	b: Mesh_Builder
-	reserve(&b.vertices, len(positions) * 24)
-	reserve(&b.indices, len(positions) * 36)
-	h: f32 = LAMP_STAR / 2
-	white := [4]f32{1, 1, 1, 1}
+	reserve(&b.vertices, len(positions) * LAMP_VERTICES)
+	reserve(&b.indices, len(positions) * LAMP_INDICES)
+	corners := [4][2]f32{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}}
 	for c in positions {
-		quads := [3][4]Vec3 {
-			{{c.x - h, c.y, c.z - h}, {c.x - h, c.y, c.z + h}, {c.x + h, c.y, c.z + h}, {c.x + h, c.y, c.z - h}},
-			{{c.x - h, c.y - h, c.z}, {c.x - h, c.y + h, c.z}, {c.x + h, c.y + h, c.z}, {c.x + h, c.y - h, c.z}},
-			{{c.x, c.y - h, c.z - h}, {c.x, c.y + h, c.z - h}, {c.x, c.y + h, c.z + h}, {c.x, c.y - h, c.z + h}},
+		base := u32(len(b.vertices))
+		for corner in corners {
+			append(&b.vertices, gfx.VertexData{position = c, color = {corner.x, corner.y, 0, 1}})
 		}
-		for q in quads {
-			builder_quad(&b, q[0], q[1], q[2], q[3], {}, {}, white)
-			builder_quad(&b, q[3], q[2], q[1], q[0], {}, {}, white)
-		}
+		append(&b.indices, base, base + 1, base + 2, base, base + 2, base + 3)
 	}
 	return b
+}
+
+lights_pipeline_create :: proc(gfx_ctx: ^gfx.Device, state: ^City_State) -> gfx.Pipeline_Handle {
+	attributes := shader_parameters.city_lights_vertex_attributes(gfx.VertexData)
+	return gfx.pipeline_create(
+		gfx_ctx,
+		{
+			vertex = shader_parameters.city_lights_vertex(),
+			fragment = shader_parameters.city_lights_fragment(),
+			vertex_attributes = attributes[:],
+			vertex_stride = u32(size_of(gfx.VertexData)),
+			depth_test = true,
+			depth_write = false, // glows add into the scene and do not hide each other
+			additive = true,
+			cull_mode = .NONE, // billboards face the camera; either winding is fine
+			bind_draw = lights_bind_draw,
+			user_data = state,
+		},
+	)
+}
+
+lights_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, parameters: gfx.Draw_Parameters) {
+	camera := parameters.camera_position
+	uniforms := shader_parameters.CityLightsVertexUniforms {
+		mvp             = parameters.view_projection * parameters.model_transform,
+		camera_position = {camera.x, camera.y, camera.z, 1},
+	}
+	gfx.draw_push_uniform(draw_context, shader_parameters.CITY_LIGHTS_VERTEX_UNIFORM_BLOCK, &uniforms)
 }
 
 // Spawns the streetlights as one Raw_Draw. Night view only.

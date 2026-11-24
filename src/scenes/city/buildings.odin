@@ -7,12 +7,14 @@ import "core:math"
 import "core:math/linalg"
 
 BUILDING_ROOF :: [4]f32{0, 0, 0, 1} // roofs and spikes are black: the shader multiplies by vertex colour
-building_tints := [4][4]f32{{1, 0.94, 0.8, 1}, {1, 0.9, 0.45, 1}, {0.72, 0.85, 1, 1}, {1, 1, 1, 1}} // warm white, yellow, pale blue, white
+building_tints := [6][4]f32{{1, 0.94, 0.8, 1}, {1, 0.96, 0.82, 1}, {0.86, 0.92, 1, 1}, {1, 1, 1, 1}, {0.9, 1, 1, 1}, {1, 0.92, 0.95, 1}} // near white: warm white, yellow, pale blue, white, faint cyan, faint pink; the tile lamp colours dominate
 BLOCKY_RECT_TRIES :: 16
 MODERN_SECTOR :: 9 // segments per 90 degrees
 MODERN_SEGMENTS :: 36 // 10 degrees each
 TOWER_MIN_WIDTH :: 6 // taper never narrows a tier below this
 CLUTTER_SCALE :: 0.5 // modern clutter stays inside this share of the ellipse's bounding box (cut sectors chord inward)
+ARCH_MIN_FOOTPRINT :: 6 // stepped, slab, twin and L fall back to a cube on smaller plots
+TWIN_MIN_WIDTH :: 8 // two 3-unit towers and a 2-unit gap
 
 Building_Proc :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2]f32, stories: int)
 
@@ -170,9 +172,12 @@ building_modern :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2
 	}
 	centre := Vec3{origin.x, top, origin.z}
 	u := f.uv.x
+	stripe := 0 if rng_int(rng, 0, 1) == 0 else rng_int(rng, 4, 7) // 0: no stripes; else one black segment every stripe segments
 	for k in 0 ..< count {
 		next := ring[(k + 1) % count]
-		u = building_wall(b, f, next, ring[k], origin.y, top, u)
+		wall := f
+		if stripe > 0 && k % stripe == 0 do wall.color = BUILDING_ROOF
+		u = building_wall(b, wall, next, ring[k], origin.y, top, u)
 		builder_tri(b, {next.x, top, next.y}, {ring[k].x, top, ring[k].y}, centre, BUILDING_ROOF)
 	}
 	roof_clutter(b, rng, centred_rect(origin.xz, half * CLUTTER_SCALE), top)
@@ -303,4 +308,122 @@ clutter_span :: proc(rng: ^Rng, lo, hi: f32, want: int) -> (p0, p1: f32, ok: boo
 	size := min(want, avail)
 	p0 = from + f32(rng_int(rng, 0, avail - size))
 	return p0, p0 + f32(size), true
+}
+
+// Stepped tiers: the rect shrinks 2..4 units on every side per step, and the roof of each lower tier is a black ledge.
+building_stepped :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2]f32, stories: int) {
+	if min(footprint.x, footprint.y) < ARCH_MIN_FOOTPRINT || stories < 3 {
+		building_cube(b, rng, origin, footprint, stories)
+		return
+	}
+	f := building_facade(rng)
+	r := centred_rect(origin.xz, footprint / 2)
+	steps := min(rng_int(rng, 3, 6), stories)
+	y := origin.y
+	left := stories
+	for i in 0 ..< steps {
+		inset := f32(rng_int(rng, 2, 4))
+		last := i == steps - 1 || min(r.x1 - r.x0, r.z1 - r.z0) - 2 * inset < 3
+		h := left if last else max(1, left / (steps - i))
+		building_block(b, f, r, y, y + f32(h))
+		y += f32(h)
+		left -= h
+		if last do break
+		r = rect_grow(r, -inset)
+	}
+	roof_clutter(b, rng, r, y)
+}
+
+// A podium spanning the footprint, then a thin slab (40% of the width, full depth) rising from it, offset in x.
+building_slab :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2]f32, stories: int) {
+	if min(footprint.x, footprint.y) < ARCH_MIN_FOOTPRINT || stories < 6 {
+		building_cube(b, rng, origin, footprint, stories)
+		return
+	}
+	f := building_facade(rng)
+	r := centred_rect(origin.xz, footprint / 2)
+	podium := min(rng_int(rng, 3, 6), stories / 3)
+	podium_top := origin.y + f32(podium)
+	building_block(b, f, r, origin.y, podium_top)
+	roof_clutter(b, rng, r, podium_top)
+	sw := max(2, 0.4 * footprint.x)
+	off := rng_range(rng, -1, 1) * (footprint.x - sw) / 2
+	slab := Rect{x0 = origin.x + off - sw / 2, x1 = origin.x + off + sw / 2, z0 = r.z0, z1 = r.z1}
+	top := origin.y + f32(stories)
+	building_block(b, f, slab, podium_top, top)
+	roof_clutter(b, rng, slab, top)
+}
+
+// Two towers split on X with a 2-unit gap and different heights, joined by a 2-story sky bridge at mid-height.
+building_twin :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2]f32, stories: int) {
+	if footprint.x < TWIN_MIN_WIDTH || footprint.y < ARCH_MIN_FOOTPRINT || stories < 8 {
+		building_cube(b, rng, origin, footprint, stories)
+		return
+	}
+	c := origin.xz
+	half := footprint / 2
+	fa := building_facade(rng)
+	fb := building_facade(rng)
+	ha := stories
+	hb := max(4, int(f32(stories) * rng_range(rng, 0.45, 0.8)))
+	ta := Rect{x0 = c.x - half.x, x1 = c.x - 1, z0 = c.y - half.y, z1 = c.y + half.y}
+	tb := Rect{x0 = c.x + 1, x1 = c.x + half.x, z0 = c.y - half.y, z1 = c.y + half.y}
+	building_block(b, fa, ta, origin.y, origin.y + f32(ha))
+	roof_clutter(b, rng, ta, origin.y + f32(ha))
+	building_block(b, fb, tb, origin.y, origin.y + f32(hb))
+	roof_clutter(b, rng, tb, origin.y + f32(hb))
+	// Bridge overlaps both towers by 0.5 so its ends sit inside the towers' walls; the 2 stories stay below hb.
+	by := origin.y + f32(hb / 2)
+	bridge := Rect{x0 = c.x - 1.5, x1 = c.x + 1.5, z0 = c.y - half.y / 2, z1 = c.y + half.y / 2}
+	building_block(b, fa, bridge, by, by + 2)
+}
+
+// L plan: a tall block over one half of the depth and a lower wing over the other half, on a random corner.
+building_lshape :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2]f32, stories: int) {
+	if min(footprint.x, footprint.y) < ARCH_MIN_FOOTPRINT || stories < 4 {
+		building_cube(b, rng, origin, footprint, stories)
+		return
+	}
+	f := building_facade(rng)
+	c := origin.xz
+	half := footprint / 2
+	sx: f32 = 1 if rng_int(rng, 0, 1) == 1 else -1
+	sz: f32 = 1 if rng_int(rng, 0, 1) == 1 else -1
+	wx0, wx1 := half_span(c.x, half.x, sx)
+	wz0, wz1 := half_span(c.y, half.y, sz)
+	tz0, tz1 := half_span(c.y, half.y, -sz)
+	tall := Rect{x0 = c.x - half.x, x1 = c.x + half.x, z0 = tz0, z1 = tz1}
+	wing := Rect{x0 = wx0, x1 = wx1, z0 = wz0, z1 = wz1}
+	wing_h := max(3, int(f32(stories) * rng_range(rng, 0.3, 0.6)))
+	building_block(b, f, tall, origin.y, origin.y + f32(stories))
+	roof_clutter(b, rng, tall, origin.y + f32(stories))
+	building_block(b, f, wing, origin.y, origin.y + f32(wing_h))
+	roof_clutter(b, rng, wing, origin.y + f32(wing_h))
+}
+
+// Near side [c, c + h] when s > 0, else [c - h, c].
+half_span :: proc(c, h, s: f32) -> (lo, hi: f32) {
+	if s > 0 do return c, c + h
+	return c - h, c
+}
+
+// Low box under a sawtooth roof: 3..4-unit pitched teeth run along Z, each a triangular prism with black gable ends.
+// The teeth cover the roof, so no roof clutter.
+building_warehouse :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2]f32, stories: int) {
+	f := building_facade(rng)
+	r := centred_rect(origin.xz, footprint / 2)
+	wall_top := origin.y + f32(stories)
+	building_block(b, f, r, origin.y, wall_top)
+	teeth := max(1, int(math.round(footprint.x / rng_range(rng, 3, 4))))
+	t := footprint.x / f32(teeth)
+	h := t / 2
+	for i in 0 ..< teeth {
+		xa := r.x0 + f32(i) * t
+		xb := xa + t
+		xm := xa + t / 2
+		builder_quad(b, {xa, wall_top, r.z0}, {xa, wall_top, r.z1}, {xm, wall_top + h, r.z1}, {xm, wall_top + h, r.z0}, {}, {}, BUILDING_ROOF)
+		builder_quad(b, {xm, wall_top + h, r.z0}, {xm, wall_top + h, r.z1}, {xb, wall_top, r.z1}, {xb, wall_top, r.z0}, {}, {}, BUILDING_ROOF)
+		builder_tri(b, {xa, wall_top, r.z0}, {xm, wall_top + h, r.z0}, {xb, wall_top, r.z0}, BUILDING_ROOF)
+		builder_tri(b, {xa, wall_top, r.z1}, {xb, wall_top, r.z1}, {xm, wall_top + h, r.z1}, BUILDING_ROOF)
+	}
 }

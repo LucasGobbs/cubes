@@ -47,10 +47,14 @@ SamplerState window_sampler;
 float4 pixelMain(VertexOutput input) : SV_Target0 {
     // The compute shader writes display-referred values into a UNORM texture (storage textures cannot be sRGB);
     // the swapchain is sRGB, so linearize here or dark windows come out washed grey.
-    // Alpha is (tile + 0.5) / 16 (see building_wall): uv wraps inside its tile, so the atlas tile is picked here.
-    uint tile = min(uint(input.color.a * 16.0), 15u);
-    float2 uv = (float2(tile % 4, tile / 4) + frac(input.uv)) / 4.0;
-    float4 texel = window_texture.Sample(window_sampler, uv);
+    // Alpha is (tile + 0.5) / 36 (see building_wall): uv wraps inside its tile, so the atlas tile is picked here.
+    // 36 = TILE_COUNT and 6 = TILE_COUNT_SIDE in window_texture.odin.
+    uint tile = min(uint(input.color.a * 36.0), 35u);
+    // Mip from the unwrapped uv: frac() jumps at every window row, which would pick the coarsest mip on those lines.
+    float2 grad_x = ddx(input.uv) / 6.0;
+    float2 grad_y = ddy(input.uv) / 6.0;
+    float2 uv = (float2(tile % 6, tile / 6) + frac(input.uv)) / 6.0;
+    float4 texel = window_texture.SampleGrad(window_sampler, uv, grad_x, grad_y);
     float3 lit = pow(texel.rgb, 2.2) * input.color.rgb;
 
     // Same ramp as sea.slang: clear at 60% of the view distance, fully fogged at 100%.

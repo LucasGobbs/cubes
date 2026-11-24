@@ -1,4 +1,4 @@
-// City step 12 (polish): auto-orbit camera for recording, F1 stats. Keys: R re-roll city, G dev view (streets), B bloom, F distance fog, O auto-orbit, WASD/mouse fly, F1 stats, P log stats, Q/E scene.
+// City step 13 (size): 2048-unit city, auto-orbit camera for recording, F1 stats. Keys: R re-roll city, G dev view (streets), B bloom, F distance fog, O auto-orbit, WASD/mouse fly, F1 stats, P log stats, Q/E scene.
 package city
 
 import engine "../../engine"
@@ -8,13 +8,10 @@ import shader_parameters "../../shader_parameters"
 
 CITY_CLEAR_COLOR :: [4]f32{0.1, 0.45, 0.1, 1}
 CITY_NIGHT_COLOR :: [4]f32{0.01, 0.01, 0.02, 1}
-CITY_CAMERA_SPEED :: 300 // units/s: crossing the 1024-unit city takes ~3.5 s
+CITY_CAMERA_SPEED :: 600 // units/s: crossing the 2048-unit city takes ~3.5 s
 CITY_SEED_START :: 1 // fixed start so a run is repeatable; R steps the seed
 CITY_DEV_START :: false // night view on start; G toggles the dev view (streets)
-CITY_FOG :: [4]f32{0.10, 0.035, 0.04, 1600} // linear rgb haze, a = view distance; fully fogged beyond it
-CITY_BLOOM_THRESHOLD :: 0.9 // lamps are tinted above this (LAMP_EMISSION), so they bloom and the lit windows barely do
-CITY_BLOOM_INTENSITY :: 0.5
-CITY_BLOOM_RADIUS :: 6
+CITY_FOG :: [4]f32{0.004, 0.005, 0.008, 3200} // linear rgb haze = the sky's lower band (city_sky.slang BELOW); fully fogged beyond the view distance
 
 City_State :: struct {
 	world:        engine.World,
@@ -39,11 +36,12 @@ City_State :: struct {
 	lamps:        engine.Actor_Id, // the streetlights' Raw_Draw; only alive in the night view
 	cars:         engine.Actor_Id, // the cars' Raw_Draw; only alive in the night view
 	road_material: gfx.Material, // unlit blue
-	lamp_material: gfx.Material, // emissive sodium orange
+	lamp_material: gfx.Material, // streetlight billboards, HDR, additive
+	lamp_pipeline: gfx.Pipeline_Handle,
 	car_material: gfx.Material, // unlit lamp quads, HDR; the car shader sets the colours
 	car_pipeline: gfx.Pipeline_Handle,
 	time:         f32, // seconds, advanced in city_tick; the car shader reads it through user_data
-	bloom:        gfx.Bloom,
+	bloom:        City_Bloom,
 	dev:          bool,
 	regenerate:   bool, // the before-hook regenerates the window and sky textures when set
 	reroll:       input.Button_Action,
@@ -69,7 +67,7 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state := new(City_State)
 	demo.state = state
 	state.world = engine.world_create(&ctx.gfx)
-	engine.camera_fly(ctx, {512, 220, 1250}, {512, 90, 300}, CITY_CAMERA_SPEED)
+	engine.camera_fly(ctx, {1024, 420, 2500}, {1024, 60, 1024}, CITY_CAMERA_SPEED)
 	orbit_set(&state.orbit, ctx, CITY_ORBIT_START)
 
 	state.window = window_texture_create(&ctx.gfx)
@@ -107,11 +105,11 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	)
 	state.road_material = gfx.material_make(gfx.builtin_material_pipeline(&ctx.gfx, .Unlit))
 	gfx.set_unlit_color(&state.road_material, ROAD_COLOR)
-	state.lamp_material = gfx.material_make(gfx.builtin_material_pipeline(&ctx.gfx, .Emissive))
-	gfx.set_emissive_color(&state.lamp_material, LAMP_TINT, LAMP_EMISSION)
+	state.lamp_pipeline = lights_pipeline_create(&ctx.gfx, state)
+	state.lamp_material = gfx.material_make(state.lamp_pipeline)
+	state.bloom = city_bloom_create(&ctx.gfx)
 	state.car_pipeline = cars_pipeline_create(&ctx.gfx, state)
 	state.car_material = gfx.material_make(state.car_pipeline)
-	state.bloom = gfx.bloom_create(&ctx.gfx, CITY_BLOOM_THRESHOLD, CITY_BLOOM_INTENSITY, CITY_BLOOM_RADIUS)
 	state.bloom_on = true
 	state.fog_on = true
 
@@ -174,9 +172,7 @@ city_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx.renderer_remove_scene_hook(&ctx.gfx.renderer, state)
 	engine.world_destroy(&state.world)
 	gfx.renderer_clear_passes(&ctx.gfx.renderer, .Post)
-	gfx.compute_pipeline_destroy(&ctx.gfx, state.bloom.prefilter)
-	gfx.compute_pipeline_destroy(&ctx.gfx, state.bloom.blur)
-	gfx.compute_pipeline_destroy(&ctx.gfx, state.bloom.composite)
+	city_bloom_destroy(&ctx.gfx, &state.bloom)
 	plan_destroy(&state.plan)
 	gfx.material_destroy(&state.material)
 	gfx.material_destroy(&state.road_material)
@@ -188,6 +184,7 @@ city_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx.pipeline_destroy(&ctx.gfx, state.sky_pipeline)
 	gfx.pipeline_destroy(&ctx.gfx, state.ground_pipeline)
 	gfx.pipeline_destroy(&ctx.gfx, state.car_pipeline)
+	gfx.pipeline_destroy(&ctx.gfx, state.lamp_pipeline)
 	window_texture_destroy(&ctx.gfx, &state.window)
 	sky_texture_destroy(&ctx.gfx, &state.sky_texture)
 	gfx.sampler_destroy(&ctx.gfx, state.sampler)

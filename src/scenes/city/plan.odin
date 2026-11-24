@@ -1,10 +1,10 @@
-// City layout on the 1024 x 1024 plot grid (1 plot = 1 unit). Streets are claimed cells, not geometry: the city
+// City layout on the 2048 x 2048 plot grid (1 plot = 1 unit). Streets are claimed cells, not geometry: the city
 // mesh draws them only in the dev view. Same seed, same plan.
 package city
 
 import "core:math"
 
-CITY_SIZE :: 1024
+CITY_SIZE :: 2048 // shaders/city_ground_gen.slang and city_cars.slang repeat this: keep equal
 CITY_CENTRE :: CITY_SIZE / 2
 CITY_CELLS :: CITY_SIZE * CITY_SIZE
 AVENUE_WIDTH :: 10
@@ -17,44 +17,53 @@ CLAIM_FREE :: u8(0)
 CLAIM_ROAD :: u8(1)
 CLAIM_BUILDING :: u8(2)
 
-SKYSCRAPER_COUNT :: 20
-SKYSCRAPER_FOOTPRINT_MIN :: 18
-SKYSCRAPER_FOOTPRINT_MAX :: 24
-SKYSCRAPER_STORIES_MIN :: 45
-SKYSCRAPER_STORIES_MAX :: 55
-SKYSCRAPER_MARGIN :: 4
-SKYSCRAPER_ZONE_MIN :: 256
-SKYSCRAPER_ZONE_MAX :: 768
-
-MEDIUM_COUNT :: 48
-MEDIUM_FOOTPRINT_MIN :: 10
-MEDIUM_FOOTPRINT_MAX :: 16
-MEDIUM_STORIES_MIN :: 25
-MEDIUM_STORIES_MAX :: 35
-MEDIUM_MARGIN :: 3
-MEDIUM_ZONE_MIN :: 128
-MEDIUM_ZONE_MAX :: 896
-
+PLACE_TRIES :: 200
+SMALL_MARGIN :: 2
 SMALL_FOOTPRINT_MIN :: 6
 SMALL_FOOTPRINT_MAX :: 14
-SMALL_STORIES_MIN :: 4
-SMALL_STORIES_MAX :: 22
-SMALL_MARGIN :: 2
-SMALL_FADE_RADIUS :: 724 // stories fall from SMALL_STORIES_MAX at the centre to the minimum at this distance
 
-PLACE_TRIES :: 200
+DENSITY_CELL_LARGE :: 160 // value-noise cell sizes: cluster scale, then two finer octaves
+DENSITY_CELL_MID :: 80
+DENSITY_CELL_FINE :: 40
+DENSITY_CENTRE_RADIUS :: 1280 // the centre falloff reaches zero at this distance
+OUTLIER_CHANCE :: 0.05 // share of buildings that are 1.6x taller than their roll (capped at the tier maximum)
+OUTLIER_SCALE :: 1.6
+WAREHOUSE_EDGE :: 0.6 * CITY_CENTRE // small plots beyond this distance from the centre may be warehouses
 
 Building_Kind :: enum u8 {
 	Cube,
 	Blocky,
 	Modern,
 	Tower,
+	Stepped,
+	Slab,
+	Twin,
+	LShape,
+	Warehouse,
 }
 
 Tier :: enum u8 {
 	Skyscraper,
 	Medium,
 	Small,
+}
+
+Tier_Rules :: struct {
+	count:         int,
+	footprint_min: i32,
+	footprint_max: i32,
+	stories_min:   int,
+	stories_max:   int,
+	margin:        i32,
+	zone_min:      i32, // min corners are drawn in [zone_min, zone_max)
+	zone_max:      i32,
+}
+
+// Skyscrapers may be placed anywhere in the zone, weighted by downtown density (they cluster on the peaks).
+tier_rules := [Tier]Tier_Rules {
+	.Skyscraper = {count = 120, footprint_min = 18, footprint_max = 24, stories_min = 55, stories_max = 110, margin = 4, zone_min = 256, zone_max = 1792},
+	.Medium     = {count = 200, footprint_min = 10, footprint_max = 16, stories_min = 20, stories_max = 60, margin = 3, zone_min = 256, zone_max = 1792},
+	.Small      = {footprint_min = SMALL_FOOTPRINT_MIN, footprint_max = SMALL_FOOTPRINT_MAX, stories_min = 3, stories_max = 40, margin = SMALL_MARGIN},
 }
 
 // Min corner and size in plot units; the footprint covers [x, x+w) x [z, z+d).
@@ -90,27 +99,10 @@ plan_build :: proc(seed: u32) -> Plan {
 	}
 	rng := rng_seed(seed)
 	plan_streets(&p, &rng)
-	for _ in 0 ..< SKYSCRAPER_COUNT {
-		plot := Plot {
-			kind    = Building_Kind(rng_int(&rng, 1, 3)),
-			tier    = .Skyscraper,
-			w       = i32(rng_int(&rng, SKYSCRAPER_FOOTPRINT_MIN, SKYSCRAPER_FOOTPRINT_MAX)),
-			d       = i32(rng_int(&rng, SKYSCRAPER_FOOTPRINT_MIN, SKYSCRAPER_FOOTPRINT_MAX)),
-			stories = i32(rng_int(&rng, SKYSCRAPER_STORIES_MIN, SKYSCRAPER_STORIES_MAX)),
-		}
-		plan_place_random(&p, &rng, plot, SKYSCRAPER_ZONE_MIN, SKYSCRAPER_ZONE_MAX, SKYSCRAPER_MARGIN)
+	for tier in Tier.Skyscraper ..= Tier.Medium {
+		for _ in 0 ..< tier_rules[tier].count do plan_place_tier(&p, &rng, seed, tier)
 	}
-	for _ in 0 ..< MEDIUM_COUNT {
-		plot := Plot {
-			kind    = Building_Kind(rng_int(&rng, 0, 3)),
-			tier    = .Medium,
-			w       = i32(rng_int(&rng, MEDIUM_FOOTPRINT_MIN, MEDIUM_FOOTPRINT_MAX)),
-			d       = i32(rng_int(&rng, MEDIUM_FOOTPRINT_MIN, MEDIUM_FOOTPRINT_MAX)),
-			stories = i32(rng_int(&rng, MEDIUM_STORIES_MIN, MEDIUM_STORIES_MAX)),
-		}
-		plan_place_random(&p, &rng, plot, MEDIUM_ZONE_MIN, MEDIUM_ZONE_MAX, MEDIUM_MARGIN)
-	}
-	plan_fill_small(&p, &rng)
+	plan_fill_small(&p, &rng, seed)
 	return p
 }
 
@@ -167,24 +159,27 @@ plan_try_place :: proc(p: ^Plan, x, z, w, d, margin: i32) -> bool {
 	return true
 }
 
-// Random min corners inside [lo, hi) until one fits; the plot is dropped after PLACE_TRIES misses.
-plan_place_random :: proc(p: ^Plan, rng: ^Rng, plot: Plot, lo, hi, margin: i32) -> bool {
+// Random footprint and min corner in the tier's zone until one fits; the plot is dropped after PLACE_TRIES misses.
+plan_place_tier :: proc(p: ^Plan, rng: ^Rng, seed: u32, tier: Tier) {
+	rules := tier_rules[tier]
 	for _ in 0 ..< PLACE_TRIES {
-		x := i32(rng_int(rng, int(lo), int(hi - plot.w)))
-		z := i32(rng_int(rng, int(lo), int(hi - plot.d)))
-		if !plan_try_place(p, x, z, plot.w, plot.d, margin) do continue
-		placed := plot
-		placed.x = x
-		placed.z = z
-		append(&p.buildings, placed)
-		return true
+		w := i32(rng_int(rng, int(rules.footprint_min), int(rules.footprint_max)))
+		d := i32(rng_int(rng, int(rules.footprint_min), int(rules.footprint_max)))
+		x := i32(rng_int(rng, int(rules.zone_min), int(rules.zone_max - w)))
+		z := i32(rng_int(rng, int(rules.zone_min), int(rules.zone_max - d)))
+		density := plan_density(seed, f32(x) + f32(w) / 2, f32(z) + f32(d) / 2)
+		if tier == .Skyscraper && rng_f32(rng) > density * density do continue
+		if !plan_try_place(p, x, z, w, d, rules.margin) do continue
+		plot := Plot{tier = tier, x = x, z = z, w = w, d = d}
+		plan_finish_plot(rng, &plot, density)
+		append(&p.buildings, plot)
+		return
 	}
-	return false
 }
 
 // Every cell in shuffled order is a candidate min corner for a random cube footprint. Shuffled so the packing
 // has no scan-order bias.
-plan_fill_small :: proc(p: ^Plan, rng: ^Rng) {
+plan_fill_small :: proc(p: ^Plan, rng: ^Rng, seed: u32) {
 	order := make([]i32, CITY_CELLS)
 	defer delete(order)
 	for i in 0 ..< CITY_CELLS do order[i] = i32(i)
@@ -192,22 +187,105 @@ plan_fill_small :: proc(p: ^Plan, rng: ^Rng) {
 		j := rng_int(rng, 0, i)
 		order[i], order[j] = order[j], order[i]
 	}
+	rules := tier_rules[Tier.Small]
 	for cell in order {
 		if p.claimed[cell] != CLAIM_FREE do continue
 		x := cell % CITY_SIZE
 		z := cell / CITY_SIZE
-		w := i32(rng_int(rng, SMALL_FOOTPRINT_MIN, SMALL_FOOTPRINT_MAX))
-		d := i32(rng_int(rng, SMALL_FOOTPRINT_MIN, SMALL_FOOTPRINT_MAX))
-		if !plan_try_place(p, x, z, w, d, SMALL_MARGIN) do continue
-		append(&p.buildings, Plot{kind = .Cube, tier = .Small, x = x, z = z, w = w, d = d, stories = small_stories(rng, x, z, w, d)})
+		w := i32(rng_int(rng, int(rules.footprint_min), int(rules.footprint_max)))
+		d := i32(rng_int(rng, int(rules.footprint_min), int(rules.footprint_max)))
+		if !plan_try_place(p, x, z, w, d, rules.margin) do continue
+		density := plan_density(seed, f32(x) + f32(w) / 2, f32(z) + f32(d) / 2)
+		plot := Plot{tier = .Small, x = x, z = z, w = w, d = d}
+		plan_finish_plot(rng, &plot, density)
+		append(&p.buildings, plot)
 	}
 }
 
-// Upper bound falls linearly from SMALL_STORIES_MAX at the city centre to SMALL_STORIES_MIN at SMALL_FADE_RADIUS.
-small_stories :: proc(rng: ^Rng, x, z, w, d: i32) -> i32 {
-	dx := f32(x) + f32(w) / 2 - CITY_CENTRE
-	dz := f32(z) + f32(d) / 2 - CITY_CENTRE
-	dist := math.sqrt(dx * dx + dz * dz)
-	top := max(SMALL_STORIES_MIN, int(f32(SMALL_STORIES_MAX) * (1 - dist / SMALL_FADE_RADIUS)))
-	return i32(rng_int(rng, SMALL_STORIES_MIN, top))
+// Kind and stories for a placed plot. Warehouses are short and only come from small plots at the edge.
+plan_finish_plot :: proc(rng: ^Rng, plot: ^Plot, density: f32) {
+	cx := f32(plot.x) + f32(plot.w) / 2
+	cz := f32(plot.z) + f32(plot.d) / 2
+	plot.kind = plan_kind(rng, plot.tier, plan_centre_distance(cx, cz) > WAREHOUSE_EDGE)
+	if plot.kind == .Warehouse {
+		plot.stories = i32(rng_int(rng, 2, 5))
+		return
+	}
+	rules := tier_rules[plot.tier]
+	// Density sets the top of the roll, so most of a cluster is tall and the fringe stays low (not all 3s).
+	top := rules.stories_min + int(f32(rules.stories_max - rules.stories_min) * (0.1 + 0.9 * density))
+	n := rng_int(rng, rules.stories_min, top)
+	if rng_f32(rng) < OUTLIER_CHANCE do n = int(f32(n) * OUTLIER_SCALE)
+	plot.stories = i32(min(n, rules.stories_max))
+}
+
+// Weighted kind choice. Edge small plots are mostly cubes with some warehouses; the centre gets a mix.
+plan_kind :: proc(rng: ^Rng, tier: Tier, edge: bool) -> Building_Kind {
+	weights: [Building_Kind]int
+	switch tier {
+	case .Skyscraper:
+		weights = #partial [Building_Kind]int{.Tower = 3, .Modern = 2, .Stepped = 2, .Slab = 2, .Twin = 2, .LShape = 1, .Blocky = 1}
+	case .Medium:
+		weights = #partial [Building_Kind]int{.Cube = 1, .Blocky = 2, .Modern = 2, .Tower = 2, .Stepped = 2, .Slab = 1, .Twin = 1, .LShape = 1}
+	case .Small:
+		if edge {
+			weights = #partial [Building_Kind]int{.Cube = 7, .Warehouse = 3}
+		} else {
+			weights = #partial [Building_Kind]int{.Cube = 4, .Modern = 1, .Stepped = 2, .LShape = 2, .Slab = 1}
+		}
+	}
+	total := 0
+	for w in weights do total += w
+	r := rng_int(rng, 0, total - 1)
+	for k in Building_Kind {
+		r -= weights[k]
+		if r < 0 do return k
+	}
+	return .Cube
+}
+
+// Distance from the city centre, in plot units.
+plan_centre_distance :: proc(x, z: f32) -> f32 {
+	dx := x - CITY_CENTRE
+	dz := z - CITY_CENTRE
+	return math.sqrt(dx * dx + dz * dz)
+}
+
+// Downtown density 0..1: value noise (three seeded octaves) gives local clusters, a falloff adds the centre.
+plan_density :: proc(seed: u32, x, z: f32) -> f32 {
+	n := 0.5 * value_noise(seed, x, z, DENSITY_CELL_LARGE) + 0.3 * value_noise(seed ~ 0x51ED27, x, z, DENSITY_CELL_MID) + 0.2 * value_noise(seed ~ 0xA3C59A, x, z, DENSITY_CELL_FINE)
+	cluster := clamp((n - 0.4) * 3, 0, 1)
+	centre := clamp(1 - plan_centre_distance(x, z) / DENSITY_CENTRE_RADIUS, 0, 1)
+	return clamp(0.7 * cluster + 0.5 * centre, 0, 1)
+}
+
+// Smooth value noise in [0, 1): hashed lattice values, smoothstep-blended.
+value_noise :: proc(seed: u32, x, z, cell: f32) -> f32 {
+	gx := x / cell
+	gz := z / cell
+	fx := math.floor(gx)
+	fz := math.floor(gz)
+	tx := smoothstep01(gx - fx)
+	tz := smoothstep01(gz - fz)
+	ix := i32(fx)
+	iz := i32(fz)
+	a := lattice_hash(seed, ix, iz)
+	b := lattice_hash(seed, ix + 1, iz)
+	c := lattice_hash(seed, ix, iz + 1)
+	d := lattice_hash(seed, ix + 1, iz + 1)
+	return mix01(mix01(a, b, tx), mix01(c, d, tx), tz)
+}
+
+lattice_hash :: proc(seed: u32, x, z: i32) -> f32 {
+	r := rng_seed(seed ~ (u32(x) * 0x27D4EB2D) ~ (u32(z) * 0x165667B1))
+	rng_u32(&r) // first output of a near-zero xorshift state is weakly mixed
+	return rng_f32(&r)
+}
+
+smoothstep01 :: proc(t: f32) -> f32 {
+	return t * t * (3 - 2 * t)
+}
+
+mix01 :: proc(a, b, t: f32) -> f32 {
+	return a + (b - a) * t
 }

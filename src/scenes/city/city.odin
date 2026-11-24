@@ -50,6 +50,16 @@ building_proc :: proc(kind: Building_Kind) -> Building_Proc {
 		return building_modern
 	case .Tower:
 		return building_tower
+	case .Stepped:
+		return building_stepped
+	case .Slab:
+		return building_slab
+	case .Twin:
+		return building_twin
+	case .LShape:
+		return building_lshape
+	case .Warehouse:
+		return building_warehouse
 	}
 	unreachable()
 }
@@ -137,7 +147,7 @@ city_apply_effects :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 	night := !state.dev
 	renderer.fog = CITY_FOG if night && state.fog_on else {}
 	if night && state.bloom_on {
-		gfx.renderer_set_passes(renderer, .Post, []gfx.Render_Pass{gfx.bloom_pass(&state.bloom)})
+		gfx.renderer_set_passes(renderer, .Post, []gfx.Render_Pass{city_bloom_pass(&state.bloom)})
 	} else {
 		gfx.renderer_clear_passes(renderer, .Post)
 	}

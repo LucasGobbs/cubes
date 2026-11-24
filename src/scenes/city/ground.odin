@@ -1,4 +1,4 @@
-// Street ground: a compute pass paints the road plan into a 1024x1024 texture (1 texel = 1 unit) under the whole city.
+// Street ground: a compute pass paints the road plan into a 2048x2048 texture (1 texel = 1 unit) under the whole city.
 // The plan reaches the GPU as one bit per cell in a read-only storage buffer. The night view draws one quad with it.
 package city
 
@@ -8,13 +8,19 @@ import shader_parameters "../../shader_parameters"
 import sdl "vendor:sdl3"
 
 GROUND_Y :: -0.02 // just under the buildings' floor and the streets' ROAD_HEIGHT; the quad is never seen from below
+GROUND_MARGIN :: 12000 // the quad reaches this far past the city on every side; uv outside 0..1 is dark outskirts
 GROUND_MASK_WORDS :: CITY_CELLS / 32
+// Trilinear + 8x aniso: lanes (1 texel) fade to an average at a distance instead of shimmering.
 GROUND_SAMPLER :: sdl.GPUSamplerCreateInfo {
-	min_filter     = .LINEAR,
-	mag_filter     = .LINEAR,
-	address_mode_u = .CLAMP_TO_EDGE,
-	address_mode_v = .CLAMP_TO_EDGE,
-	address_mode_w = .CLAMP_TO_EDGE,
+	min_filter        = .LINEAR,
+	mag_filter        = .LINEAR,
+	mipmap_mode       = .LINEAR,
+	address_mode_u    = .CLAMP_TO_EDGE,
+	address_mode_v    = .CLAMP_TO_EDGE,
+	address_mode_w    = .CLAMP_TO_EDGE,
+	enable_anisotropy = true,
+	max_anisotropy    = 8,
+	max_lod           = 1000,
 }
 
 Ground_Texture :: struct {
@@ -35,7 +41,15 @@ ground_pack_roads :: proc(claimed: []u8) -> []u32 {
 ground_texture_create :: proc(gfx_ctx: ^gfx.Device) -> Ground_Texture {
 	return {
 		pipeline = gfx.compute_pipeline_create(gfx_ctx, shader_parameters.city_ground_gen_compute()),
-		texture = gfx.texture_create_with_usage(gfx_ctx, CITY_SIZE, CITY_SIZE, .R8G8B8A8_UNORM, {.SAMPLER, .COMPUTE_STORAGE_WRITE}),
+		texture = gfx.texture_create_with_usage(
+			gfx_ctx,
+			CITY_SIZE,
+			CITY_SIZE,
+			.R8G8B8A8_UNORM,
+			{.SAMPLER, .COMPUTE_STORAGE_WRITE, .COLOR_TARGET},
+			._1,
+			gfx.mip_level_count(CITY_SIZE, CITY_SIZE),
+		),
 		mask = gfx.buffer_create(gfx_ctx, u32(GROUND_MASK_WORDS * size_of(u32)), .COMPUTE_STORAGE_READ),
 	}
 }
@@ -70,6 +84,7 @@ ground_texture_generate :: proc(gfx_ctx: ^gfx.Device, ground: ^Ground_Texture) {
 		nil,
 		{ground.mask},
 	)
+	sdl.GenerateMipmapsForGPUTexture(gfx_ctx.command_buffer, gfx.texture_get(gfx_ctx, ground.texture).handle)
 }
 
 ground_pipeline_create :: proc(gfx_ctx: ^gfx.Device) -> gfx.Pipeline_Handle {
@@ -99,11 +114,12 @@ ground_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, par
 	gfx.draw_push_uniform(draw_context, shader_parameters.CITY_GROUND_VERTEX_UNIFORM_BLOCK, &uniforms)
 }
 
-// The whole city footprint as one quad; uv 0..1 maps the ground texture across it.
+// The city plus GROUND_MARGIN on every side as one quad; uv = world / CITY_SIZE, so the texture covers 0..1.
 ground_build_mesh :: proc() -> Mesh_Builder {
 	b: Mesh_Builder
 	s := f32(CITY_SIZE)
-	builder_quad(&b, {0, GROUND_Y, 0}, {0, GROUND_Y, s}, {s, GROUND_Y, s}, {s, GROUND_Y, 0}, {0, 0}, {1, 1}, {1, 1, 1, 1})
+	lo, hi := -f32(GROUND_MARGIN), s + f32(GROUND_MARGIN)
+	builder_quad(&b, {lo, GROUND_Y, lo}, {lo, GROUND_Y, hi}, {hi, GROUND_Y, hi}, {hi, GROUND_Y, lo}, {lo / s, lo / s}, {hi / s, hi / s}, {1, 1, 1, 1})
 	return b
 }
 

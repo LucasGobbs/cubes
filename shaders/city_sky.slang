@@ -40,6 +40,9 @@ SamplerState sky_sampler;
 float4 pixelMain(VertexOutput input) : SV_Target0 {
     // The compute shader writes display-referred values into a UNORM texture; linearize for the sRGB swapchain.
     float4 texel = sky_texture.Sample(sky_sampler, input.uv);
-    // Vertex colour fades the part below the horizon to black (ground haze).
-    return float4(pow(texel.rgb, 2.2) * input.color.rgb, 1.0);
+    // Vertex colour (1 at the horizon, 0 at the bottom ring) fades the part below the horizon to a dark blue-grey, not
+    // to the red horizon glow.
+    static const float3 BELOW = float3(0.004, 0.005, 0.008); // = CITY_FOG rgb in scene.odin: keep equal, so the ground fogs into the sky
+    float3 glow = pow(texel.rgb, 2.2);
+    return float4(lerp(BELOW, glow, pow(input.color.r, 4.0)), 1.0);
 }

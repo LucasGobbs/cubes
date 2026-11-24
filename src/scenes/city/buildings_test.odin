@@ -4,7 +4,7 @@ import "core:testing"
 
 @(test)
 test_building_indices_valid :: proc(t: ^testing.T) {
-	gens := [4]Building_Proc{building_cube, building_blocky, building_modern, building_tower}
+	gens := [9]Building_Proc{building_cube, building_blocky, building_modern, building_tower, building_stepped, building_slab, building_twin, building_lshape, building_warehouse}
 	for gen, k in gens {
 		for seed in u32(1) ..< 64 {
 			b: Mesh_Builder

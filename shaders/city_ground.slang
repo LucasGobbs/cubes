@@ -43,7 +43,10 @@ SamplerState ground_sampler;
 [shader("fragment")]
 float4 pixelMain(VertexOutput input) : SV_Target0 {
     // The compute shader writes display-referred values into a UNORM texture; linearize for the sRGB swapchain.
-    float3 lit = pow(ground_texture.Sample(ground_sampler, input.uv).rgb, 2.2);
+    // Beyond the city (uv outside 0..1) the clamped texture would smear its edge row: draw dark outskirts instead.
+    float3 city = pow(ground_texture.Sample(ground_sampler, input.uv).rgb, 2.2);
+    float inside = step(0.0, input.uv.x) * step(input.uv.x, 1.0) * step(0.0, input.uv.y) * step(input.uv.y, 1.0);
+    float3 lit = lerp(float3(0.006, 0.006, 0.01), city, inside);
 
     // Same ramp as city.slang: clear at 60% of the view distance, fully fogged at 100%.
     float dist = length(input.to_camera);

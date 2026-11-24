@@ -9,10 +9,10 @@ import input "../../engine/input"
 import "core:math"
 import "core:math/linalg"
 
-ORBIT_CENTRE :: [3]f32{512, 0, 512}
-ORBIT_RADIUS :: 760
-ORBIT_HEIGHT :: 260
-ORBIT_TARGET :: [3]f32{512, 40, 512}
+ORBIT_CENTRE :: [3]f32{1024, 0, 1024}
+ORBIT_RADIUS :: 1500
+ORBIT_HEIGHT :: 520
+ORBIT_TARGET :: [3]f32{1024, 40, 1024}
 ORBIT_SPEED :: 0.05 // rad/s: one lap in about 2 minutes
 ORBIT_BLEND_TIME :: 1 // s to ease from the fly pose onto the orbit path
 CITY_ORBIT_START :: false // orbit on at start; O toggles

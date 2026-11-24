@@ -11,10 +11,9 @@ import "core:log"
 CAR_LANE_LENGTH :: CITY_SIZE // streets run edge to edge
 CAR_SPEED_MIN :: 10 // units/s, one speed per lane
 CAR_SPEED_MAX :: 20
-CAR_GAP_MIN :: 6 // units between cars in a lane
-CAR_GAP_MAX :: 28
-CAR_LAMP_OFFSET :: 0.175 // lamps sit 0.35 apart across the lane, centred on it
-CAR_LAMP_SIZE :: 0.45
+CAR_GAP_MIN :: 12 // units between cars in a lane
+CAR_GAP_MAX :: 44
+CAR_LAMP_OFFSET :: 0.3 // lamps sit 0.6 apart across the lane, centred on it
 CAR_LAMP_HEIGHT :: 0.35
 CAR_VERTICES :: 8 // two lamp quads
 CAR_INDICES :: 12
@@ -52,12 +51,11 @@ emit_car :: proc(b: ^Mesh_Builder, along_z: bool, across, along, sign, s, speed:
 	centre := along * axis + across * side
 	centre.y = CAR_LAMP_HEIGHT
 	base := u32(len(b.vertices))
-	h: f32 = CAR_LAMP_SIZE / 2
+	corners := [4][2]f32{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}}
 	for k in ([2]f32{-1, 1}) {
 		c := centre + side * (k * CAR_LAMP_OFFSET)
-		corners := [4]Vec3{c - axis * h - side * h, c + axis * h - side * h, c + axis * h + side * h, c - axis * h + side * h}
 		for corner in corners {
-			append(&b.vertices, gfx.VertexData{position = corner, color = {1, 1, 1, 1}, uv = {speed, s}, normal = {dir.x, 0, dir.z}})
+			append(&b.vertices, gfx.VertexData{position = c, color = {corner.x, corner.y, 0, 1}, uv = {speed, s}, normal = {dir.x, 0, dir.z}})
 		}
 	}
 	for q in u32(0) ..< 2 {
@@ -76,8 +74,9 @@ cars_pipeline_create :: proc(gfx_ctx: ^gfx.Device, state: ^City_State) -> gfx.Pi
 			vertex_attributes = attributes[:],
 			vertex_stride = u32(size_of(gfx.VertexData)),
 			depth_test = true,
-			depth_write = true,
-			cull_mode = .NONE, // lamp quads are flat and seen from either side
+			depth_write = false, // glows add into the scene and do not hide each other
+			additive = true,
+			cull_mode = .NONE, // billboards face the camera; either winding is fine
 			bind_draw = cars_bind_draw,
 			user_data = state,
 		},
