@@ -17,13 +17,13 @@ CITY_WINDOWS_COMPUTE_THREAD_COUNT :: [3]u32{8, 8, 1}
 
 CityWindowsComputeWindowParams :: struct #max_field_align(16) {
 	seed: u32,
-	pad0: u32,
+	shape: u32,
 	pad1: u32,
 	pad2: u32,
 }
 
 #assert(offset_of(CityWindowsComputeWindowParams, seed) == 0)
-#assert(offset_of(CityWindowsComputeWindowParams, pad0) == 4)
+#assert(offset_of(CityWindowsComputeWindowParams, shape) == 4)
 #assert(offset_of(CityWindowsComputeWindowParams, pad1) == 8)
 #assert(offset_of(CityWindowsComputeWindowParams, pad2) == 12)
 #assert(size_of(CityWindowsComputeWindowParams) == 16)
@@ -96,13 +96,13 @@ CITY_WINDOWS_COMPUTE_THREAD_COUNT :: [3]u32{8, 8, 1}
 
 CityWindowsComputeWindowParams :: struct #max_field_align(16) {
 	seed: u32,
-	pad0: u32,
+	shape: u32,
 	pad1: u32,
 	pad2: u32,
 }
 
 #assert(offset_of(CityWindowsComputeWindowParams, seed) == 0)
-#assert(offset_of(CityWindowsComputeWindowParams, pad0) == 4)
+#assert(offset_of(CityWindowsComputeWindowParams, shape) == 4)
 #assert(offset_of(CityWindowsComputeWindowParams, pad1) == 8)
 #assert(offset_of(CityWindowsComputeWindowParams, pad2) == 12)
 #assert(size_of(CityWindowsComputeWindowParams) == 16)
@@ -175,13 +175,13 @@ CITY_WINDOWS_COMPUTE_THREAD_COUNT :: [3]u32{8, 8, 1}
 
 CityWindowsComputeWindowParams :: struct #max_field_align(16) {
 	seed: u32,
-	pad0: u32,
+	shape: u32,
 	pad1: u32,
 	pad2: u32,
 }
 
 #assert(offset_of(CityWindowsComputeWindowParams, seed) == 0)
-#assert(offset_of(CityWindowsComputeWindowParams, pad0) == 4)
+#assert(offset_of(CityWindowsComputeWindowParams, shape) == 4)
 #assert(offset_of(CityWindowsComputeWindowParams, pad1) == 8)
 #assert(offset_of(CityWindowsComputeWindowParams, pad2) == 12)
 #assert(size_of(CityWindowsComputeWindowParams) == 16)

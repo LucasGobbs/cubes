@@ -7,6 +7,7 @@ import "core:mem"
 import sdl "vendor:sdl3"
 
 WINDOW_TEXTURE_SIZE :: 512
+WINDOW_SHAPE_COUNT :: 8 // shader glass() masks, see shaders/city_windows.slang
 
 WINDOW_SAMPLER :: sdl.GPUSamplerCreateInfo {
 	min_filter     = .NEAREST,
@@ -34,9 +35,20 @@ window_texture_create :: proc(gfx_ctx: ^gfx.Device) -> Window_Texture {
 	}
 }
 
+// Shape for a seed: finalizer hash of the seed, so each seed starts with a varied window.
+window_shape_for_seed :: proc(seed: u32) -> u32 {
+	h := seed
+	h ~= h >> 16
+	h *= 0x7feb352d
+	h ~= h >> 15
+	h *= 0x846ca68b
+	h ~= h >> 16
+	return h % WINDOW_SHAPE_COUNT
+}
+
 // Must run outside a render pass with the frame open (scene before-hook).
-window_texture_generate :: proc(gfx_ctx: ^gfx.Device, window: ^Window_Texture, seed: u32) {
-	params := shader_parameters.CityWindowsComputeWindowParams{seed = seed}
+window_texture_generate :: proc(gfx_ctx: ^gfx.Device, window: ^Window_Texture, seed: u32, shape: u32) {
+	params := shader_parameters.CityWindowsComputeWindowParams{seed = seed, shape = shape}
 	groups := WINDOW_TEXTURE_SIZE / shader_parameters.CITY_WINDOWS_COMPUTE_THREAD_COUNT.x
 	gfx.compute_dispatch(
 		gfx_ctx,

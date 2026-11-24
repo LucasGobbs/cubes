@@ -38,5 +38,8 @@ SamplerState window_sampler;
 
 [shader("fragment")]
 float4 pixelMain(VertexOutput input) : SV_Target0 {
-    return window_texture.Sample(window_sampler, input.uv) * input.color;
+    // The compute shader writes display-referred values into a UNORM texture (storage textures cannot be sRGB);
+    // the swapchain is sRGB, so linearize here or dark windows come out washed grey.
+    float4 texel = window_texture.Sample(window_sampler, input.uv);
+    return float4(pow(texel.rgb, 2.2), texel.a) * input.color;
 }

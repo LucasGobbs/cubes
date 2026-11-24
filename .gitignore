@@ -19,3 +19,5 @@ src/engine/gfx/generated/
 /forest_naive
 /.baseline.txt
 /omp-session-*.html
+# city series screenshots (scripts/snap.sh city city-shots/<step>.png)
+/city-shots/
