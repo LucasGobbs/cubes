@@ -143,11 +143,12 @@ Script_API :: struct {
 	mouse:           proc "c" (out: ^[2]f32),
 	hud_text:        proc "c" (text: cstring, x, y: f32),
 	log:             proc "c" (level: i32, msg: cstring), // 0 debug, 1 info, 2 warn, else error
+	camera_position: proc "c" (out: ^[3]f32), // camera world position; zeros with no ctx bound
 }
 ```
 
-`script_api.odin` stores `^World` and `^input.System` in package-level variables bound by `script_bind(world, inputs: ^input.System)`;
-the thunks read them. One world per host in v1 (stated limit).
+`script_api.odin` stores `^World`, `^input.System` and the camera source `^Context` in package-level variables bound by `script_bind(world, inputs: ^input.System, ctx: ^Context = nil)`;
+the thunks read them. One world per host in v1 (stated limit). `ctx` nil makes `camera_position` write zeros.
 
 Why index/generation and out-params: LuaJIT's trace recorder (`lj_crecord.c` `rec_ccall`) compiles C calls only when args and return are number, pointer or enum. A struct passed or returned by value aborted the trace (`NYI: unsupported C function type`), so every thunk takes `(index, generation: u32)` and struct results go through `out: ^Actor_Id`. `input_button(name)` returns the action index (-1 if unknown; engine.lua caches it); `input_down` / `input_pressed` take that index. The Lua `Actor` metatype wraps the pair again, so scripts still see a struct.
 
@@ -176,6 +177,7 @@ typedef struct {
   void (*mouse)(float *out);
   void (*hud_text)(const char *text, float x, float y);
   void (*log)(int32_t level, const char *msg);
+  void (*camera_position)(float *out);
 } ScriptAPI;
 ]]
 local api = ffi.cast("ScriptAPI*", api_ptr)
@@ -199,6 +201,13 @@ ffi.metatype("Actor", {
     end,
   },
 })
+
+-- Reused buffer: the returned float[3] cdata is overwritten by the next call; read c[0..2] at once.
+local camera_out = ffi.new("float[3]")
+function M.camera_position()
+  api.camera_position(camera_out)
+  return camera_out
+end
 ```
 
 Layout safety: for every struct shared with Odin, Odin passes `size_of`/`offset_of` values at init; Lua asserts
@@ -338,6 +347,29 @@ Findings:
 - Fixed: batch gap. Cause: `script_batch_tick` did a second full slot scan (`slot_component` per slot, about 0.8 ms at 50000) to build the ids buffer, on top of the scan `script_update` already does. Fix: `script_update` appends batch ids to `Script_Module.ids` in its existing pass; `script_batch_tick` re-checks them (alive, generation, module, faulted) only when a per-actor hook or an earlier batch call ran. Batch now 3.26 ms avg vs per-actor 3.25 ms avg (3 runs each, interleaved, machine load about 28). Not more than 15% faster, so per-actor stays the default. Lua loop shape (`state[a.index]`, `ids[i]` copy) is not the cost: call time 1.78-2.01 ms across variants.
 - Fixed: `BOOTSTRAP_SRC` `make_actor` NYI (`return to lower frame at ffi.new`, then `at ffi.meta.__call`). Cause: closure is entered from a C pcall, so its trace aborts on the return. Fix: `jit.off(make)`; create-time only, interpreted is fine. Trace at `scriptdemo --bench 2` has no NYI/abort/blacklist lines.
 - Per-actor is now about 0.06 us/actor at 50000 (was about 0.6 us). The 3.4 batch-for-thousands guideline no longer has a measured advantage at this body size.
+
+### Benchmark scene: Odin vs Lua
+
+Replica of `benchmark` in Lua: per boat sail, flee from camera, wrap (`boat_step`), sea height and tilt (`sea_wave.lua`, `sea.tilt`). Scenes `benchmark_lua` (`scripts/boat.lua`, per-actor) and `benchmark_lua_batch` (`scripts/boat_batch.lua`, one `tick_all` per frame). Odin baseline `benchmark`. Lua variants skip the Odin boat loop and keep the sea mesh, camera, HUD and keys.
+
+Commands, from repo root: `CUBES_BENCH_PER_MODEL=<n> /tmp/cubes_v <scene> --bench 5`. `n` = boats per model (32 models, so objects = 32n + 12 dragons). Default n = 150. `CUBES_JIT_V=1` shows trace status.
+
+Odin frame ms and Lua `script ms` (per frame), 2 runs each unless noted:
+
+| n | Odin frame ms avg | per-actor script ms avg | batch script ms avg (before split) | batch script ms avg (after split) |
+|---|---|---|---|---|
+| 100 | 27.9, 22.7 | 8.7, 9.0 | 24.9, 22.4 | 7.9, 4.4 |
+| 150 | 25.5, 33.5 | 13.0, 12.5 (3rd run 12.9) | 39.6, 33.0 | 11.1, 2.2, 11.5, 11.4 |
+| 400 | 36.9, 64.0 | 80.8, 46.2 | 78.6, 35.5 | 5.0, 29.6 |
+
+Findings:
+- Noise: machine shared with other agents. Frame ms swings to 100+ ms outliers in both Odin and Lua runs; trust medians and repeats, not single averages. The n=400 numbers differ 2x between runs.
+- Batch was slower than per-actor (about 40 ms vs 13 ms at n=150). Cause: JIT blacklisted the outer `tick_all` loop. The `sea.height` inner loops (`sea_wave.lua:20` unroll limit) inlined into the outer loop trace and aborted it, so `tick_all` ran interpreted.
+- Fix (script side): split `tick_all` into a sail pass and a sea/transform pass. Sea pass no longer blacklisted (`CUBES_JIT_V=1`: `boat_batch.lua:90` compiles to root trace with side traces; `sea_wave.lua:20` unroll-limit lines remain). Batch now about 11 ms at n=150, same as per-actor.
+- Per-actor cost, n=150: about 13 ms per frame, about 6 us per boat. Per-actor and batch are close after the split; per-actor stays the simpler default.
+- `[INFERENCE]` Lua visible instances differ from Odin (2218 vs 2159 at n=150): the Lua variants use unseeded `math.random` for speed and heading, so culling differs. Layout positions are the same.
+- Known limit: per-actor sea time is per boat (`self.t`). Boats added mid-run with `=` start at phase 0 and are out of phase with the sea mesh (Odin uses `sea_state.time`). Batch uses one module clock, no such issue.
+- **No Odin-vs-Lua conclusion yet.** A second interleaved run by the orchestrator (n=150 and 400, 2 runs each) was also unusable: Odin `benchmark` frame avg ranged 25-167 ms (max 3500 ms) when the same scene ran at about 3.3 ms earlier on a quiet machine; load average was 18-34 and free memory very low. Observed only: both Lua variants run without JIT blacklists after the split, and per-actor and batch are the same order of magnitude. Repeat on an idle machine (close other apps, check `uptime`) and compare `script ms` p50 plus frame ms p50 before drawing a ratio.
 
 ## 8. Hot reload
 

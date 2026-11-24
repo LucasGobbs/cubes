@@ -319,6 +319,31 @@ script_api_engine_layout_matches_odin :: proc(t: ^testing.T) {
 }
 
 @(test)
+script_api_camera_position_without_ctx_is_zero :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
+	path := script_test_write("camera_no_ctx", `
+local M = {}
+function M.tick(self, a, dt)
+  local c = require("engine").camera_position()
+  cam_x, cam_y, cam_z = c[0], c[1], c[2]
+end
+return M
+`)
+	defer os.remove(path)
+	inputs := input.system_create(mock.create())
+	defer input.system_destroy(&inputs)
+	world := world_create(nil)
+	defer world_destroy(&world)
+	script_bind(&world, &inputs)
+
+	spawn(&world, Script{path = path})
+	world_update(&world, 0.1)
+	testing.expect_value(t, script_test_number(&world, "cam_x"), f64(0))
+	testing.expect_value(t, script_test_number(&world, "cam_y"), f64(0))
+	testing.expect_value(t, script_test_number(&world, "cam_z"), f64(0))
+}
+
+@(test)
 script_api_stale_handle_is_inert :: proc(t: ^testing.T) {
 	sync.guard(&script_api_lock)
 	owner := script_test_write("stale_owner", `

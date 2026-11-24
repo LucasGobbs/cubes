@@ -22,6 +22,7 @@ typedef struct {
   void (*mouse)(float *out);
   void (*hud_text)(const char *text, float x, float y);
   void (*log)(int32_t level, const char *msg);
+  void (*camera_position)(float *out);
 } ScriptAPI;
 ]]
 
@@ -44,7 +45,7 @@ expect("Actor", ffi.sizeof("Actor"))
 expect("ScriptAPI", ffi.sizeof("ScriptAPI"))
 for _, f in ipairs({ "version", "actor_valid", "actor_transform", "actor_destroy", "actor_find", "actor_prop",
                      "spawn_model", "input_button", "input_down", "input_pressed", "mouse",
-                     "hud_text", "log" }) do
+                     "hud_text", "log", "camera_position" }) do
   expect("ScriptAPI." .. f, ffi.offsetof("ScriptAPI", f))
 end
 
@@ -129,6 +130,14 @@ local mouse_out = ffi.new("float[2]")
 function M.mouse()
   api.mouse(mouse_out)
   return mouse_out
+end
+
+-- Reused buffer: the returned float[3] cdata is overwritten by the next M.camera_position() call.
+local camera_out = ffi.new("float[3]")
+
+function M.camera_position()
+  api.camera_position(camera_out)
+  return camera_out
 end
 
 function M.hud_text(text, x, y)

@@ -18,6 +18,8 @@ SCENES := [?]engine.Scene_Entry {
 	{name = "forest_naive", make = forest_naive.forest_naive_scene},
 	{name = "forest_instanced", make = forest_instanced.forest_instanced_scene},
 	{name = "benchmark", make = benchmark.benchmark_scene},
+	{name = "benchmark_lua", make = benchmark.benchmark_lua_scene},
+	{name = "benchmark_lua_batch", make = benchmark.benchmark_lua_batch_scene},
 	{name = "boat", make = boat.boat_scene},
 	{name = "physics", make = physics.physics_scene},
 	{name = "stencil", make = stencil.stencil_scene},

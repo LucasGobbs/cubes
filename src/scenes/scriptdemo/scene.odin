@@ -77,7 +77,7 @@ scriptdemo_setup :: proc(demo: ^engine.Scene, ctx: ^engine.Context, script_path:
 	state := new(Scriptdemo_State)
 	demo.state = state
 	state.world = engine.world_create(&ctx.gfx)
-	engine.script_bind(&state.world, &ctx.input)
+	engine.script_bind(&state.world, &ctx.input, ctx)
 	engine.camera_fly(ctx)
 	for i in 0 ..< count {
 		transform := engine.Transform{position = scriptdemo_position(i, count)}

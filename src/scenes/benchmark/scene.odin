@@ -11,8 +11,12 @@ import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
+import "core:log"
+import "core:os"
+import "core:strconv"
 
 BENCH_STEP :: 10 // per boat model, per keypress
+BENCH_PER_MODEL :: 150 // default per-model boat count; CUBES_BENCH_PER_MODEL overrides
 
 BOAT_PATHS :: [?]string {
 	"static/models/sea/boat-fan.glb",
@@ -62,13 +66,23 @@ FLEET_CENTER_Z :: -135 // middle of the boat spawn area in benchmark_populate
 FOG_VIEW_DISTANCE :: 700
 FOG_COLOR :: [3]f32{0.671, 0.757, 0.949} // skybox horizon; matches `sky` in sea.slang
 BOAT_DRAFT :: 0.1 // boat origin height above sea level at rest
+FLEE_RADIUS :: 40
+FLEE_TURN_RATE :: 1.5 // rad/s
+SAIL_X_LIMIT :: 700 // boats wrap across x in [-SAIL_X_LIMIT, SAIL_X_LIMIT]
+SAIL_Z_NEAR :: -20 // and across z in [SAIL_Z_FAR, SAIL_Z_NEAR]
+SAIL_Z_FAR :: -650
+BOAT_LUA_PATH :: "scripts/boat.lua"
+BOAT_LUA_BATCH_PATH :: "scripts/boat_batch.lua"
 
-// Boat rest position in x/z and yaw; tick sets its height and tilt from the sea.
+// Rest position in x/z; tick sets its height and tilt from the sea. Heading (radians)
+// drives sailing; yaw is rebuilt from it.
 Boat_Slot :: struct {
-	actor: engine.Actor_Id,
-	x, z:  f32,
-	yaw:   linalg.Quaternionf32,
-	scale: f32,
+	actor:   engine.Actor_Id,
+	x, z:    f32,
+	heading: f32,
+	speed:   f32, // units/s
+	yaw:     linalg.Quaternionf32,
+	scale:   f32,
 }
 
 Benchmark_State :: struct {
@@ -81,6 +95,10 @@ Benchmark_State :: struct {
 	add_action:      input.Button_Action,
 	subtract_action: input.Button_Action,
 	fog_action:      input.Button_Action,
+	sail_action:     input.Button_Action,
+	sailing:         bool,
+	script:          string, // Lua boat script; "" = Odin boats
+	label:           string, // HUD line for the Lua variants
 	hud_time:        f32,
 	hud_frames:      int,
 	hud_fps:         f32,
@@ -96,16 +114,62 @@ benchmark_scene :: proc() -> engine.Scene {
 	}
 }
 
+benchmark_lua_scene :: proc() -> engine.Scene {
+	return {
+		name = "Benchmark Lua",
+		create = benchmark_lua_create,
+		tick = benchmark_tick,
+		destroy = benchmark_destroy,
+	}
+}
+
+benchmark_lua_batch_scene :: proc() -> engine.Scene {
+	return {
+		name = "Benchmark Lua batch",
+		create = benchmark_lua_batch_create,
+		tick = benchmark_tick,
+		destroy = benchmark_destroy,
+	}
+}
+
 benchmark_fog :: proc() -> engine.Fog {
 	return engine.Fog{color = FOG_COLOR, distance = FOG_VIEW_DISTANCE}
 }
 
+bench_per_model :: proc() -> (count: int, ok: bool) {
+	text := os.get_env("CUBES_BENCH_PER_MODEL", context.temp_allocator)
+	if text == "" do return BENCH_PER_MODEL, true
+	n, parsed := strconv.parse_int(text)
+	if !parsed || n < 0 {
+		log.errorf("CUBES_BENCH_PER_MODEL: invalid per-model count %q", text)
+		return 0, false
+	}
+	return n, true
+}
+
 benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
+	return benchmark_setup(demo, ctx, "", "")
+}
+
+benchmark_lua_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
+	return benchmark_setup(demo, ctx, BOAT_LUA_PATH, "lua per-actor")
+}
+
+benchmark_lua_batch_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
+	return benchmark_setup(demo, ctx, BOAT_LUA_BATCH_PATH, "lua batch")
+}
+
+benchmark_setup :: proc(demo: ^engine.Scene, ctx: ^engine.Context, script, label: string) -> bool {
+	per_model, ok := bench_per_model()
+	if !ok do return false
 	state := new(Benchmark_State)
 	demo.state = state
+	state.script = script
+	state.label = label
 	engine.camera_fly(ctx)
 
 	state.world = engine.world_create(&ctx.gfx)
+	engine.script_bind(&state.world, &ctx.input, ctx)
 	state.add_action = input.button(&ctx.input, "benchmark.add", .EQUALS, "Add actors")
 	state.subtract_action = input.button(
 		&ctx.input,
@@ -114,6 +178,8 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		"Remove actors",
 	)
 	state.fog_action = input.button(&ctx.input, "benchmark.fog", .V, "Toggle fog")
+	state.sail_action = input.button(&ctx.input, "benchmark.sail", .B, "Toggle sailing")
+	state.sailing = true
 
 	// Uncapped: the point of this scene is measuring real frame cost. Fog on by
 	// default so boats and dragons share the sea's horizon blend.
@@ -128,7 +194,7 @@ benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	_ = sea.add(&state.world, ctx, &state.sea_state)
 
 	rand.reset(1) // fixed layout: every run draws the same fleet, so results compare
-	benchmark_populate(state, 150)
+	benchmark_populate(state, per_model)
 	return true
 }
 
@@ -148,16 +214,13 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 				-0.5,
 				rand.float32_range(-650, -20),
 			}
-			yaw := linalg.quaternion_from_euler_angles_f32(
-				0,
-				rand.float32_range(0, linalg.TAU),
-				0,
-				.XYZ,
-			)
+			heading := rand.float32_range(0, linalg.TAU)
+			yaw := linalg.quaternion_from_euler_angles_f32(0, heading, 0, .XYZ)
 			scale := 0.25 + rand.float32_range(0, 0.2)
 			if rand.float32() < 0.12 do scale *= rand.float32_range(2, 4) // a few big ships among the small boats
-			actor := engine.spawn(
-				&state.world,
+			props := make([dynamic]any, context.temp_allocator)
+			append(
+				&props,
 				engine.Model{path = path},
 				engine.Transform {
 					position = position,
@@ -165,9 +228,20 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 					scale = {scale, scale, scale},
 				},
 			)
+			if state.script != "" do append(&props, engine.Script{path = state.script})
+			actor := engine.spawn(&state.world, ..props[:])
+			speed := rand.float32_range(2, 6)
 			append(
 				&state.boats,
-				Boat_Slot{actor = actor, x = position.x, z = position.z, yaw = yaw, scale = scale},
+				Boat_Slot {
+					actor = actor,
+					x = position.x,
+					z = position.z,
+					heading = heading,
+					speed = speed,
+					yaw = yaw,
+					scale = scale,
+				},
 			)
 		}
 	}
@@ -197,6 +271,36 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 	}
 }
 
+// Sails along heading. Within FLEE_RADIUS of the camera it turns away at FLEE_TURN_RATE
+// (shortest angle) and doubles speed. Wraps across the sail box edges.
+boat_step :: proc(slot: ^Boat_Slot, camera: engine.Vec3, dt: f32, sailing: bool) {
+	if !sailing do return
+	dx := slot.x - camera.x
+	dz := slot.z - camera.z
+	speed := slot.speed
+	if dx * dx + dz * dz < FLEE_RADIUS * FLEE_RADIUS {
+		// heading h moves along (sin h, cos h), so the away direction is atan2(dx, dz)
+		diff := math.atan2(dx, dz) - slot.heading
+		for diff > linalg.PI do diff -= linalg.TAU
+		for diff < -linalg.PI do diff += linalg.TAU
+		slot.heading += clamp(diff, -FLEE_TURN_RATE * dt, FLEE_TURN_RATE * dt)
+		speed *= 2
+	}
+	slot.x += math.sin(slot.heading) * speed * dt
+	slot.z += math.cos(slot.heading) * speed * dt
+	if slot.x < -SAIL_X_LIMIT {
+		slot.x = SAIL_X_LIMIT
+	} else if slot.x > SAIL_X_LIMIT {
+		slot.x = -SAIL_X_LIMIT
+	}
+	if slot.z < SAIL_Z_FAR {
+		slot.z = SAIL_Z_NEAR
+	} else if slot.z > SAIL_Z_NEAR {
+		slot.z = SAIL_Z_FAR
+	}
+	slot.yaw = linalg.quaternion_from_euler_angles_f32(0, slot.heading, 0, .XYZ)
+}
+
 benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	state := cast(^Benchmark_State)demo.state
 
@@ -215,17 +319,21 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 			env.fog = benchmark_fog()
 		}
 	}
+	if input.pressed(inputs, state.sail_action) do state.sailing = !state.sailing
 	_, fog_on := env.fog.?
 
 	state.sea_state.time += delta_time
-	camera := engine.camera_position(ctx)
-	for boat in state.boats {
-		flat := engine.Vec3{boat.x, sea.Y, boat.z}
-		h, grad := sea.surface_height(flat.xz, state.sea_state.time, linalg.distance(camera, flat))
-		transform := engine.actor_transform(&state.world, boat.actor)
-		transform.position = {boat.x, sea.Y + h + BOAT_DRAFT, boat.z}
-		transform.rotation = sea.tilt(grad) * boat.yaw
-		transform.scale = {boat.scale, boat.scale, boat.scale}
+	if state.script == "" {
+		camera := engine.camera_position(ctx)
+		for &boat in state.boats {
+			boat_step(&boat, camera, delta_time, state.sailing)
+			flat := engine.Vec3{boat.x, sea.Y, boat.z}
+			h, grad := sea.surface_height(flat.xz, state.sea_state.time, linalg.distance(camera, flat))
+			transform := engine.actor_transform(&state.world, boat.actor)
+			transform.position = {boat.x, sea.Y + h + BOAT_DRAFT, boat.z}
+			transform.rotation = sea.tilt(grad) * boat.yaw
+			transform.scale = {boat.scale, boat.scale, boat.scale}
+		}
 	}
 
 	// FPS and draws refresh once per second so the text stays readable.
@@ -261,6 +369,12 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 		fog_on ? "fog + view distance on (V)" : "fog + view distance off (V)",
 		{10, 90},
 	)
+	engine.world_text(
+		&state.world,
+		state.sailing ? "sailing on (B)" : "sailing off (B)",
+		{10, 110},
+	)
+	if state.label != "" do engine.world_text(&state.world, state.label, {10, 130})
 
 	engine.world_update(&state.world, delta_time)
 	engine.world_render(&state.world, ctx.blend)

@@ -24,6 +24,7 @@ Script_API :: struct {
 	mouse:           proc "c" (out: ^[2]f32),
 	hud_text:        proc "c" (text: cstring, x, y: f32),
 	log:             proc "c" (level: i32, msg: cstring), // 0 debug, 1 info, 2 warn, else error
+	camera_position: proc "c" (out: ^[3]f32), // World position of the camera; zeros with no ctx bound
 }
 
 SCRIPT_API_VERSION :: 1
@@ -37,6 +38,9 @@ script_inputs: ^input.System
 // a fresh default context would free props with the wrong allocator.
 @(private = "file")
 script_context: runtime.Context
+// Camera source for camera_position; nil until script_bind gets a ctx.
+@(private = "file")
+script_ctx: ^Context
 
 script_api_table := Script_API {
 	version         = SCRIPT_API_VERSION,
@@ -52,13 +56,16 @@ script_api_table := Script_API {
 	mouse           = script_api_mouse,
 	hud_text        = script_api_hud_text,
 	log             = script_api_log,
+	camera_position = script_api_camera_position,
 }
 
-// Binds the thunks to one world and its input system. Scripts act on the world bound last.
-script_bind :: proc(world: ^World, inputs: ^input.System) {
+// Binds the thunks to one world, its input system and the camera source ctx (nil: camera reads zeros).
+// Scripts act on the world bound last.
+script_bind :: proc(world: ^World, inputs: ^input.System, ctx: ^Context = nil) {
 	script_world = world
 	script_inputs = inputs
 	script_context = context
+	script_ctx = ctx
 }
 
 // Clears the bound world when it is world, so thunks and script_reload_all see no world after world_destroy.
@@ -66,6 +73,7 @@ script_unbind :: proc(world: ^World) {
 	if script_world != world do return
 	script_world = nil
 	script_inputs = nil
+	script_ctx = nil
 }
 
 // Frame time of the bound world's script host in ms, reset to zero; ok is false with no host bound.
@@ -178,6 +186,14 @@ script_api_log :: proc "c" (level: i32, msg: cstring) {
 	}
 }
 
+script_api_camera_position :: proc "c" (out: ^[3]f32) {
+	context = script_context
+	if out == nil do return
+	out^ = {}
+	if script_ctx == nil do return
+	out^ = camera_position(script_ctx)
+}
+
 // Sizes and offsets engine.lua checks with ffi.sizeof / ffi.offsetof. Keys: "Type" or "Type.field".
 script_push_layout :: proc(L: ^luajit.State) {
 	luajit.createtable(L, 0, 32)
@@ -206,6 +222,7 @@ script_push_layout :: proc(L: ^luajit.State) {
 	set(L, "ScriptAPI.mouse", int(offset_of(Script_API, mouse)))
 	set(L, "ScriptAPI.hud_text", int(offset_of(Script_API, hud_text)))
 	set(L, "ScriptAPI.log", int(offset_of(Script_API, log)))
+	set(L, "ScriptAPI.camera_position", int(offset_of(Script_API, camera_position)))
 }
 
 // Exposes Prop type T to Lua under name. cdef must define the C struct `name` (LuaJIT side);
