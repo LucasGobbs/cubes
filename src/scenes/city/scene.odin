@@ -1,4 +1,4 @@
-// City step 8: night sky (compute gradient, stars and clouds) on a camera-following lampshade. Dev view draws streets.
+// City step 9: night view gets streetlights, bloom (B) and distance fog (F). Night sky on a camera-following lampshade. Dev view draws streets.
 package city
 
 import engine "../../engine"
@@ -11,6 +11,10 @@ CITY_NIGHT_COLOR :: [4]f32{0.01, 0.01, 0.02, 1}
 CITY_CAMERA_SPEED :: 300 // units/s: crossing the 1024-unit city takes ~3.5 s
 CITY_SEED_START :: 1 // fixed start so a run is repeatable; R steps the seed
 CITY_DEV_START :: false // night view on start; G toggles the dev view (streets)
+CITY_FOG :: [4]f32{0.10, 0.035, 0.04, 1600} // linear rgb haze, a = view distance; fully fogged beyond it
+CITY_BLOOM_THRESHOLD :: 0.9 // lamps are tinted above this (LAMP_EMISSION), so they bloom and the lit windows barely do
+CITY_BLOOM_INTENSITY :: 0.5
+CITY_BLOOM_RADIUS :: 6
 
 City_State :: struct {
 	world:        engine.World,
@@ -27,11 +31,18 @@ City_State :: struct {
 	city:         engine.Actor_Id, // the buildings' Raw_Draw; respawned when R re-rolls the seed
 	roads:        engine.Actor_Id, // the streets' Raw_Draw; only alive in the dev view
 	sky:          engine.Actor_Id, // the lampshade's Raw_Draw; only alive in the night view
+	lamps:        engine.Actor_Id, // the streetlights' Raw_Draw; only alive in the night view
 	road_material: gfx.Material, // unlit blue
+	lamp_material: gfx.Material, // emissive sodium orange
+	bloom:        gfx.Bloom,
 	dev:          bool,
 	regenerate:   bool, // the before-hook regenerates the window and sky textures when set
 	reroll:       input.Button_Action,
 	toggle_dev:   input.Button_Action,
+	toggle_bloom: input.Button_Action,
+	toggle_fog:   input.Button_Action,
+	bloom_on:     bool,
+	fog_on:       bool,
 }
 
 city_scene :: proc() -> engine.Scene {
@@ -73,6 +84,11 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	)
 	state.road_material = gfx.material_make(gfx.builtin_material_pipeline(&ctx.gfx, .Unlit))
 	gfx.set_unlit_color(&state.road_material, ROAD_COLOR)
+	state.lamp_material = gfx.material_make(gfx.builtin_material_pipeline(&ctx.gfx, .Emissive))
+	gfx.set_emissive_color(&state.lamp_material, LAMP_TINT, LAMP_EMISSION)
+	state.bloom = gfx.bloom_create(&ctx.gfx, CITY_BLOOM_THRESHOLD, CITY_BLOOM_INTENSITY, CITY_BLOOM_RADIUS)
+	state.bloom_on = true
+	state.fog_on = true
 
 	state.seed = CITY_SEED_START
 	state.regenerate = true
@@ -82,6 +98,8 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 
 	state.reroll = input.button(&ctx.input, "city.reroll", .R, "Re-roll city")
 	state.toggle_dev = input.button(&ctx.input, "city.dev", .G, "Toggle dev view (streets)")
+	state.toggle_bloom = input.button(&ctx.input, "city.bloom", .B, "Toggle bloom")
+	state.toggle_fog = input.button(&ctx.input, "city.fog", .F, "Toggle distance fog")
 	gfx.renderer_add_scene_hook(&ctx.gfx.renderer, gfx.Scene_Hook{name = "city_windows", before = city_before, user = state})
 	return true
 }
@@ -108,6 +126,14 @@ city_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 		city_rebuild(state)
 	}
 	if input.pressed(&ctx.input, state.toggle_dev) do city_set_dev(state, &ctx.gfx.renderer, !state.dev)
+	if input.pressed(&ctx.input, state.toggle_bloom) {
+		state.bloom_on = !state.bloom_on
+		city_apply_effects(state, &ctx.gfx.renderer)
+	}
+	if input.pressed(&ctx.input, state.toggle_fog) {
+		state.fog_on = !state.fog_on
+		city_apply_effects(state, &ctx.gfx.renderer)
+	}
 	engine.world_update(&state.world, delta_time)
 	engine.world_render(&state.world, ctx.blend)
 }
@@ -116,9 +142,14 @@ city_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	state := cast(^City_State)demo.state
 	gfx.renderer_remove_scene_hook(&ctx.gfx.renderer, state)
 	engine.world_destroy(&state.world)
+	gfx.renderer_clear_passes(&ctx.gfx.renderer, .Post)
+	gfx.compute_pipeline_destroy(&ctx.gfx, state.bloom.prefilter)
+	gfx.compute_pipeline_destroy(&ctx.gfx, state.bloom.blur)
+	gfx.compute_pipeline_destroy(&ctx.gfx, state.bloom.composite)
 	plan_destroy(&state.plan)
 	gfx.material_destroy(&state.material)
 	gfx.material_destroy(&state.road_material)
+	gfx.material_destroy(&state.lamp_material)
 	gfx.material_destroy(&state.sky_material)
 	gfx.pipeline_destroy(&ctx.gfx, state.pipeline)
 	gfx.pipeline_destroy(&ctx.gfx, state.sky_pipeline)

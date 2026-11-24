@@ -31,8 +31,11 @@ city_pipeline_create :: proc(gfx_ctx: ^gfx.Device) -> gfx.Pipeline_Handle {
 }
 
 city_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, parameters: gfx.Draw_Parameters) {
+	camera := parameters.camera_position
 	uniforms := shader_parameters.CityVertexUniforms {
-		mvp = parameters.view_projection * parameters.model_transform,
+		mvp             = parameters.view_projection * parameters.model_transform,
+		camera_position = {camera.x, camera.y, camera.z, 1},
+		fog             = parameters.fog,
 	}
 	gfx.draw_push_uniform(draw_context, shader_parameters.CITY_VERTEX_UNIFORM_BLOCK, &uniforms)
 }
@@ -113,23 +116,45 @@ city_set_dev :: proc(state: ^City_State, renderer: ^gfx.Renderer, dev: bool) {
 	state.dev = dev
 	if dev {
 		city_despawn_sky(state)
+		city_despawn_lamps(state)
 		city_spawn_roads(state)
 		renderer.clear_color = CITY_CLEAR_COLOR
 	} else {
 		city_despawn_roads(state)
 		city_spawn_sky(state)
+		city_spawn_lamps(state)
 		renderer.clear_color = CITY_NIGHT_COLOR
+	}
+	city_apply_effects(state, renderer)
+}
+
+// Fog and bloom are night-only: the dev view is an unlit, flat overlay. Both follow their toggles.
+city_apply_effects :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
+	night := !state.dev
+	renderer.fog = CITY_FOG if night && state.fog_on else {}
+	if night && state.bloom_on {
+		gfx.renderer_set_passes(renderer, .Post, []gfx.Render_Pass{gfx.bloom_pass(&state.bloom)})
+	} else {
+		gfx.renderer_clear_passes(renderer, .Post)
 	}
 }
 
 // Re-plans and re-spawns the city for state.seed, keeping the dev overlay in step.
 city_rebuild :: proc(state: ^City_State) {
 	city_despawn(state)
-	if state.dev do city_despawn_roads(state)
+	if state.dev {
+		city_despawn_roads(state)
+	} else {
+		city_despawn_lamps(state)
+	}
 	plan_destroy(&state.plan)
 	state.plan = city_plan(state.seed)
 	city_spawn(state)
-	if state.dev do city_spawn_roads(state)
+	if state.dev {
+		city_spawn_roads(state)
+	} else {
+		city_spawn_lamps(state)
+	}
 }
 
 // Plan for the seed, with a log line: tier counts and build time.
