@@ -11,7 +11,8 @@ building_tints := [4][4]f32{{1, 0.94, 0.8, 1}, {1, 0.9, 0.45, 1}, {0.72, 0.85, 1
 BLOCKY_RECT_TRIES :: 16
 MODERN_SECTOR :: 9 // segments per 90 degrees
 MODERN_SEGMENTS :: 36 // 10 degrees each
-CLASSIC_TAPER :: 0.85
+TOWER_MIN_WIDTH :: 6 // taper never narrows a tier below this
+CLUTTER_SCALE :: 0.5 // modern clutter stays inside this share of the ellipse's bounding box (cut sectors chord inward)
 
 Building_Proc :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2]f32, stories: int)
 
@@ -106,7 +107,10 @@ random_rect :: proc(rng: ^Rng, c: [2]f32, half: [2]f32) -> Rect {
 
 building_cube :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2]f32, stories: int) {
 	f := building_facade(rng)
-	building_block(b, f, centred_rect(origin.xz, footprint / 2), origin.y, origin.y + f32(stories))
+	r := centred_rect(origin.xz, footprint / 2)
+	top := origin.y + f32(stories)
+	building_block(b, f, r, origin.y, top)
+	roof_clutter(b, rng, r, top)
 }
 
 // Stepped tiers: each tier is a random rect around the centre, lower than the one before, and reaches past every
@@ -117,6 +121,7 @@ building_blocky :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2
 	half := footprint / 2
 	first := random_rect(rng, c, half)
 	building_block(b, f, first, origin.y, origin.y + f32(stories))
+	roof_clutter(b, rng, first, origin.y + f32(stories)) // tallest tier only
 	best := rect_reach(first, c)
 	top := stories
 	for _ in 1 ..< rng_int(rng, 2, 5) {
@@ -170,28 +175,132 @@ building_modern :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2
 		u = building_wall(b, f, next, ring[k], origin.y, top, u)
 		builder_tri(b, {next.x, top, next.y}, {ring[k].x, top, ring[k].y}, centre, BUILDING_ROOF)
 	}
+	roof_clutter(b, rng, centred_rect(origin.xz, half * CLUTTER_SCALE), top)
 }
 
-// Stacked boxes: each tier is half the remaining height and 85% of the previous width, then a 4-sided spike
-// closes to the top.
-building_classic :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2]f32, stories: int) {
+// Per-building tower style, rolled once. Windowed walls are split into 1-unit columns: a column is a window, a
+// black stripe, or a black corner.
+Tower_Style :: struct {
+	corners: bool, // black column at each end of a windowed wall
+	group:   int, // window columns per group; 0 = no stripes
+	stripe:  int, // black columns between groups
+}
+
+// Tiers stack on lids: each tier takes 1/share of the remaining height (last tier takes the rest), each lid is
+// 1..3 stories black with a ledge of 0 or 1 unit, and tiers above a lid start with 0..2 blank stories.
+building_tower :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2]f32, stories: int) {
 	f := building_facade(rng)
+	black := f
+	black.color = BUILDING_ROOF
 	c := origin.xz
-	half := footprint / 2
-	tiers := rng_int(rng, 2, 4)
-	done := 0
-	last: Rect
-	for _ in 0 ..< tiers {
-		h := max(1, (stories - done) / 2)
-		last = centred_rect(c, half)
-		building_block(b, f, last, origin.y + f32(done), origin.y + f32(done + h))
-		done += h
-		half *= CLASSIC_TAPER
+	rect := centred_rect(c, footprint / 2)
+	share := rng_int(rng, 2, 4)
+	style := Tower_Style{corners = rng_int(rng, 0, 1) == 1}
+	if rng_int(rng, 0, 2) > 0 {
+		style.group = rng_int(rng, 2, 6)
+		style.stripe = rng_int(rng, 1, 2)
 	}
-	apex := Vec3{origin.x, origin.y + f32(stories), origin.z}
-	y := origin.y + f32(done)
+	taper := rng_int(rng, 0, 1) == 1
+	ledge := f32(rng_int(rng, 0, 1))
+	y := origin.y
+	rem := stories
+	for {
+		h := max(1, rem / share)
+		if rem - h < 2 do h = rem // no room for a lid and another tier: this tier takes the rest
+		blank := 0
+		if y > origin.y do blank = min(rng_int(rng, 0, 2), h - 1)
+		if blank > 0 do tower_walls(b, black, rect, y, y + f32(blank), {})
+		tower_walls(b, f, rect, y + f32(blank), y + f32(h), style)
+		y += f32(h)
+		rem -= h
+		if rem == 0 {
+			building_roof(b, rect, y)
+			roof_clutter(b, rng, rect, y)
+			break
+		}
+		lid_height := min(rng_int(rng, 1, 3), rem - 1)
+		lid := rect_grow(rect, ledge)
+		building_block(b, black, lid, y, y + f32(lid_height))
+		y += f32(lid_height)
+		rem -= lid_height
+		roof_clutter(b, rng, lid, y)
+		if taper do rect = tower_taper(rng, rect)
+	}
+	if rng_int(rng, 0, 1) == 1 { // antenna: 1 unit wide, 4..8 stories, on half the towers
+		ax, az := math.floor(c.x), math.floor(c.y)
+		building_block(b, black, Rect{x0 = ax, x1 = ax + 1, z0 = az, z1 = az + 1}, y, y + f32(rng_int(rng, 4, 8)))
+	}
+}
+
+// Four walls of r, columns as in style.
+tower_walls :: proc(b: ^Mesh_Builder, f: Facade, r: Rect, y0, y1: f32, s: Tower_Style) {
+	u := f.uv.x
 	for i in 0 ..< 4 {
-		a, c2 := rect_side(last, i)
-		builder_tri(b, {a.x, y, a.y}, {c2.x, y, c2.y}, apex, BUILDING_ROOF)
+		a, c := rect_side(r, i)
+		u = building_wall_columns(b, f, a, c, y0, y1, u, s) - WINDOW_UV
 	}
+}
+
+// Wall a to c as runs of 1-unit columns. Black runs are the same quads in black, and u advances through them too,
+// so the window grid stays aligned. Returns the uv x at c. Wall lengths are whole units.
+building_wall_columns :: proc(b: ^Mesh_Builder, f: Facade, a, c: [2]f32, y0, y1: f32, u: f32, s: Tower_Style) -> f32 {
+	n := int(linalg.length(c - a) + 0.5)
+	step := (c - a) / f32(n)
+	i0 := 0
+	for i0 < n {
+		dark := tower_column_dark(s, i0, n)
+		i1 := i0 + 1
+		for i1 < n && tower_column_dark(s, i1, n) == dark do i1 += 1
+		g := f
+		if dark do g.color = BUILDING_ROOF
+		building_wall(b, g, a + step * f32(i0), a + step * f32(i1), y0, y1, u + f32(i0) * WINDOW_UV)
+		i0 = i1
+	}
+	return u + f32(n) * WINDOW_UV
+}
+
+tower_column_dark :: proc(s: Tower_Style, i, n: int) -> bool {
+	if s.corners && (i == 0 || i == n - 1) do return true
+	return s.group > 0 && i % (s.group + s.stripe) >= s.group
+}
+
+// Each side in by 1..2 units, if the tier stays at least TOWER_MIN_WIDTH wide on that axis.
+tower_taper :: proc(rng: ^Rng, r: Rect) -> Rect {
+	k := f32(rng_int(rng, 1, 2))
+	out := r
+	if r.x1 - r.x0 - 2 * k >= TOWER_MIN_WIDTH {
+		out.x0 += k
+		out.x1 -= k
+	}
+	if r.z1 - r.z0 - 2 * k >= TOWER_MIN_WIDTH {
+		out.z0 += k
+		out.z1 -= k
+	}
+	return out
+}
+
+rect_grow :: proc(r: Rect, e: f32) -> Rect {
+	return {x0 = r.x0 - e, x1 = r.x1 + e, z0 = r.z0 - e, z1 = r.z1 + e}
+}
+
+// 1..4 black boxes (HVAC) on a roof at height y: 1..3 x 1..3 units, 1..2 high.
+roof_clutter :: proc(b: ^Mesh_Builder, rng: ^Rng, r: Rect, y: f32) {
+	black := Facade{color = BUILDING_ROOF}
+	for _ in 0 ..< rng_int(rng, 1, 4) {
+		x0, x1, okx := clutter_span(rng, r.x0, r.x1, rng_int(rng, 1, 3))
+		z0, z1, okz := clutter_span(rng, r.z0, r.z1, rng_int(rng, 1, 3))
+		if !okx || !okz do continue
+		building_block(b, black, Rect{x0 = x0, x1 = x1, z0 = z0, z1 = z1}, y, y + f32(rng_int(rng, 1, 2)))
+	}
+}
+
+// A run of up to want whole units inside [lo, hi), one unit in from each end when the roof is wider than 4.
+clutter_span :: proc(rng: ^Rng, lo, hi: f32, want: int) -> (p0, p1: f32, ok: bool) {
+	m: f32 = 1 if hi - lo > 4 else 0
+	from := math.ceil(lo + m)
+	avail := int(math.floor(hi - m) - from)
+	if avail < 1 do return 0, 0, false
+	size := min(want, avail)
+	p0 = from + f32(rng_int(rng, 0, avail - size))
+	return p0, p0 + f32(size), true
 }

@@ -4,7 +4,7 @@ import "core:testing"
 
 @(test)
 test_building_indices_valid :: proc(t: ^testing.T) {
-	gens := [4]Building_Proc{building_cube, building_blocky, building_modern, building_classic}
+	gens := [4]Building_Proc{building_cube, building_blocky, building_modern, building_tower}
 	for gen, k in gens {
 		for seed in u32(1) ..< 64 {
 			b: Mesh_Builder
@@ -47,5 +47,29 @@ test_block_walls_continuous_u :: proc(t: ^testing.T) {
 		testing.expectf(t, abs(start - u) < 1e-5, "wall %d starts at u %v, want %v", k, start, u)
 		testing.expectf(t, abs(end - start - widths[k] * WINDOW_UV) < 1e-5, "wall %d spans %v, want %v", k, end - start, widths[k] * WINDOW_UV)
 		u = end - WINDOW_UV
+	}
+}
+
+@(test)
+test_tower_within_stories :: proc(t: ^testing.T) {
+	// Tiers and lids stack to exactly `stories`; the antenna adds at most 8 more. Walls stay within one unit of the footprint.
+	sizes := [2][3]f32{{18, 18, 24}, {10, 14, 30}} // footprint x, footprint z, stories
+	for size in sizes {
+		footprint := [2]f32{size.x, size.y}
+		stories := int(size.z)
+		for seed in u32(1) ..< 128 {
+			b: Mesh_Builder
+			rng := rng_seed(seed)
+			building_tower(&b, &rng, {100, 0, 200}, footprint, stories)
+			top: f32 = -1
+			for v in b.vertices {
+				top = max(top, v.position.y)
+				testing.expectf(t, abs(v.position.x - 100) <= footprint.x / 2 + 1, "seed %d: x %v outside footprint", seed, v.position.x)
+				testing.expectf(t, abs(v.position.z - 200) <= footprint.y / 2 + 1, "seed %d: z %v outside footprint", seed, v.position.z)
+			}
+			testing.expectf(t, top <= f32(stories) + 8, "seed %d: top %v above stories %d", seed, top, stories)
+			testing.expectf(t, top >= f32(stories), "seed %d: top %v below stories %d", seed, top, stories)
+			builder_destroy(&b)
+		}
 	}
 }

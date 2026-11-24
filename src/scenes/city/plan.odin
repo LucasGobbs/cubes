@@ -48,7 +48,7 @@ Building_Kind :: enum u8 {
 	Cube,
 	Blocky,
 	Modern,
-	Classic,
+	Tower,
 }
 
 Tier :: enum u8 {

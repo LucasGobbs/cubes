@@ -1,4 +1,4 @@
-// City step 6: 2048 x 2048 window atlas of 4x4 tiles, per-building tiles with lit room groups. Dev view draws streets.
+// City step 7: towers (tiers on lids, stripes, taper, antennas) and HVAC roof clutter on every building. Dev view draws streets.
 package city
 
 import engine "../../engine"

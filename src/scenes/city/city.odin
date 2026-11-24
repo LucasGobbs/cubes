@@ -45,8 +45,8 @@ building_proc :: proc(kind: Building_Kind) -> Building_Proc {
 		return building_blocky
 	case .Modern:
 		return building_modern
-	case .Classic:
-		return building_classic
+	case .Tower:
+		return building_tower
 	}
 	unreachable()
 }
