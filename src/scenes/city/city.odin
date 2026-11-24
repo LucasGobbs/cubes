@@ -1,5 +1,5 @@
 // Whole-city mesh from the plan: every building in one Mesh_Builder, one Raw_Draw. The dev view adds the streets
-// as a second Raw_Draw.
+// as a second Raw_Draw. The night view adds the cars (cars.odin).
 package city
 
 import engine "../../engine"
@@ -117,6 +117,7 @@ city_set_dev :: proc(state: ^City_State, renderer: ^gfx.Renderer, dev: bool) {
 	if dev {
 		city_despawn_sky(state)
 		city_despawn_lamps(state)
+		city_despawn_cars(state)
 		city_despawn_ground(state)
 		city_spawn_roads(state)
 		renderer.clear_color = CITY_CLEAR_COLOR
@@ -124,6 +125,7 @@ city_set_dev :: proc(state: ^City_State, renderer: ^gfx.Renderer, dev: bool) {
 		city_despawn_roads(state)
 		city_spawn_sky(state)
 		city_spawn_lamps(state)
+		city_spawn_cars(state)
 		city_spawn_ground(state)
 		renderer.clear_color = CITY_NIGHT_COLOR
 	}
@@ -144,6 +146,7 @@ city_apply_effects :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 // Re-plans and re-spawns the city for state.seed, keeping the dev overlay in step.
 city_rebuild :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 	city_despawn(state)
+	city_despawn_cars(state)
 	if state.dev {
 		city_despawn_roads(state)
 	} else {
@@ -157,6 +160,7 @@ city_rebuild :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 		city_spawn_roads(state)
 	} else {
 		city_spawn_lamps(state)
+		city_spawn_cars(state)
 	}
 }
 

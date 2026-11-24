@@ -1,4 +1,4 @@
-// City step 10: streets painted into a compute ground texture under the city (night view). Night view gets streetlights, bloom (B) and distance fog (F). Night sky on a camera-following lampshade. Dev view draws streets.
+// City step 11: cars on every street, animated in the vertex shader. Night view gets them with the streetlights. Dev view draws streets. Night sky on a camera-following lampshade.
 package city
 
 import engine "../../engine"
@@ -37,8 +37,12 @@ City_State :: struct {
 	roads:        engine.Actor_Id, // the streets' Raw_Draw; only alive in the dev view
 	sky:          engine.Actor_Id, // the lampshade's Raw_Draw; only alive in the night view
 	lamps:        engine.Actor_Id, // the streetlights' Raw_Draw; only alive in the night view
+	cars:         engine.Actor_Id, // the cars' Raw_Draw; only alive in the night view
 	road_material: gfx.Material, // unlit blue
 	lamp_material: gfx.Material, // emissive sodium orange
+	car_material: gfx.Material, // unlit lamp quads, HDR; the car shader sets the colours
+	car_pipeline: gfx.Pipeline_Handle,
+	time:         f32, // seconds, advanced in city_tick; the car shader reads it through user_data
 	bloom:        gfx.Bloom,
 	dev:          bool,
 	regenerate:   bool, // the before-hook regenerates the window and sky textures when set
@@ -102,6 +106,8 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx.set_unlit_color(&state.road_material, ROAD_COLOR)
 	state.lamp_material = gfx.material_make(gfx.builtin_material_pipeline(&ctx.gfx, .Emissive))
 	gfx.set_emissive_color(&state.lamp_material, LAMP_TINT, LAMP_EMISSION)
+	state.car_pipeline = cars_pipeline_create(&ctx.gfx, state)
+	state.car_material = gfx.material_make(state.car_pipeline)
 	state.bloom = gfx.bloom_create(&ctx.gfx, CITY_BLOOM_THRESHOLD, CITY_BLOOM_INTENSITY, CITY_BLOOM_RADIUS)
 	state.bloom_on = true
 	state.fog_on = true
@@ -152,6 +158,7 @@ city_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 		state.fog_on = !state.fog_on
 		city_apply_effects(state, &ctx.gfx.renderer)
 	}
+	state.time += delta_time
 	engine.world_update(&state.world, delta_time)
 	engine.world_render(&state.world, ctx.blend)
 }
@@ -168,11 +175,13 @@ city_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx.material_destroy(&state.material)
 	gfx.material_destroy(&state.road_material)
 	gfx.material_destroy(&state.lamp_material)
+	gfx.material_destroy(&state.car_material)
 	gfx.material_destroy(&state.sky_material)
 	gfx.material_destroy(&state.ground_material)
 	gfx.pipeline_destroy(&ctx.gfx, state.pipeline)
 	gfx.pipeline_destroy(&ctx.gfx, state.sky_pipeline)
 	gfx.pipeline_destroy(&ctx.gfx, state.ground_pipeline)
+	gfx.pipeline_destroy(&ctx.gfx, state.car_pipeline)
 	window_texture_destroy(&ctx.gfx, &state.window)
 	sky_texture_destroy(&ctx.gfx, &state.sky_texture)
 	gfx.sampler_destroy(&ctx.gfx, state.sampler)

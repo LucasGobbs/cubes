@@ -57,6 +57,12 @@
       "fragment": "pixelMain"
     },
     {
+      "name": "city_cars",
+      "source": "shaders/city_cars.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
       "name": "city_sky_gen",
       "source": "shaders/city_sky_gen.slang",
       "compute": "computeMain"
