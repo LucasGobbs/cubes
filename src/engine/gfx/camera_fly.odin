@@ -8,12 +8,14 @@ Fly_Input :: struct {
 	move:          Vec3, // x right, y up, z forward; each axis in [-1, 1]
 	look:          [2]f32, // mouse delta this frame; 0 disables look
 	boost:         bool,
+	slow:          bool, // precision mode: speed is multiplied by Fly_Camera.slow
 	toggle_smooth: bool, // edge: flips smooth mode
 }
 
 Fly_Camera :: struct {
 	speed:         f32, // base units/s
 	boost:         f32, // multiplier while Fly_Input.boost
+	slow:          f32, // multiplier while Fly_Input.slow (stacks with boost)
 	sensitivity:   f32, // degrees per look unit
 	smooth_rate:   f32, // 1/s; higher = snappier ease in smooth mode
 	smooth:        bool,
@@ -22,7 +24,7 @@ Fly_Camera :: struct {
 }
 
 fly_camera_create :: proc() -> Fly_Camera {
-	return Fly_Camera{speed = 5, boost = 12, sensitivity = 0.1, smooth_rate = 3}
+	return Fly_Camera{speed = 5, boost = 12, slow = 0.1, sensitivity = 0.1, smooth_rate = 3}
 }
 
 // Smooth mode eases movement and look toward their targets, for recording walkthroughs.
@@ -42,6 +44,7 @@ fly_camera_update :: proc(camera: ^Camera, fly: ^Fly_Camera, input: Fly_Input, d
 
 	boost: f32 = 1
 	if input.boost do boost = fly.boost
+	if input.slow do boost *= fly.slow
 	direction := camera.direction * input.move.z + camera.right * input.move.x + Vec3{0, input.move.y, 0}
 	fly.velocity += (direction * fly.speed * boost - fly.velocity) * ease
 	camera.position += fly.velocity * dt
