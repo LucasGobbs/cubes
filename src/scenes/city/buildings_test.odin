@@ -20,12 +20,14 @@ test_building_indices_valid :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_gallery_same_seed_same_mesh :: proc(t: ^testing.T) {
-	a := gallery_build(7)
+test_city_mesh_same_seed_same_mesh :: proc(t: ^testing.T) {
+	p := plan_build(7)
+	defer plan_destroy(&p)
+	a := city_build_mesh(&p, 7)
 	defer builder_destroy(&a)
-	b := gallery_build(7)
+	b := city_build_mesh(&p, 7)
 	defer builder_destroy(&b)
-	testing.expect(t, len(a.vertices) > 0, "gallery has no vertices")
+	testing.expect(t, len(a.vertices) > 0, "city has no vertices")
 	testing.expectf(t, len(a.vertices) == len(b.vertices), "same seed, vertex counts %d vs %d", len(a.vertices), len(b.vertices))
 	testing.expectf(t, len(a.indices) == len(b.indices), "same seed, index counts %d vs %d", len(a.indices), len(b.indices))
 }

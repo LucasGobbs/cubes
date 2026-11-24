@@ -1,27 +1,34 @@
-// City step 4: CPU-generated buildings (cube, blocky, modern, classic) in a gallery row, textured with the window atlas.
+// City step 5: 1024 x 1024 city plan of CPU-generated buildings, textured with the window atlas. Dev view draws streets.
 package city
 
 import engine "../../engine"
-import shader_parameters "../../shader_parameters"
 import gfx "../../engine/gfx"
 import input "../../engine/input"
+import shader_parameters "../../shader_parameters"
 
 CITY_CLEAR_COLOR :: [4]f32{0.1, 0.45, 0.1, 1}
-CITY_CAMERA_SPEED :: 100 // units/s: crossing the 1024-unit city takes ~10 s
+CITY_NIGHT_COLOR :: [4]f32{0.01, 0.01, 0.02, 1}
+CITY_CAMERA_SPEED :: 300 // units/s: crossing the 1024-unit city takes ~3.5 s
 CITY_SEED_START :: 1 // fixed start so a run is repeatable; R steps the seed
+CITY_DEV_START :: true // dev view (streets, green clear colour) on start; G toggles
 
 City_State :: struct {
-	world:      engine.World,
-	pipeline:   gfx.Pipeline_Handle,
-	material:   gfx.Material,
-	window:     Window_Texture,
-	sampler:    gfx.Sampler_Handle,
-	seed:       u32,
-	gallery:    engine.Actor_Id, // the row's Raw_Draw; respawned when R re-rolls the seed
-	shape:      u32, // window shape 0..7, T steps it, R keeps it
-	regenerate: bool, // the before-hook regenerates the atlas when set
-	reroll:     input.Button_Action,
-	next_shape: input.Button_Action,
+	world:        engine.World,
+	pipeline:     gfx.Pipeline_Handle,
+	material:     gfx.Material,
+	window:       Window_Texture,
+	sampler:      gfx.Sampler_Handle,
+	seed:         u32,
+	plan:         Plan,
+	city:         engine.Actor_Id, // the buildings' Raw_Draw; respawned when R re-rolls the seed
+	roads:        engine.Actor_Id, // the streets' Raw_Draw; only alive in the dev view
+	road_material: gfx.Material, // unlit blue
+	dev:          bool,
+	shape:        u32, // window shape 0..7, T steps it, R keeps it
+	regenerate:   bool, // the before-hook regenerates the atlas when set
+	reroll:       input.Button_Action,
+	next_shape:   input.Button_Action,
+	toggle_dev:   input.Button_Action,
 }
 
 city_scene :: proc() -> engine.Scene {
@@ -37,12 +44,11 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state := new(City_State)
 	demo.state = state
 	state.world = engine.world_create(&ctx.gfx)
-	ctx.gfx.renderer.clear_color = CITY_CLEAR_COLOR
-	engine.camera_fly(ctx, {0, 40, 135}, {0, 22, 0}, CITY_CAMERA_SPEED)
+	engine.camera_fly(ctx, {512, 380, 1050}, {512, 30, 512}, CITY_CAMERA_SPEED)
 
 	state.window = window_texture_create(&ctx.gfx)
 	state.sampler = gfx.sampler_create(&ctx.gfx, WINDOW_SAMPLER)
-	state.pipeline = gallery_pipeline_create(&ctx.gfx)
+	state.pipeline = city_pipeline_create(&ctx.gfx)
 	state.material = gfx.material_make(state.pipeline)
 	gfx.material_bind_texture(
 		&state.material,
@@ -51,13 +57,20 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		state.window.texture,
 		state.sampler,
 	)
+	state.road_material = gfx.material_make(gfx.builtin_material_pipeline(&ctx.gfx, .Unlit))
+	gfx.set_unlit_color(&state.road_material, ROAD_COLOR)
 
 	state.seed = CITY_SEED_START
 	state.shape = window_shape_for_seed(state.seed)
 	state.regenerate = true
-	gallery_spawn(state)
+	state.plan = city_plan(state.seed)
+	city_spawn(state)
+	ctx.gfx.renderer.clear_color = CITY_NIGHT_COLOR
+	if CITY_DEV_START do city_set_dev(state, &ctx.gfx.renderer, true)
+
 	state.reroll = input.button(&ctx.input, "city.reroll", .R, "Re-roll city")
 	state.next_shape = input.button(&ctx.input, "city.shape", .T, "Next window shape")
+	state.toggle_dev = input.button(&ctx.input, "city.dev", .G, "Toggle dev view (streets)")
 	gfx.renderer_add_scene_hook(&ctx.gfx.renderer, gfx.Scene_Hook{name = "city_windows", before = city_before, user = state})
 	return true
 }
@@ -80,13 +93,13 @@ city_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 		s ~= s << 5
 		state.seed = s
 		state.regenerate = true
-		gallery_despawn(state)
-		gallery_spawn(state)
+		city_rebuild(state)
 	}
 	if input.pressed(&ctx.input, state.next_shape) {
 		state.shape = (state.shape + 1) % WINDOW_SHAPE_COUNT
 		state.regenerate = true
 	}
+	if input.pressed(&ctx.input, state.toggle_dev) do city_set_dev(state, &ctx.gfx.renderer, !state.dev)
 	engine.world_update(&state.world, delta_time)
 	engine.world_render(&state.world, ctx.blend)
 }
@@ -95,7 +108,9 @@ city_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	state := cast(^City_State)demo.state
 	gfx.renderer_remove_scene_hook(&ctx.gfx.renderer, state)
 	engine.world_destroy(&state.world)
+	plan_destroy(&state.plan)
 	gfx.material_destroy(&state.material)
+	gfx.material_destroy(&state.road_material)
 	gfx.pipeline_destroy(&ctx.gfx, state.pipeline)
 	window_texture_destroy(&ctx.gfx, &state.window)
 	gfx.sampler_destroy(&ctx.gfx, state.sampler)
