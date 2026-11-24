@@ -358,22 +358,22 @@ and the binary has no runtime dependency. Same style as `third_party/goose` and 
 | macOS arm64 | `make -C third_party/luajit amalg BUILDMODE=static MACOSX_DEPLOYMENT_TARGET=15.0` | `src/libluajit.a` | `"../../third_party/luajit/src/libluajit.a"` |
 | macOS x86_64 | same, `XCFLAGS=-DLUAJIT_ENABLE_GC64` | same | same |
 | Linux x86_64 / arm64 | `make -C third_party/luajit amalg BUILDMODE=static XCFLAGS=-DLUAJIT_ENABLE_GC64` | `src/libluajit.a` | `.a` path, plus `system:m`, `system:dl` |
-| Windows x64 (CRT **/MT** as built, OPEN, see Decisions) | `cd third_party/luajit/src && msvcbuild.bat static gc64` (from a VS x64 prompt) | `src/lua51.lib` | `"../../third_party/luajit/src/lua51.lib"` |
+| Windows x64 (CRT **/MD** via `set CL=/MD`; UNVERIFIED until run on Windows, see Decisions) | `scripts\build_luajit_windows.bat` from the repo root in a VS x64 prompt (= `set CL=/MD` + `msvcbuild.bat static gc64`; `make luajit` calls it on Windows) | `src/lua51.lib` | `"../../third_party/luajit/src/lua51.lib"` |
 
 Decisions and reasons:
 
 - **GC64 everywhere** (64-bit GC pointers). Avoids LuaJIT's old "all memory below 2 GB" constraint, so no `-pagezero_size`/`-image_base` linker hacks on macOS x86_64 and no allocator surprises on Windows. arm64 already defaults to it.
 - **Relative `foreign import` paths per OS** in `src/engine/luajit/luajit.odin` (a `when ODIN_OS` ladder), so plain `odin build src` works with no extra linker flags. (Verified in the abandoned experiment: relative paths work; absolute ones do not.)
 - **Odin has no `vendor:luajit`.** `vendor:lua/5.1` has the exact 5.1 API shapes LuaJIT implements; we copy only the ~40 procs we use plus `luaJIT_setmode`, not the whole package.
-- **Windows CRT (OPEN, resolve on a Windows machine):** `msvcbuild.bat static` compiles `lj_*.c lib_*.c` at line 120 without `%LJDYNBUILD%` (`/DLUA_BUILD_AS_DLL /MD`, line 21), so cl's default `/MT` (static CRT) is used, not `/MD`. Only the `dynamic`, `mixed` and `amalg` paths pass `%LJDYNBUILD%`. Mixing CRTs (`/MT` lib in an `/MD` Odin binary, or the reverse) is a known source of link and heap errors. Verify after `msvcbuild.bat static gc64`: `dumpbin /directives src\lua51.lib | findstr DEFAULTLIB` shows `LIBCMT` for `/MT` or `MSVCRT` for `/MD`. Decision still open: either make the static path compile with `/MD` (reuse `%LJDYNBUILD%` minus `/DLUA_BUILD_AS_DLL`, a `msvcbuild.bat` edit not yet made) or keep `/MT` and match Odin's Windows CRT. Confirm Odin's Windows CRT choice before deciding; it is not verified here.
+- **Windows CRT: decided `/MD` via `set CL=/MD`; status UNVERIFIED until run on Windows.** `msvcbuild.bat static` compiles `lj_*.c lib_*.c` at line 120 without `%LJDYNBUILD%` (`/DLUA_BUILD_AS_DLL /MD`, line 21), so cl's default `/MT` would apply. `scripts\build_luajit_windows.bat` sets `set CL=/MD` before `msvcbuild.bat static gc64`, so every cl call in the build uses `/MD`. Mixing CRTs (`/MT` lib in an `/MD` binary, or the reverse) is a known source of link and heap errors. Odin's Windows CRT is assumed to be `/MD` [INFERENCE, not confirmed]; check with `dumpbin /directives` on the built binary. Acceptance step: `dumpbin /directives third_party\luajit\src\lua51.lib | findstr DEFAULTLIB` must show `MSVCRT`, not `LIBCMT`.
 - **macOS distribution:** a notarized, hardened-runtime app needs the `com.apple.security.cs.allow-jit` entitlement or LuaJIT's JIT will be killed (it falls back to the interpreter). Not an issue for local development.
 - **Makefile:** `make luajit` target builds the lib; it becomes a prerequisite of `test-engine`, `build`, `run`, `debug`. `make clean` removes the build output. The submodule pin lives in `.gitmodules`.
 - **Dev fallback:** `LUAJIT=system` Makefile variable uses `/opt/homebrew/lib/libluajit-5.1.a` (installed here: LuaJIT 2.1) to iterate without building the submodule. Never used for release.
 - **Cross-target check (from macOS host, Odin brew 2026-10, `odin check` only, no link or build):**
   - `odin check src/engine/luajit -no-entry-point`: linux_amd64 PASS (exit 0), linux_arm64 PASS (exit 0), windows_amd64 NOT RUN (`-windows-sdk-root:<path> must be used to target Windows`, a build-only flag; exit 1).
   - `odin check src -define:EDITOR=false`: linux_amd64 and linux_arm64 FAIL (exit 1) on compile-time panics in unrelated vendor packages: `vendor:cgltf`, `vendor:stb` (truetype, image, rect_pack), `vendor:box3d` (`lib/linux-amd64/libbox3d.a`, `lib/linux-arm64/libbox3d.a` missing). Engine package also imports gfx and physics, so `src/engine` is blocked the same way. Our code was not type-checked on these targets. windows_amd64 NOT RUN (same flag error).
-  - CRT: the earlier "`/MD` default" claim is wrong. `msvcbuild.bat static` builds with `/MT` (see Decisions, OPEN Windows CRT).
-  - Gap: Makefile has no Windows LuaJIT branch (only Darwin and Linux `LUAJIT_XCFLAGS`/`LUAJIT_OS_FLAGS`). `LUAJIT_LIB` is `libluajit.a`; `make luajit` cannot build `lua51.lib`. The Windows lib is built by hand with `msvcbuild.bat`, outside `make`.
+  - CRT: `msvcbuild.bat static` alone would build with `/MT`; the build script forces `/MD` via `set CL=/MD` (see Decisions). UNVERIFIED.
+  - Makefile: `ifeq ($(OS),Windows_NT)` branch sets `LUAJIT_LIB` to `$(LUAJIT_DIR)/src/lua51.lib` and runs `scripts\build_luajit_windows.bat`. UNVERIFIED: not run on Windows.
   - Match: `lua51.lib` name and `../../../third_party/luajit/src/lua51.lib` foreign import path (msvcbuild writes to `src/`).
   - Not verified: `script_host.odin` and `script_api.odin` on any non-macOS target. Portable calls only (`os.stat`, `os.get_env`, `time`). Risk: module keys are raw path strings, so `a\b.lua` and `a/b.lua` load as two modules on Windows.
 
@@ -417,8 +417,8 @@ Smoke/benchmark (each step):
 ## 13. Risks and open decisions
 
 - **Windows and Linux x86_64 unverified from here.** Linux arm64 is verified: `make luajit` and `odin test src/engine/luajit` pass in an ubuntu:24.04 arm64 container (Odin dev-2026-11a, llvm/clang-18). Linux x86_64 and Windows remain untested; their build rules are from LuaJIT's documented procedure and need those machines to prove them.
-- **Windows CRT mismatch (OPEN).** `msvcbuild.bat static` yields `/MT` (static CRT), not `/MD`. Do not link it into Odin until the CRT is chosen and verified with `dumpbin /directives src\lua51.lib | findstr DEFAULTLIB` on Windows (see section 9).
-- **Windows build not in Makefile.** `make luajit` has no Windows branch; `lua51.lib` comes only from manual `msvcbuild.bat` run in a VS x64 prompt. Add a Windows branch only after the CRT decision.
+- **Windows CRT: decided `/MD` via `set CL=/MD`, UNVERIFIED.** Acceptance: `dumpbin /directives third_party\luajit\src\lua51.lib | findstr DEFAULTLIB` shows `MSVCRT`, not `LIBCMT` (section 9). Pending a run on Windows.
+- **Windows build in Makefile (UNVERIFIED).** `make luajit` on Windows runs `scripts\build_luajit_windows.bat`, which builds `lua51.lib`. Not yet executed on Windows.
 - **LuaJIT is a rolling release** (no tagged 2.1 final). Pin a commit; update deliberately.
 - **Quaternion layout** assumed `{x, y, z, w}` for Odin `quaternion128` ([INFERENCE]); test 6 settles it on day one.
 - **Lua 5.1 semantics**: no integer type (doubles), no `//`, `goto` exists in LuaJIT 2.1, `bit` library instead of operators. Document for script authors.

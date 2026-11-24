@@ -11,8 +11,8 @@ GOOSE_BUILD         := $(GOOSE_DIR)/src/tools/build
 GOOSE_BUILD_BIN     := goose-build.bin
 GOOSE_MANIFEST      := shaders/goose.json
 DEFAULT_MANIFEST := src/engine/gfx/goose.json
-# LuaJIT: vendored submodule built as a static lib (plan.md section 9). Windows is not
-# built yet: see plan.md section 9 (msvcbuild.bat -> src/lua51.lib).
+# LuaJIT: vendored submodule built as a static lib (plan.md section 9). Windows builds
+# via scripts/build_luajit_windows.bat (msvcbuild.bat, /MD; UNVERIFIED until run on Windows).
 # LUAJIT=vendored (default): `make luajit` builds $(LUAJIT_LIB).
 # LUAJIT=system: `make luajit` is a no-op; the binding will point at a system lib
 # (e.g. /opt/homebrew/lib/libluajit-5.1.a).
@@ -22,7 +22,9 @@ LUAJIT_LIB := $(LUAJIT_DIR)/src/libluajit.a
 ifneq ($(filter-out vendored system,$(LUAJIT)),)
 $(error LUAJIT must be 'vendored' or 'system', got '$(LUAJIT)')
 endif
-ifeq ($(shell uname -s),Darwin)
+ifeq ($(OS),Windows_NT)
+LUAJIT_LIB := $(LUAJIT_DIR)/src/lua51.lib
+else ifeq ($(shell uname -s),Darwin)
 LUAJIT_OS_FLAGS := MACOSX_DEPLOYMENT_TARGET=15.0
 ifneq ($(shell uname -m),arm64)
 LUAJIT_XCFLAGS  := XCFLAGS=-DLUAJIT_ENABLE_GC64
@@ -62,8 +64,12 @@ default-shaders: $(GOOSE_BUILD_BIN)
 # LuaJIT 2.1 (vendored submodule, static lib). Rebuilds only when its sources change;
 # make -C does the incremental work inside the submodule.
 $(LUAJIT_LIB): $(wildcard $(LUAJIT_DIR)/src/*.c $(LUAJIT_DIR)/src/*.h $(LUAJIT_DIR)/src/*.dasc)
+ifeq ($(OS),Windows_NT)
+	scripts\build_luajit_windows.bat
+else
 	@test -f $(LUAJIT_DIR)/Makefile || { echo "luajit submodule missing: run 'git submodule update --init'"; exit 1; }
 	$(MAKE) -C $(LUAJIT_DIR) amalg BUILDMODE=static $(LUAJIT_OS_FLAGS) $(LUAJIT_XCFLAGS)
+endif
 
 ifeq ($(LUAJIT),vendored)
 luajit: $(LUAJIT_LIB)
