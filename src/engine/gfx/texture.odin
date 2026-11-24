@@ -73,6 +73,32 @@ texture_create_with_usage :: proc(
 	return handle
 }
 
+// Sampled texture a compute shader writes (RW storage). Mipmapped by default: the full chain is allocated
+// (needs COLOR_TARGET, added here) and texture_generate_mips fills it after each dispatch. Without mips
+// far samples alias and shimmer in motion. Pair with SAMPLER_TRILINEAR (mipmap_mode .LINEAR).
+texture_create_storage :: proc(
+	gfx_ctx: ^Device,
+	width, height: u32,
+	format := sdl.GPUTextureFormat.R8G8B8A8_UNORM,
+	mipmaps := true,
+) -> Texture_Handle {
+	usage := sdl.GPUTextureUsageFlags{.SAMPLER, .COMPUTE_STORAGE_WRITE}
+	levels := u32(1)
+	if mipmaps {
+		usage += {.COLOR_TARGET}
+		levels = mip_level_count(width, height)
+	}
+	return texture_create_with_usage(gfx_ctx, width, height, format, usage, ._1, levels)
+}
+
+// Rebuilds levels 1.. from level 0 on the frame command buffer. Call after the compute dispatch that wrote
+// level 0, outside any pass (scene before-hook). No-op for single-level textures.
+texture_generate_mips :: proc(gfx_ctx: ^Device, handle: Texture_Handle) {
+	assert(gfx_ctx.frame_open && gfx_ctx.command_buffer != nil)
+	texture := texture_get(gfx_ctx, handle)
+	if texture.mip_levels > 1 do sdl.GenerateMipmapsForGPUTexture(gfx_ctx.command_buffer, texture.handle)
+}
+
 texture_get :: proc(gfx_ctx: ^Device, handle: Texture_Handle) -> ^Texture {
 	raw := Resource_Handle(handle)
 	assert(handle_pool_contains(&gfx_ctx.texture_handles, raw), "stale texture handle")

@@ -41,15 +41,7 @@ ground_pack_roads :: proc(claimed: []u8) -> []u32 {
 ground_texture_create :: proc(gfx_ctx: ^gfx.Device) -> Ground_Texture {
 	return {
 		pipeline = gfx.compute_pipeline_create(gfx_ctx, shader_parameters.city_ground_gen_compute()),
-		texture = gfx.texture_create_with_usage(
-			gfx_ctx,
-			CITY_SIZE,
-			CITY_SIZE,
-			.R8G8B8A8_UNORM,
-			{.SAMPLER, .COMPUTE_STORAGE_WRITE, .COLOR_TARGET},
-			._1,
-			gfx.mip_level_count(CITY_SIZE, CITY_SIZE),
-		),
+		texture = gfx.texture_create_storage(gfx_ctx, CITY_SIZE, CITY_SIZE),
 		mask = gfx.buffer_create(gfx_ctx, u32(GROUND_MASK_WORDS * size_of(u32)), .COMPUTE_STORAGE_READ),
 	}
 }
@@ -84,7 +76,7 @@ ground_texture_generate :: proc(gfx_ctx: ^gfx.Device, ground: ^Ground_Texture) {
 		nil,
 		{ground.mask},
 	)
-	sdl.GenerateMipmapsForGPUTexture(gfx_ctx.command_buffer, gfx.texture_get(gfx_ctx, ground.texture).handle)
+	gfx.texture_generate_mips(gfx_ctx, ground.texture)
 }
 
 ground_pipeline_create :: proc(gfx_ctx: ^gfx.Device) -> gfx.Pipeline_Handle {

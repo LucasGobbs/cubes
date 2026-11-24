@@ -36,15 +36,7 @@ Window_Texture :: struct {
 window_texture_create :: proc(gfx_ctx: ^gfx.Device) -> Window_Texture {
 	return {
 		pipeline = gfx.compute_pipeline_create(gfx_ctx, shader_parameters.city_windows_compute()),
-		texture = gfx.texture_create_with_usage(
-			gfx_ctx,
-			ATLAS_SIZE,
-			ATLAS_SIZE,
-			.R8G8B8A8_UNORM,
-			{.SAMPLER, .COMPUTE_STORAGE_WRITE, .COLOR_TARGET},
-			._1,
-			gfx.mip_level_count(ATLAS_SIZE, ATLAS_SIZE),
-		),
+		texture = gfx.texture_create_storage(gfx_ctx, ATLAS_SIZE, ATLAS_SIZE),
 	}
 }
 
@@ -61,7 +53,7 @@ window_texture_generate :: proc(gfx_ctx: ^gfx.Device, window: ^Window_Texture, s
 		{groups, groups, 1},
 		mem.ptr_to_bytes(&params),
 	)
-	sdl.GenerateMipmapsForGPUTexture(gfx_ctx.command_buffer, gfx.texture_get(gfx_ctx, window.texture).handle)
+	gfx.texture_generate_mips(gfx_ctx, window.texture)
 }
 
 window_texture_destroy :: proc(gfx_ctx: ^gfx.Device, window: ^Window_Texture) {
