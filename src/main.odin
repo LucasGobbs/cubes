@@ -43,6 +43,8 @@ main :: proc() {
 
 	engine.run(
 		engine.Config {
+			width = 1280,
+			height = 720,
 			fullscreen = !windowed,
 			scenes = SCENES[:],
 			start = name,
