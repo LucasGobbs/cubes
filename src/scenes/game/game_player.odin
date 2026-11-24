@@ -4,10 +4,10 @@
 // Player is a CesiumMan steered on the XZ plane; enemy chases it. See game_enemy.odin.
 package game
 
+import engine "../../engine"
 import "core:log"
 import "core:math"
 import "core:math/linalg"
-import engine "../../engine"
 
 PLAYER_MODEL :: "static/models/rigged_cesiumman.glb"
 PLAYER_CLIP :: "clip_0"
@@ -23,10 +23,15 @@ Player :: struct {
 	heading:  f32, // heading of the autopilot circle
 }
 
+
 player_create :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Player) {
 	engine.actor_add_props(world, id, engine.Model{path = PLAYER_MODEL})
 	engine.actor_add_props(world, id, engine.Animator{clip = PLAYER_CLIP})
 	engine.actor_add_props(world, id, engine.Health{current = PLAYER_HEALTH, max = PLAYER_HEALTH})
+}
+
+player_register_type :: proc(world: ^engine.World) -> engine.Actor_Type {
+	return engine.register_type(world, Player, player_create, player_tick, nil)
 }
 
 player_tick :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Player, dt: f32) {

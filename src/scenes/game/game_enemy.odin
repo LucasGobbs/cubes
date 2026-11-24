@@ -2,11 +2,11 @@
 // engine.register_type; see game_player.odin for the per-actor convention.
 package game
 
+import engine "../../engine"
 import "core:log"
 import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
-import engine "../../engine"
 
 ENEMY_MODEL :: "static/models/sea/ship-large.glb"
 ENEMY_SCALE :: 0.02
@@ -17,6 +17,9 @@ ENEMY_HIT_DAMAGE :: 25
 
 Enemy :: struct {
 	player: engine.Actor_Type, // finds the target player
+}
+enemy_register_type :: proc(world: ^engine.World) -> engine.Actor_Type {
+	return engine.register_type(world, Enemy, enemy_create, enemy_tick, nil)
 }
 
 // Spawns on the ring around the player, facing it.

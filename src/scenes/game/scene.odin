@@ -38,18 +38,21 @@ game_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state := new(Game_State)
 	demo.state = state
 
-	state.move = input.move_2d(&ctx.input, "game.move", up = .W, down = .S, left = .A, right = .D, description = "Move player")
+	state.move = input.move_2d(
+		&ctx.input,
+		"game.move",
+		up = .W,
+		down = .S,
+		left = .A,
+		right = .D,
+		description = "Move player",
+	)
 
 	state.world = engine.world_create(gfx_ctx)
 	// Player first: its slot ticks before enemies, so enemies chase this frame's position.
-	state.player_type = engine.register_type(
-		&state.world,
-		Player,
-		player_create,
-		player_tick,
-		nil,
-	)
-	state.enemy_type = engine.register_type(&state.world, Enemy, enemy_create, enemy_tick, nil)
+	state.player_type = player_register_type(&state.world)
+
+	state.enemy_type = enemy_register_type(&state.world)
 	engine.spawn_camera(&state.world, {0, 6, 8})
 	engine.spawn_typed(&state.world, state.player_type, Player{enemy = state.enemy_type})
 	return true
