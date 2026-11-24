@@ -21,3 +21,6 @@ src/engine/gfx/generated/
 /omp-session-*.html
 # city series screenshots (scripts/snap.sh city city-shots/<step>.png)
 /city-shots/
+# local only, not for GitHub
+/city-clips/
+/city-series.md
