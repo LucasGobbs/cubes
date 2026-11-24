@@ -1,11 +1,13 @@
 package engine
 
+import "base:runtime"
 import "core:c"
 import "core:log"
 import "core:os"
 import "core:strings"
 import "core:time"
 import luajit "luajit"
+import "input"
 
 LUA_TTABLE :: 5
 LUA_TFUNCTION :: 6
@@ -31,7 +33,7 @@ Failed_Load :: struct {
 	mtime: time.Time,
 }
 
-// One LuaJIT state per World, created on the first Script. modules: keys are script_path_key(path), owned;
+// One LuaJIT state per World, created on the first Script or script_bind. modules: keys are script_path_key(path), owned;
 // values are heap blocks, so Script.module stays valid while the map grows.
 // failed: keys are script_path_key(path), owned; values hold the path as given and the last attempt's mtime.
 Script_Host :: struct {
@@ -43,12 +45,21 @@ Script_Host :: struct {
 	handler:    c.int, // registry ref of the traceback handler
 	make_actor: c.int, // registry ref of the Actor constructor
 	expose:     c.int, // registry ref of engine.lua's _expose(cdef, name, size)
+	config: c.int, // registry ref of engine.lua's config table; script_set_config writes it
 	batch_wrap: c.int, // registry ref of engine.lua's _batch(fn) wrapper for batch hooks
 	ready:      bool, // engine.lua loaded; false => every script faults at init
 	last_poll:  time.Tick, // when script_reload_check last ran from script_host_poll_reload
 	gc_budget:  time.Duration, // script_gc_step time per frame
 	frame_time: time.Duration, // tick, fixed_tick and gc time since the last script_take_frame_ms
+	world:       ^World, // bound by script_bind: the world the thunks act on; nil until then
+	inputs:      ^input.System, // bound by script_bind
+	camera:      ^Context, // bound by script_bind: camera_position source; nil reads zeros
+	run_context: runtime.Context, // context of the script_bind caller: thunks run under it
 }
+
+// Every live host, in creation order: script_reload_all and script_take_frame_ms walk it. Package state
+// with no lock: the engine runs on one thread; script tests serialise on script_api_lock.
+script_hosts: [dynamic]^Script_Host
 
 script_host_get :: proc(world: ^World) -> ^Script_Host {
 	if world.scripts == nil do world.scripts = script_host_create()
@@ -57,6 +68,7 @@ script_host_get :: proc(world: ^World) -> ^Script_Host {
 
 script_host_create :: proc() -> ^Script_Host {
 	host := new(Script_Host)
+	host.run_context = context
 	host.L = luajit.newstate()
 	luajit.openlibs(host.L)
 	_ = luajit.gc(host.L, luajit.LUA_GCSTOP, 0) // automatic steps would land in random frames; script_gc_step runs them
@@ -70,6 +82,7 @@ script_host_create :: proc() -> ^Script_Host {
 	host.ready = script_load_engine(host)
 	if os.get_env("CUBES_JIT_V", context.temp_allocator) == "1" do script_jit_debug_set(host, true)
 	host.make_actor = script_run_chunk(host.L, BOOTSTRAP_SRC)
+	append(&script_hosts, host)
 	return host
 }
 
@@ -91,6 +104,15 @@ script_host_destroy :: proc(host: ^Script_Host) {
 	for name in host.exposed do delete(name)
 	delete(host.exposed)
 	luajit.close(host.L)
+	for registered, index in script_hosts {
+		if registered != host do continue
+		unordered_remove(&script_hosts, index)
+		break
+	}
+	if len(script_hosts) == 0 {
+		delete(script_hosts)
+		script_hosts = {}
+	}
 	free(host)
 }
 
@@ -105,7 +127,7 @@ script_run_chunk :: proc(L: ^luajit.State, src: cstring) -> c.int {
 // Lua half of the engine API; its layout checks run against script_push_layout at load.
 ENGINE_SRC :: #load("script/engine.lua", string)
 
-// Loads engine.lua with the API table and layout; its result becomes package.loaded.engine.
+// Loads engine.lua with the API table, layout and host pointer; its result becomes package.loaded.engine.
 // Failure logs and returns false: every script then faults at init instead of crashing.
 script_load_engine :: proc(host: ^Script_Host) -> bool {
 	L := host.L
@@ -119,7 +141,8 @@ script_load_engine :: proc(host: ^Script_Host) -> bool {
 	}
 	luajit.pushlightuserdata(L, rawptr(&script_api_table))
 	script_push_layout(L)
-	if luajit.pcall(L, 2, 1, top+1) != luajit.LUA_OK {
+	luajit.pushlightuserdata(L, rawptr(host))
+	if luajit.pcall(L, 3, 1, top+1) != luajit.LUA_OK {
 		log.errorf("script: engine.lua: %s", luajit.tostring(L, -1))
 		return false
 	}
@@ -127,6 +150,8 @@ script_load_engine :: proc(host: ^Script_Host) -> bool {
 	host.expose = luajit.ref(L, luajit.REGISTRYINDEX)
 	luajit.getfield(L, -1, "_batch") // top+2
 	host.batch_wrap = luajit.ref(L, luajit.REGISTRYINDEX)
+	luajit.getfield(L, -1, "config") // top+2
+	host.config = luajit.ref(L, luajit.REGISTRYINDEX)
 	luajit.getglobal(L, "package")
 	luajit.getfield(L, -1, "loaded")
 	luajit.pushvalue(L, -3)
@@ -196,11 +221,12 @@ script_module_fill :: proc(host: ^Script_Host, module: ^Script_Module, table: c.
 	module.batch = script_module_flag(host, table, "batch")
 	module.tick_all = script_module_batch_fn(host, table, "tick_all")
 	module.fixed_tick_all = script_module_batch_fn(host, table, "fixed_tick_all")
+	module.contact = script_module_fn(host, table, "on_contact")
 }
 
 // Drops every registry ref of the module. Called when a reload replaces them.
 script_module_unref :: proc(host: ^Script_Host, module: ^Script_Module) {
-	refs := [?]c.int{module.table, module.create, module.tick, module.fixed_tick, module.destroy, module.reload, module.tick_all, module.fixed_tick_all}
+	refs := [?]c.int{module.table, module.create, module.tick, module.fixed_tick, module.destroy, module.reload, module.tick_all, module.fixed_tick_all, module.contact}
 	for ref in refs do if ref > 0 do luajit.unref(host.L, luajit.REGISTRYINDEX, ref)
 }
 
@@ -357,6 +383,26 @@ script_finish :: proc(world: ^World, id: Actor_Id, path: string, top, nargs: c.i
 	if script := actor_props(world, id, Script); script != nil do script.faulted = true
 	luajit.settop(L, top)
 	return false
+}
+
+// Calls the actor's module on_contact(self, actor, other) when it has one. A Lua error faults only this actor.
+script_contact :: proc(world: ^World, id: Actor_Id, other: Actor_Id) {
+	script := actor_props(world, id, Script)
+	if script == nil || script.faulted || script.module == nil || script.module.contact == LUA_NOREF do return
+	host := world.scripts
+	L := host.L
+	top := luajit.gettop(L)
+	luajit.rawgeti(L, luajit.REGISTRYINDEX, host.handler) // top+1
+	luajit.rawgeti(L, luajit.REGISTRYINDEX, script.module.contact)
+	luajit.rawgeti(L, luajit.REGISTRYINDEX, script.self_ref)
+	luajit.rawgeti(L, luajit.REGISTRYINDEX, script.actor_ref)
+	if !script_push_actor(host, other, top+1) {
+		log.errorf("script %q: on_contact: argument: %s", script.path, luajit.tostring(L, -1))
+		luajit.settop(L, top)
+		script.faulted = true
+		return
+	}
+	_ = script_finish(world, id, script.path, top, 3, "on_contact")
 }
 
 // Pushes one script_call argument. Actor_Id becomes an Actor cdata. False on a failed make_actor, error left on top.

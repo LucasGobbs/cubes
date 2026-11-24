@@ -27,6 +27,7 @@ Script_Module :: struct {
 	batch:      bool, // M.batch = true: per-actor tick/fixed_tick are skipped; *_all get the whole batch
 	tick_all:   c.int, // batch hook (ids, count, dt), wrapped by engine.lua's _batch; LUA_NOREF when absent
 	fixed_tick_all: c.int,
+	contact:    c.int, // on_contact(self, actor, other); LUA_NOREF when absent
 	ids:        [dynamic]Actor_Id, // live actors of a batch module, collected by script_update each pass; heap, freed in script_host_destroy
 }
 

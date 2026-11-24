@@ -14,6 +14,10 @@ SCRIPTDEMO_SPACING :: 3.0
 SCRIPTDEMO_MODEL_PATH :: "static/models/sea/ship-small.glb"
 SCRIPTDEMO_SCRIPT_PATH :: "src/scenes/scriptdemo/spinner.lua"
 SCRIPTDEMO_BATCH_SCRIPT_PATH :: "src/scenes/scriptdemo/spinner_batch.lua"
+SCRIPTDEMO_BALLS_SCRIPT_PATH :: "src/scenes/scriptdemo/balls.lua"
+SCRIPTDEMO_BALLS_COUNT :: 20
+SCRIPTDEMO_BALL_MODEL_PATH :: "static/models/sphere.glb" // mesh spans -1..1
+SCRIPTDEMO_BALL_SCALE :: 0.5 // = ball radius; collider radius lives in balls.lua
 
 Scriptdemo_State :: struct {
 	world: engine.World,
@@ -37,6 +41,15 @@ scriptdemo_batch_scene :: proc() -> engine.Scene {
 	}
 }
 
+scriptdemo_balls_scene :: proc() -> engine.Scene {
+	return {
+		name = "Scriptdemo balls",
+		create = scriptdemo_balls_create,
+		tick = scriptdemo_tick,
+		destroy = scriptdemo_destroy,
+	}
+}
+
 scriptdemo_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	return scriptdemo_setup(demo, ctx, SCRIPTDEMO_SCRIPT_PATH)
 }
@@ -45,10 +58,36 @@ scriptdemo_batch_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bo
 	return scriptdemo_setup(demo, ctx, SCRIPTDEMO_BATCH_SCRIPT_PATH)
 }
 
+scriptdemo_balls_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
+	count, ok := scriptdemo_count(SCRIPTDEMO_BALLS_COUNT)
+	if !ok do return false
+	state := new(Scriptdemo_State)
+	demo.state = state
+	state.world = engine.world_create(&ctx.gfx)
+	engine.script_bind(&state.world, &ctx.input, ctx)
+	engine.camera_fly(ctx, {0, 6, 14}, {0, 1, 0})
+	engine.spawn(
+		&state.world,
+		engine.Transform{position = {0, -1, 0}},
+		engine.Collider{shape = engine.Box{half = {20, 0.5, 20}}, body = .Static},
+	)
+	for i in 0 ..< count {
+		transform := engine.Transform{position = scriptdemo_position(i, count), scale = {SCRIPTDEMO_BALL_SCALE, SCRIPTDEMO_BALL_SCALE, SCRIPTDEMO_BALL_SCALE}}
+		transform.position.y = 4 + f32(i % 5)
+		engine.spawn(
+			&state.world,
+			transform,
+			engine.Model{path = SCRIPTDEMO_BALL_MODEL_PATH},
+			engine.Script{path = SCRIPTDEMO_BALLS_SCRIPT_PATH},
+		)
+	}
+	return true
+}
+
 // CUBES_SCRIPT_N: actor count. Bad input fails the scene load instead of silently defaulting.
-scriptdemo_count :: proc() -> (count: int, ok: bool) {
+scriptdemo_count :: proc(default_count := SCRIPTDEMO_COUNT) -> (count: int, ok: bool) {
 	text := os.get_env("CUBES_SCRIPT_N", context.temp_allocator)
-	if text == "" do return SCRIPTDEMO_COUNT, true
+	if text == "" do return default_count, true
 	n, parsed := strconv.parse_int(text)
 	if !parsed || n < 1 {
 		log.errorf("CUBES_SCRIPT_N: invalid actor count %q", text)

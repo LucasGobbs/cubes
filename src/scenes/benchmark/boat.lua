@@ -1,17 +1,24 @@
 -- Per-actor replica of the benchmark boat (src/scenes/benchmark/scene.odin boat_step and the
--- sea loop in benchmark_tick). Constants copied from that file; keep them in sync.
--- Sea time is per actor (self.t), so boats spawned mid-run start their wave phase at 0.
+-- sea loop in benchmark_tick). Scene constants come from engine.config (set by benchmark_lua_setup);
+-- initial heading and speed come from the Boat prop. Wave phase is engine.time(), the scene clock.
 local engine = require("engine")
 local sea = require("src.scenes.sea.sea_wave")
 
 local M = {}
 
-local FLEE_RADIUS = 40 -- FLEE_RADIUS
-local FLEE_TURN_RATE = 1.5 -- FLEE_TURN_RATE, rad/s
-local SAIL_X_LIMIT = 700 -- SAIL_X_LIMIT
-local SAIL_Z_NEAR = -20 -- SAIL_Z_NEAR
-local SAIL_Z_FAR = -650 -- SAIL_Z_FAR
-local BOAT_DRAFT = 0.1 -- BOAT_DRAFT
+-- A missing key is a load error: a silent nil would turn every boat into NaN.
+local function config(name)
+  local v = engine.config[name]
+  if v == nil then error("boat.lua: engine.config." .. name .. " not set (scene must script_set_config it)", 0) end
+  return v
+end
+
+local FLEE_RADIUS = config("FLEE_RADIUS")
+local FLEE_TURN_RATE = config("FLEE_TURN_RATE") -- rad/s
+local SAIL_X_LIMIT = config("SAIL_X_LIMIT")
+local SAIL_Z_NEAR = config("SAIL_Z_NEAR")
+local SAIL_Z_FAR = config("SAIL_Z_FAR")
+local BOAT_DRAFT = config("BOAT_DRAFT")
 
 local PI = math.pi
 local TAU = 2 * math.pi
@@ -19,19 +26,18 @@ local sin, cos, atan2, sqrt = math.sin, math.cos, math.atan2, math.sqrt
 
 function M.create(self, a)
   local t = a:transform()
+  local boat = a:prop("Boat")
+  if boat == nil then error("boat.lua: actor has no Boat prop", 0) end
   self.x = t.position.x
   self.z = t.position.z
   self.scale = t.scale.x
-  -- rotation is pure yaw: q = (0, sin(h/2), 0, cos(h/2))
-  self.heading = 2 * atan2(t.rotation.y, t.rotation.w)
-  self.speed = 2 + 4 * math.random() -- Odin float32_range(2, 6)
-  self.t = 0
+  self.heading = boat.heading
+  self.speed = boat.speed
   self.sailing = true
 end
 
 function M.tick(self, a, dt)
   if engine.input.pressed("benchmark.sail") then self.sailing = not self.sailing end
-  self.t = self.t + dt
 
   local cam = engine.camera_position()
   local cx, cy, cz = cam[0], cam[1], cam[2]
@@ -58,7 +64,7 @@ function M.tick(self, a, dt)
   end
 
   local dx, dy, dz = x - cx, sea.Y - cy, z - cz
-  local h, gx, gz = sea.height(x, z, self.t, sqrt(dx * dx + dy * dy + dz * dz))
+  local h, gx, gz = sea.height(x, z, engine.time(), sqrt(dx * dx + dy * dy + dz * dz))
 
   local t = a:transform()
   t.position.x = x

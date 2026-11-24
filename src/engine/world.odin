@@ -71,6 +71,7 @@ Actor_Type_Info :: struct {
 	tick:                    proc(world: ^World, id: Actor_Id, state: rawptr, dt: f32),
 	fixed_tick:              proc(world: ^World, id: Actor_Id, state: rawptr, dt: f32),
 	destroy:                 proc(world: ^World, id: Actor_Id, state: rawptr),
+	contact:                 proc(world: ^World, id: Actor_Id, state: rawptr, other: Actor_Id),
 }
 
 Transform :: struct {
@@ -222,6 +223,7 @@ World :: struct {
 	types:     [dynamic]Actor_Type_Info,
 	assets:    Assets,
 	updating:  bool, // true while world_update ticks; spawns then wait one frame
+	time:      f32, // scene clock in seconds: world_update adds dt; world_fixed_update does not
 	bloom:     ^gfx.Bloom,
 	blur:      ^gfx.Blur,
 	particles: ^particles.System, // lazy like bloom/blur: created on the first Particle_Emitter
@@ -229,6 +231,7 @@ World :: struct {
 	camera_2d: gfx.Camera2D,
 	gravity:   Vec3, // read when the physics world is created on the first Collider
 	physics:   Maybe(phys.World), // lazy like particles: created on the first Collider
+	contact_actors: map[phys.Body]Actor_Id, // body -> actor owning its Collider; lazy like physics, freed in world_destroy
 	texts:     [dynamic]Hud_Text, // queued by world_text; world_render draws and clears them
 	hud:       Maybe(Hud), // lazy like batch: created on the first world_text
 	sky:       Maybe(gfx.Skybox), // lazy: follows Environment.skybox
@@ -296,12 +299,14 @@ register_type :: proc(
 	tick: proc(world: ^World, id: Actor_Id, self: ^T, dt: f32),
 	destroy: proc(world: ^World, id: Actor_Id, self: ^T),
 	fixed_tick: proc(world: ^World, id: Actor_Id, self: ^T, dt: f32) = nil,
+	contact: proc(world: ^World, id: Actor_Id, self: ^T, other: Actor_Id) = nil,
 ) -> Actor_Type {
 	info := Actor_Type_Info{state_size = size_of(T), state_align = align_of(T)}
 	// Same ABI trick as run: only the pointer parameter type differs.
 	if create != nil do info.create = transmute(proc(^World, Actor_Id, rawptr))create
 	if tick != nil do info.tick = transmute(proc(^World, Actor_Id, rawptr, f32))tick
 	if fixed_tick != nil do info.fixed_tick = transmute(proc(^World, Actor_Id, rawptr, f32))fixed_tick
+	if contact != nil do info.contact = transmute(proc(^World, Actor_Id, rawptr, Actor_Id))contact
 	if destroy != nil do info.destroy = transmute(proc(^World, Actor_Id, rawptr))destroy
 	append(&world.types, info)
 	return Actor_Type(len(world.types))
@@ -348,8 +353,15 @@ spawn :: proc(world: ^World, props: ..any) -> Actor_Id {
 	for prop in props do if prop.id == typeid_of(Transform) do transform = prop
 	store_prop(world, id, transform, false)
 	for prop in props do if prop.id != typeid_of(Transform) do store_prop(world, id, prop, false)
-	for block in slot.props do run_added(world, id, block.type, block.data)
-	sync_transform(slot)
+	// Added hooks can add Props (a Script's create sets a Name) and spawn more actors: those
+	// already ran their own added hook, so visit only the blocks that existed before the loop.
+	count := len(world.slots[index].props)
+	for i in 0 ..< count {
+		props := world.slots[index].props
+		if i >= len(props) do break
+		run_added(world, id, props[i].type, props[i].data)
+	}
+	sync_transform(&world.slots[index])
 	return id
 }
 
@@ -497,9 +509,9 @@ world_destroy :: proc(world: ^World) {
 		slot := world.slots[index]
 		if slot.alive do world_destroy_actor(world, Actor_Id{u32(index), slot.generation})
 	}
-	script_unbind(world)
 	if world.scripts != nil do script_host_destroy(world.scripts)
 	if world_phys, ok := world.physics.?; ok do phys.destroy(world_phys)
+	if world.contact_actors != nil do delete(world.contact_actors)
 	delete(world.slots)
 	delete(world.free)
 	if len(world.sky_path) > 0 do delete(world.sky_path)
@@ -520,6 +532,7 @@ world_destroy :: proc(world: ^World) {
 // ticks animations, and applies the first Camera to the renderer. Ticks run in slot
 // order, so the player is ticked before enemies when it is spawned first.
 world_update :: proc(world: ^World, dt: f32) {
+	world.time += dt
 	script_host_poll_reload(world)
 	world.updating = true
 	// Index loop: a tick may spawn (reallocating slots) or destroy, so re-read each step.
@@ -543,6 +556,9 @@ world_update :: proc(world: ^World, dt: f32) {
 				transform.rotation = body.curr.rot
 			}
 		}
+		world.updating = true
+		dispatch_contacts(world, phys.contact_begin_events(world_phys))
+		world.updating = false
 	}
 	playbacks := make([dynamic]^gfx.Playback, 0, 0, context.temp_allocator)
 	for &slot in world.slots {
@@ -1048,13 +1064,38 @@ collider_added :: proc(world: ^World, id: Actor_Id, self: ^Collider) {
 		assert(false, "engine: Collider needs a shape")
 	}
 	slot.body = tracked
+	if world.contact_actors == nil do world.contact_actors = make(map[phys.Body]Actor_Id)
+	world.contact_actors[tracked.body] = id
 }
 
 @(private = "file")
 collider_removed :: proc(world: ^World, id: Actor_Id, self: ^Collider) {
 	slot := &world.slots[id.index]
+	if tracked, ok := slot.body.?; ok do delete_key(&world.contact_actors, tracked.body)
 	if tracked, ok := slot.body.?; ok do phys.body_destroy(tracked.body)
 	slot.body = nil
+}
+
+// Runs contact hooks for each begin-touch pair: Odin contact, then Lua on_contact, per side.
+// A hook may destroy either actor, so every call re-checks both ids.
+@(private = "file")
+dispatch_contacts :: proc(world: ^World, pairs: []phys.Contact_Pair) {
+	for pair in pairs {
+		a, ok_a := world.contact_actors[pair.a]
+		b, ok_b := world.contact_actors[pair.b]
+		if !ok_a || !ok_b do continue
+		contact_notify(world, a, b)
+		contact_notify(world, b, a)
+	}
+}
+
+@(private = "file")
+contact_notify :: proc(world: ^World, id, other: Actor_Id) {
+	if !world_valid(world, id) || !world_valid(world, other) do return
+	slot := &world.slots[id.index]
+	if info, ok := slot_type(world, slot); ok && info.contact != nil do info.contact(world, id, slot.state, other)
+	if !world_valid(world, id) || !world_valid(world, other) do return
+	script_contact(world, id, other)
 }
 
 // Plays the Animator on the slot's skinned Model; no-op until the Model is built.

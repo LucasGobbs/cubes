@@ -61,6 +61,7 @@ batch_killer_tick :: proc(world: ^World, id: Actor_Id, self: ^Batch_Killer, dt: 
 
 @(test)
 script_tick_counts_and_keeps_self :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	path := script_test_write("tick", `
 local M = {}
 function M.tick(self, a, dt)
@@ -87,6 +88,7 @@ return M
 
 @(test)
 script_fixed_tick_runs_only_from_fixed_update :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	path := script_test_write("fixed", `
 local M = {}
 function M.tick(self, a, dt) ticks = (ticks or 0) + 1 end
@@ -110,6 +112,7 @@ return M
 
 @(test)
 script_tick_runs_after_odin_tick :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	path := script_test_write("order", `
 local M = {}
 function M.tick(self, a, dt) ticks = (ticks or 0) + 1 end
@@ -134,6 +137,7 @@ return M
 
 @(test)
 script_runtime_error_faults_only_that_actor :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	context.logger = log.nil_logger()
 	bad_path := script_test_write("error_bad", `
 local M = {}
@@ -165,6 +169,7 @@ return M
 
 @(test)
 script_create_runs_on_spawn :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	path := script_test_write("create", `
 local M = {}
 function M.create(self, a) created = (created or 0) + 1 end
@@ -180,6 +185,7 @@ return M
 
 @(test)
 script_destroy_runs_on_destroy_actor :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	path := script_test_write("destroy_actor", `
 local M = {}
 function M.destroy(self, a) destroyed = (destroyed or 0) + 1 end
@@ -196,6 +202,7 @@ return M
 
 @(test)
 script_destroy_runs_on_world_destroy :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	// The host is closed by world_destroy, so the Lua side reports through a marker file.
 	marker := "/tmp/cubes_script_test_destroy_marker.txt"
 	defer os.remove(marker)
@@ -221,6 +228,7 @@ return M
 
 @(test)
 script_call_invokes_named_function :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	path := script_test_write("call", `
 local M = {}
 function M.on_hit(self, a, dmg)
@@ -242,6 +250,7 @@ return M
 
 @(test)
 script_missing_file_faults_without_crash :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	context.logger = log.nil_logger()
 	world := world_create(nil)
 	defer world_destroy(&world)
@@ -255,6 +264,7 @@ script_missing_file_faults_without_crash :: proc(t: ^testing.T) {
 
 @(test)
 script_replace_runs_old_destroy_then_new_create :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	path_a := script_test_write("replace_a", `
 local M = {}
 trace = trace or ""
@@ -280,7 +290,6 @@ return M
 }
 
 // The API thunks read package-level world/input pointers, and odin test runs tests in parallel.
-@(private = "file")
 script_api_lock: sync.Mutex
 
 @(test)
@@ -308,6 +317,7 @@ return M
 
 @(test)
 script_api_engine_layout_matches_odin :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	world := world_create(nil)
 	defer world_destroy(&world)
 	host := script_host_get(&world)
@@ -581,6 +591,7 @@ script_test_count_errors :: proc(data: rawptr, level: log.Level, text: string, o
 
 @(test)
 script_reload_swaps_module_keeps_actor_state :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	context.logger = log.nil_logger()
 	path := script_test_write("reload_swap", `
 local M = {}
@@ -616,6 +627,7 @@ return M
 
 @(test)
 script_reload_hook_runs_once_per_live_actor :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	context.logger = log.nil_logger()
 	path := script_test_write("reload_hook", `
 local M = {}
@@ -644,6 +656,7 @@ return M
 
 @(test)
 script_broken_reload_keeps_old_module_and_logs_once :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	context.logger = log.nil_logger()
 	path := script_test_write("reload_broken", `
 local M = {}
@@ -676,6 +689,7 @@ return M(
 
 @(test)
 script_fixed_reload_applies_after_broken_reload :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	context.logger = log.nil_logger()
 	path := script_test_write("reload_fix", `
 local M = {}
@@ -702,6 +716,7 @@ return M
 
 @(test)
 script_faulted_actor_recovers_after_fixed_reload :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	context.logger = log.nil_logger()
 	path := script_test_write("reload_recover", `
 local M = {}
@@ -731,6 +746,7 @@ return M
 
 @(test)
 script_spawn_with_broken_module_recovers_on_fixed_reload :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	context.logger = log.nil_logger()
 	path := script_test_write("reload_spawn_broken", "local M = {}\nreturn M(\n")
 	defer os.remove(path)
@@ -765,9 +781,8 @@ script_unbind_on_world_destroy_is_safe :: proc(t: ^testing.T) {
 	script_bind(&world, &inputs)
 	world_destroy(&world)
 	script_reload_all()
-	testing.expect(t, !script_input_ready(), "inputs unbound with the world")
 	_, ok := script_take_frame_ms()
-	testing.expect(t, !ok, "no script host bound after world_destroy")
+	testing.expect(t, !ok, "no script host alive after world_destroy")
 }
 
 @(test)
@@ -788,6 +803,7 @@ script_take_frame_ms_resets_after_read :: proc(t: ^testing.T) {
 
 @(test)
 script_gc_step_reclaims_garbage_under_budget :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	world := world_create(nil)
 	defer world_destroy(&world)
 	host := script_host_get(&world)
@@ -995,6 +1011,7 @@ return M
 
 @(test)
 script_set_jit_debug_loads_jit_v :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
 	world := world_create(nil)
 	defer world_destroy(&world)
 	script_set_jit_debug(&world, true)
@@ -1012,3 +1029,179 @@ script_path_key_folds_backslash_separators :: proc(t: ^testing.T) {
 	testing.expect_value(t, script_path_key(`a\b.lua`), "a/b.lua")
 	testing.expect_value(t, script_path_key(`a\b.lua`), script_path_key(`a/b.lua`))
 }
+
+// Two worlds, each with its own scripted host, input system and actors: each script sees only its own.
+@(test)
+two_worlds_are_isolated :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
+	path := script_test_write("two_worlds", `
+local engine = require("engine")
+local M = {}
+function M.tick(self, a, dt)
+  seen_hero = engine.find("hero") == nil and 0 or 1
+  seen_villain = engine.find("villain") == nil and 0 or 1
+  down_w = engine.input.down("W") and 1 or 0
+end
+return M
+`)
+	defer os.remove(path)
+	inputs_a := input.system_create(mock.create())
+	defer input.system_destroy(&inputs_a)
+	inputs_b := input.system_create(mock.create())
+	defer input.system_destroy(&inputs_b)
+	world_a := world_create(nil)
+	defer world_destroy(&world_a)
+	world_b := world_create(nil)
+	defer world_destroy(&world_b)
+	script_bind(&world_a, &inputs_a)
+	script_bind(&world_b, &inputs_b)
+
+	spawn(&world_a, Name{value = "hero"})
+	spawn(&world_a, Script{path = path})
+	spawn(&world_b, Name{value = "villain"})
+	spawn(&world_b, Script{path = path})
+
+	_ = input.button(&inputs_a, "W", .W)
+	input.key_set(&inputs_a, .W, true)
+	input.update(&inputs_a)
+	_ = input.button(&inputs_b, "W", .W)
+	input.update(&inputs_b)
+
+	world_update(&world_a, 0.1)
+	world_update(&world_b, 0.1)
+	testing.expect_value(t, script_test_number(&world_a, "seen_hero"), 1)
+	testing.expect_value(t, script_test_number(&world_a, "seen_villain"), 0)
+	testing.expect_value(t, script_test_number(&world_a, "down_w"), 1)
+	testing.expect_value(t, script_test_number(&world_b, "seen_hero"), 0)
+	testing.expect_value(t, script_test_number(&world_b, "seen_villain"), 1)
+	testing.expect_value(t, script_test_number(&world_b, "down_w"), 0)
+}
+
+@(test)
+script_api_actor_setters_write_through :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
+	path := script_test_write("actor_setters", `
+local M = {}
+function M.create(self, a)
+  a:set_scale(2, 3, 4)
+  a:add_box_collider(1, 0.5, 1, true)
+  a:set_name("crate")
+end
+return M
+`)
+	defer os.remove(path)
+	inputs := input.system_create(mock.create())
+	defer input.system_destroy(&inputs)
+	world := world_create(nil)
+	defer world_destroy(&world)
+	script_bind(&world, &inputs)
+
+	id := spawn(&world, Transform{}, Script{path = path})
+	world_update(&world, 0.1)
+	testing.expect_value(t, actor_props(&world, id, Transform).scale, Vec3{2, 3, 4})
+	testing.expect_value(t, actor_props(&world, id, Name).value, "crate")
+	collider := actor_props(&world, id, Collider)
+	testing.expect(t, collider != nil, "box collider added")
+	box, is_box := collider.shape.(Box)
+	testing.expect(t, is_box && box.half == Vec3{1, 0.5, 1}, "box half extents from Lua")
+}
+
+@(test)
+script_api_stale_actor_setters_are_inert :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
+	holder := script_test_write("stale_holder", `
+local M = {}
+function M.create(self, a) stale = a end
+return M
+`)
+	probe := script_test_write("stale_probe", `
+local M = {}
+function M.tick(self, a, dt)
+  if probed then return end
+  probed = 1
+  stale:set_scale(9, 9, 9)
+  stale:add_box_collider(1, 1, 1, false)
+  stale:set_name("ghost")
+  stale:add_sphere_collider(1)
+end
+return M
+`)
+	defer os.remove(holder)
+	defer os.remove(probe)
+	inputs := input.system_create(mock.create())
+	defer input.system_destroy(&inputs)
+	world := world_create(nil)
+	defer world_destroy(&world)
+	script_bind(&world, &inputs)
+
+	dead := spawn(&world, Transform{}, Script{path = holder})
+	world_update(&world, 0.1) // create stores the handle in the global `stale`
+	world_destroy_actor(&world, dead)
+	spawn(&world, Transform{}, Script{path = probe}) // reuses the slot with a new generation
+	world_update(&world, 0.1)
+	testing.expect_value(t, script_test_number(&world, "probed"), 1)
+	_, found := world_find_by_name(&world, "ghost")
+	testing.expect(t, !found, "stale set_name ignored")
+	testing.expect(t, actor_props(&world, dead, Collider) == nil, "stale id gets no collider")
+	testing.expect(t, actor_props(&world, dead, Transform) == nil, "stale id keeps no transform")
+}
+
+@(test)
+script_api_camera_and_environment_setters_without_live_actor :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
+	path := script_test_write("env_setters", `
+local engine = require("engine")
+local M = {}
+function M.tick(self, a, dt)
+  cam_ok = (engine.camera_look_at(1, 2, 3) and engine.camera_set_fov(0.5)) and 1 or 0
+  fog_ok = (engine.set_fog(1, 0, 0, 30) and engine.set_sun(0, -1, 0) and engine.set_shadows(false)) and 1 or 0
+  clear_ok = engine.clear_fog() and 1 or 0
+end
+return M
+`)
+	defer os.remove(path)
+	inputs := input.system_create(mock.create())
+	defer input.system_destroy(&inputs)
+	world := world_create(nil)
+	defer world_destroy(&world)
+	script_bind(&world, &inputs)
+
+	// No live Camera or Environment yet: every setter reports false.
+	spawn(&world, Transform{}, Script{path = path})
+	world_update(&world, 0.1)
+	testing.expect_value(t, script_test_number(&world, "cam_ok"), 0)
+	testing.expect_value(t, script_test_number(&world, "fog_ok"), 0)
+	testing.expect_value(t, script_test_number(&world, "clear_ok"), 0)
+}
+
+@(test)
+script_api_time_and_window_size_without_device :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
+	path := script_test_write("time_window", `
+local engine = require("engine")
+local M = {}
+function M.tick(self, a, dt)
+  now = engine.time()
+  local s = engine.window_size()
+  win_w, win_h = s[0], s[1]
+  engine.hud_text("hi", 10, 20, 1, 0, 0, 0.5)
+end
+return M
+`)
+	defer os.remove(path)
+	inputs := input.system_create(mock.create())
+	defer input.system_destroy(&inputs)
+	world := world_create(nil)
+	defer world_destroy(&world)
+	script_bind(&world, &inputs)
+
+	spawn(&world, Transform{}, Script{path = path})
+	world_update(&world, 0.25)
+	world_update(&world, 0.25)
+	testing.expect_value(t, script_test_number(&world, "now"), 0.5)
+	testing.expect_value(t, script_test_number(&world, "win_w"), 0)
+	testing.expect_value(t, script_test_number(&world, "win_h"), 0)
+	testing.expect_value(t, len(world.texts), 2)
+	testing.expect_value(t, world.texts[0].color, [4]f32{1, 0, 0, 0.5})
+}
+

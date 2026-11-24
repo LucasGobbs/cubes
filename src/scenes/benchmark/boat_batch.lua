@@ -1,6 +1,6 @@
--- Batch replica of the benchmark boat (see boat.lua; constants from src/scenes/benchmark/scene.odin).
--- Per-boat state lives in module-level double arrays keyed by Actor index, grown on demand.
--- One module clock (advanced once per tick_all) drives every boat's wave phase.
+-- Batch replica of the benchmark boat (see boat.lua). Scene constants come from engine.config,
+-- initial heading and speed from the Boat prop. Per-boat state lives in module-level double
+-- arrays keyed by Actor index, grown on demand. The wave clock is engine.time(), read once per tick_all.
 local ffi = require("ffi")
 local engine = require("engine")
 local sea = require("src.scenes.sea.sea_wave")
@@ -8,12 +8,19 @@ local sea = require("src.scenes.sea.sea_wave")
 local M = {}
 M.batch = true
 
-local FLEE_RADIUS = 40 -- FLEE_RADIUS
-local FLEE_TURN_RATE = 1.5 -- FLEE_TURN_RATE, rad/s
-local SAIL_X_LIMIT = 700 -- SAIL_X_LIMIT
-local SAIL_Z_NEAR = -20 -- SAIL_Z_NEAR
-local SAIL_Z_FAR = -650 -- SAIL_Z_FAR
-local BOAT_DRAFT = 0.1 -- BOAT_DRAFT
+-- A missing key is a load error: a silent nil would turn every boat into NaN.
+local function config(name)
+  local v = engine.config[name]
+  if v == nil then error("boat_batch.lua: engine.config." .. name .. " not set (scene must script_set_config it)", 0) end
+  return v
+end
+
+local FLEE_RADIUS = config("FLEE_RADIUS")
+local FLEE_TURN_RATE = config("FLEE_TURN_RATE") -- rad/s
+local SAIL_X_LIMIT = config("SAIL_X_LIMIT")
+local SAIL_Z_NEAR = config("SAIL_Z_NEAR")
+local SAIL_Z_FAR = config("SAIL_Z_FAR")
+local BOAT_DRAFT = config("BOAT_DRAFT")
 
 local PI = math.pi
 local TAU = 2 * math.pi
@@ -22,7 +29,6 @@ local DOUBLE = ffi.sizeof("double")
 
 local cap = 0
 local xs, zs, headings, speeds, scales = nil, nil, nil, nil, nil
-local clock = 0
 local sailing = true
 
 local function grow(arr, used, new_cap)
@@ -46,19 +52,21 @@ function M.create(self, a)
   local k = a.index
   reserve(k + 1)
   local t = a:transform()
+  local boat = a:prop("Boat")
+  if boat == nil then error("boat_batch.lua: actor has no Boat prop", 0) end
   xs[k] = t.position.x
   zs[k] = t.position.z
   scales[k] = t.scale.x
-  headings[k] = 2 * atan2(t.rotation.y, t.rotation.w) -- pure yaw quaternion, see boat.lua
-  speeds[k] = 2 + 4 * math.random() -- Odin float32_range(2, 6)
+  headings[k] = boat.heading
+  speeds[k] = boat.speed
 end
 
--- Hot reload swaps the module, so its arrays are empty: rebuild each live boat from its transform.
+-- Hot reload swaps the module, so its arrays are empty: rebuild each live boat from its transform and prop.
 M.reload = M.create
 
 function M.tick_all(ids, count, dt)
   if engine.input.pressed("benchmark.sail") then sailing = not sailing end
-  clock = clock + dt
+  local clock = engine.time()
   local cam = engine.camera_position()
   local cx, cy, cz = cam[0], cam[1], cam[2]
 

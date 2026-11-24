@@ -11,6 +11,7 @@ physics_scenarios :: proc(t: ^testing.T) {
 	sphere_falls_under_gravity(t)
 	box_rests_on_ground(t)
 	tracked_blend_interpolates(t)
+	contact_begin_fires_once_on_landing(t)
 }
 
 sphere_falls_under_gravity :: proc(t: ^testing.T) {
@@ -50,4 +51,20 @@ tracked_blend_interpolates :: proc(t: ^testing.T) {
 	testing.expect(t, linalg.length(pos0 - p1) < 1e-5, "alpha 0 should be prev")
 	testing.expect(t, linalg.length(pos1 - p2) < 1e-5, "alpha 1 should be curr")
 	testing.expect(t, linalg.length(pos_mid - (p1 + p2) * 0.5) < 1e-5, "alpha 0.5 should be midpoint")
+}
+
+contact_begin_fires_once_on_landing :: proc(t: ^testing.T) {
+	w := create()
+	defer destroy(w)
+	ground := body_ground(w, {10, 0.5, 10})
+	ball := body_sphere(w, {0, 3, 0}, 0.5)
+	begins := 0
+	for _ in 0 ..< 180 {
+		step(w, 1.0 / 60)
+		for pair in contact_begin_events(w) {
+			begins += 1
+			testing.expect(t, (pair.a == ground && pair.b == ball) || (pair.a == ball && pair.b == ground), "pair should name ground and ball")
+		}
+	}
+	testing.expect_value(t, begins, 1)
 }

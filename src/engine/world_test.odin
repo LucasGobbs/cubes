@@ -277,3 +277,13 @@ fixed_update_runs_fixed_tick_only :: proc(t: ^testing.T) {
 	testing.expect(t, state.ticks == 1)
 	testing.expect(t, state.fixed_ticks == 3)
 }
+
+@(test)
+world_time_sums_update_dt_only :: proc(t: ^testing.T) {
+	world := world_create(nil)
+	defer world_destroy(&world)
+	world_update(&world, 0.25)
+	world_update(&world, 0.5)
+	world_fixed_update(&world, 1.0)
+	testing.expect_value(t, world.time, f32(0.75))
+}

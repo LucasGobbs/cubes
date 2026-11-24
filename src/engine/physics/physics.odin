@@ -2,6 +2,13 @@ package physics
 
 import b3 "vendor:box3d"
 import "core:math/linalg"
+import "core:sync"
+
+// Box3D keeps its world slots in one process-global array, found by scanning for a free slot
+// without atomics. Two threads creating or destroying worlds at once pick the same slot, so
+// these two calls are serialized. Calls on an existing world stay unlocked.
+@(private = "file")
+world_slots_mutex: sync.Mutex
 
 // Thin wrapper over Box3D. Owns one world; bodies are plain ids the caller keeps.
 World :: struct {
@@ -14,11 +21,13 @@ create :: proc(gravity := b3.Vec3{0, -10, 0}, workers := 1) -> World {
 	def := b3.DefaultWorldDef()
 	def.gravity = gravity
 	def.workerCount = u32(workers)
+	sync.guard(&world_slots_mutex)
 	return World{id = b3.CreateWorld(def)}
 }
 
 // Destroys the world and every body/shape in it.
 destroy :: proc(w: World) {
+	sync.guard(&world_slots_mutex)
 	b3.DestroyWorld(w.id)
 }
 
@@ -47,6 +56,26 @@ body_destroy :: proc(id: b3.BodyId) {
 	b3.DestroyBody(id)
 }
 
+// Body id as contact events name it; also the key World maps Colliders by.
+Body :: b3.BodyId
+
+// Begin-touch pair of two bodies, from the last step's contact events.
+Contact_Pair :: struct {
+	a, b: Body,
+}
+
+// Bodies that began touching during the last step. Temp-allocated; nil when none began.
+contact_begin_events :: proc(w: World) -> []Contact_Pair {
+	events := b3.World_GetContactEvents(w.id)
+	if events.beginCount == 0 do return nil
+	pairs := make([]Contact_Pair, int(events.beginCount), context.temp_allocator)
+	for i in 0 ..< int(events.beginCount) {
+		e := events.beginEvents[i]
+		pairs[i] = {b3.Shape_GetBody(e.shapeIdA), b3.Shape_GetBody(e.shapeIdB)}
+	}
+	return pairs
+}
+
 // Dynamic box centered at pos with the given half extents and density.
 body_box :: proc(w: World, pos: b3.Vec3, half: b3.Vec3, density := f32(1)) -> b3.BodyId {
 	bd := b3.DefaultBodyDef()
@@ -65,6 +94,7 @@ body_sphere :: proc(w: World, pos: b3.Vec3, radius: f32, density := f32(1)) -> b
 	id := b3.CreateBody(w.id, bd)
 	sd := b3.DefaultShapeDef()
 	sd.density = density
+	sd.enableContactEvents = true
 	sphere := b3.Sphere{radius = radius}
 	_ = b3.CreateSphereShape(id, sd, &sphere)
 	return id
@@ -114,6 +144,7 @@ tracked_blend :: proc(t: Tracked, alpha: f32) -> (pos: [3]f32, rot: quaternion12
 add_box_shape :: proc(id: b3.BodyId, half: b3.Vec3, density: f32) {
 	sd := b3.DefaultShapeDef()
 	sd.density = density
+	sd.enableContactEvents = true
 	hull := b3.MakeBoxHull(half.x, half.y, half.z)
 	_ = b3.CreateHullShape(id, sd, &hull.base)
 }

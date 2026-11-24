@@ -11,6 +11,7 @@ import physics "scenes/physics"
 import scriptdemo "scenes/scriptdemo"
 import skinned "scenes/skinned"
 import stencil "scenes/stencil"
+// cubes:imports
 
 SCENES := [?]engine.Scene_Entry {
 	{name = "skinned", make = skinned.skinned_scene},
@@ -26,4 +27,7 @@ SCENES := [?]engine.Scene_Entry {
 	{name = "scriptdemo", make = scriptdemo.scriptdemo_scene},
 	{name = "scriptdemo_batch", make = scriptdemo.scriptdemo_batch_scene},
 	{name = "scriptdemo_odin", make = scriptdemo.scriptdemo_odin_scene},
+	{name = "scriptdemo_balls", make = scriptdemo.scriptdemo_balls_scene},
+	{name = "data_physics"},
+	// cubes:scenes
 }

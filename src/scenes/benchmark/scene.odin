@@ -85,6 +85,12 @@ Boat_Slot :: struct {
 	scale:   f32,
 }
 
+// Initial state for the Lua boats, read with a:prop("Boat"). Same values as the Boat_Slot they mirror.
+Boat :: struct {
+	heading, speed: f32,
+}
+BOAT_PROP_CDEF :: "typedef struct { float heading, speed; } Boat;"
+
 Benchmark_State :: struct {
 	world:           engine.World,
 	env:             engine.Actor_Id,
@@ -159,6 +165,18 @@ benchmark_lua_batch_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) ->
 	return benchmark_setup(demo, ctx, BOAT_LUA_BATCH_PATH, "lua batch")
 }
 
+benchmark_lua_setup :: proc(world: ^engine.World) -> bool {
+	engine.register_props(world, Boat)
+	if !engine.script_expose(world, Boat, "Boat", BOAT_PROP_CDEF) do return false
+	if !engine.script_set_config(world, "FLEE_RADIUS", FLEE_RADIUS) do return false
+	if !engine.script_set_config(world, "FLEE_TURN_RATE", FLEE_TURN_RATE) do return false
+	if !engine.script_set_config(world, "SAIL_X_LIMIT", SAIL_X_LIMIT) do return false
+	if !engine.script_set_config(world, "SAIL_Z_NEAR", SAIL_Z_NEAR) do return false
+	if !engine.script_set_config(world, "SAIL_Z_FAR", SAIL_Z_FAR) do return false
+	if !engine.script_set_config(world, "BOAT_DRAFT", BOAT_DRAFT) do return false
+	return true
+}
+
 benchmark_setup :: proc(demo: ^engine.Scene, ctx: ^engine.Context, script, label: string) -> bool {
 	per_model, ok := bench_per_model()
 	if !ok do return false
@@ -170,6 +188,12 @@ benchmark_setup :: proc(demo: ^engine.Scene, ctx: ^engine.Context, script, label
 
 	state.world = engine.world_create(&ctx.gfx)
 	engine.script_bind(&state.world, &ctx.input, ctx)
+	if script != "" && !benchmark_lua_setup(&state.world) {
+		engine.world_destroy(&state.world)
+		demo.state = nil
+		free(state)
+		return false
+	}
 	state.add_action = input.button(&ctx.input, "benchmark.add", .EQUALS, "Add actors")
 	state.subtract_action = input.button(
 		&ctx.input,
@@ -218,6 +242,7 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 			yaw := linalg.quaternion_from_euler_angles_f32(0, heading, 0, .XYZ)
 			scale := 0.25 + rand.float32_range(0, 0.2)
 			if rand.float32() < 0.12 do scale *= rand.float32_range(2, 4) // a few big ships among the small boats
+			speed := rand.float32_range(2, 6)
 			props := make([dynamic]any, context.temp_allocator)
 			append(
 				&props,
@@ -228,9 +253,8 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 					scale = {scale, scale, scale},
 				},
 			)
-			if state.script != "" do append(&props, engine.Script{path = state.script})
+			if state.script != "" do append(&props, engine.Script{path = state.script}, Boat{heading = heading, speed = speed})
 			actor := engine.spawn(&state.world, ..props[:])
-			speed := rand.float32_range(2, 6)
 			append(
 				&state.boats,
 				Boat_Slot {
@@ -322,7 +346,9 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 	if input.pressed(inputs, state.sail_action) do state.sailing = !state.sailing
 	_, fog_on := env.fog.?
 
-	state.sea_state.time += delta_time
+	// world_update adds delta_time to world.time after this tick; Lua boats read engine.time() inside
+	// that update, so this value is the one they see. Mesh, Odin boats and Lua boats share it.
+	state.sea_state.time = state.world.time + delta_time
 	if state.script == "" {
 		camera := engine.camera_position(ctx)
 		for &boat in state.boats {
