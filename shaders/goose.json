@@ -38,6 +38,17 @@
       "name": "compute_demo",
       "source": "shaders/compute.slang",
       "compute": "computeMain"
+    },
+    {
+      "name": "city",
+      "source": "shaders/city.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "city_windows",
+      "source": "shaders/city_windows.slang",
+      "compute": "computeMain"
     }
   ]
 }
