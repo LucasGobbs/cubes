@@ -2,12 +2,14 @@
 // `./main skinned` or `make run ARGS=skinned`. Defaults to "benchmark".
 // Number keys 1-9 switch scene at runtime (order of SCENES); M toggles MSAA.
 // `./main benchmark --bench 10` runs 10 seconds without input, prints stats, exits.
+// `--record ex,ey,ez,tx,ty,tz` arcs a camera around a target for 10 s then quits (src/record.odin).
 // Fullscreen at desktop size by default (skips the compositor); `--WINDOWED` opts out.
 package main
 
 import "core:log"
 import "core:os"
 import "core:strconv"
+import "core:strings"
 import "engine/gfx"
 import engine "engine"
 
@@ -32,6 +34,21 @@ main :: proc() {
 			}
 			bench.seconds = seconds
 			i += 1
+		} else if os.args[i] == "--record" {
+			parts: [6]f32
+			ok := i + 1 < len(os.args)
+			if ok {
+				fields := strings.split(os.args[i + 1], ",", context.temp_allocator)
+				ok = len(fields) == 6
+				for f, k in fields do if ok && k < 6 do parts[k], ok = strconv.parse_f32(f)
+			}
+			if !ok {
+				log.errorf("--record needs ex,ey,ez,tx,ty,tz (camera position and look-at target)")
+				os.exit(1)
+			}
+			record.on = true
+			record.eye, record.target = {parts[0], parts[1], parts[2]}, {parts[3], parts[4], parts[5]}
+			i += 1
 		} else if os.args[i] == "--WINDOWED" {
 			windowed = true
 		} else if os.args[i] == "--indirect" {
@@ -48,7 +65,7 @@ main :: proc() {
 			fullscreen = !windowed,
 			scenes = SCENES[:],
 			start = name,
-			after_frame = bench_after_frame,
+			after_frame = frame_hook,
 			before_exit = bench_before_exit,
 		},
 	)
