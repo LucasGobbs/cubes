@@ -1,460 +1,168 @@
-# LuaJIT scripting for the engine
+# Next steps: scaffolding CLI, usable Lua scripting, engine cleanup
 
-Status: **phases 0-4 done on macOS arm64** (63 passing engine tests; benchmarks in section 7). Phase 0: submodule pinned at `96f7b297326e9fd454b7186c6858b2773f94a0dc`, `make luajit`, `src/engine/luajit` binding. Phase 1: `Script_Host`, `Script` prop, tick/fixed_tick, `script_call`, faulted handling. Phase 2: `script_api.odin`, embedded `engine.lua` with layout checks, `script_expose` / `a:prop`, `scriptdemo` scenes. Phase 3: hot reload (4 Hz mtime poll, `reload` hook, F5 key; F5 exercised on macOS: F5 in the F1 panel logs `script reloaded`). Phase 4: GC budget, `script` stats row, batch mode, `CUBES_JIT_V=1`, measured table. Phase 5 (Linux/Windows): Linux arm64 (ubuntu:24.04 container, Odin `dev-2026-11a` linux-arm64) passes `make luajit`, `odin check src -define:EDITOR=false` (script_*, engine.lua embed, luajit type-check), `odin check src/engine/luajit -no-entry-point`, `odin build src -build-mode:obj`, and a full link `odin build src` to an ELF (SDL3 built from source, release-3.4.20, since noble apt has no SDL3). Not run on Linux: `make default-shaders`, `make test-engine`, and executing the linked binary (goose's Slang is macOS arm64). Linux x86_64 and Windows not started. Replaces the abandoned PUC-Lua 5.4 experiment.
+Scope: roadmap items 1 (finish what is in flight), 2 (Lua usable for gameplay) and 3 (engine cleanup).
+Item 4 (Windows, Linux x86_64 with GPU, macOS notarization) is blocked on hardware and not planned here.
 
-Phase 0 notes: The `LUAJIT=system` fallback is a Makefile no-op only; the Odin binding does not link a system lib yet. Linux arm64 verified in an ubuntu:24.04 container (Docker/colima): `make luajit` (GC64 flag passed, `libluajit.a` built) and `odin test src/engine/luajit` (6 tests pass) with the Linux link branch unchanged (`system:m`, `system:dl`, no fixes needed). Phase 5 smoke on the same container: `odin check src` and full link to an ELF pass with no Linux-specific edits to `script_*.odin`, `luajit.odin`, or the Makefile. Odin's vendor `cgltf`, `stb` and `box3d` need their `build_*.sh` scripts run first on Linux (box3d's script also needs `wasm-ld`, from `lld-18`); SDL3 comes from source. Linux x86_64 and Windows link branches are written but never compiled.
+Status of the previous plans: the LuaJIT scripting design (phases 0-5) and `improvements.md` (Actor/Props) are
+implemented and committed. Both files were deleted from the working tree (uncommitted); the last committed versions are
+`git show HEAD:plan.md` and `git show HEAD:improvements.md`. Three comments still point at the old plan.md
+(`Makefile:14`, `README.md:154`, `src/engine/script_api.odin:11`): task 0.1 resolves that.
 
-## 1. Goal and non-goals
+Facts this plan rests on (read from the code on 2026-11-24, not assumed):
 
-Goal: optional gameplay scripting in **LuaJIT 2.1** with hot reload, layered **on top of** the existing Odin scripting
-(`register_type`, `register_props`), not instead of it. Choosing between them is per feature:
+- Scenes are registered in `src/scene.odin` (`SCENES` array + one import each). Per-actor convention is in `src/scenes/game/game_player.odin` (state struct + create/tick procs registered with `engine.register_type`).
+- Lua API thunks use package globals `script_world`, `script_inputs`, `script_ctx`, `script_context` (`script_api.odin:33-43`): one scripted world at a time.
+- `physics.odin` wraps `step`, `body_*`; it does not expose Box3D contact or sensor events, although the vendor package has `World_GetContactEvents`, `GetSensorEvents`, `ContactBeginTouchEvent`.
+- `Actor_Def` (scene JSON) has model, clip, transform, sprite, health, particles. It has no collider and no environment.
+- `world_extract` rebuilds the draw-pointer list every frame in `context.temp_allocator`. Its cost at ~5000 actors has never been measured.
+- `scene_file_load` logs `cannot read` for a missing file; `data_load`/`data_create` call it for data scenes, where the file is mandatory.
+- Lua constants for the benchmark boats are duplicated in Odin (`boat_step`) and Lua (`boat.lua`, `boat_batch.lua`); the Lua scenes use unseeded `math.random`; per-actor Lua sea time is per boat (`self.t`).
 
-| Use | When |
-|---|---|
-| Odin (`register_type` tick procs) | hot paths, 1k+ actors per type, systems code, anything touching GPU/physics/jobs |
-| Lua (`Script` prop) | gameplay, tuning, prototyping, anything you want to edit while the scene runs |
+Global rules: every phase ends with `make test-engine` green and a smoke run of the changed path; no commit without the
+user asking; Odin and Lua behaviour changes get a test that fails before and passes after.
 
-Both coexist on one actor. Odin tick runs first, Lua tick second (section 6).
-
-Non-goals (v1): Lua calling the renderer (`gfx.*`), Lua on job threads, a sandbox as a security boundary, a script
-debugger, a file-system watcher thread (mtime polling is enough), a Lua-driven scene format.
-
-## 2. Architecture
+## Order and dependencies
 
 ```mermaid
 flowchart LR
-  subgraph Odin
-    W[World / world_update / world_fixed_update]
-    H[Script_Host: lua_State, script table, API pointer table]
-    P[Prop: Script path]
-  end
-  subgraph LuaJIT
-    M[module table: create / tick / fixed_tick / destroy / reload]
-    S[self: per-actor Lua table]
-    F[ffi: Transform*, Actor handle, engine API calls]
-  end
-  W -- "pcall once per script per phase" --> M
-  P -- "added/removed hooks" --> H
-  M -- "ffi C calls, JIT-compiled" --> F
-  F -- "function pointer table, proc c" --> H
-  H -- "pointer to live Prop data" --> F
-  M --- S
+  P0[P0 housekeeping] --> P1[P1 scaffolding CLI]
+  P0 --> P2[P2 valid Odin vs Lua benchmark]
+  P2 --> P5[P5 Lua scene fixes]
+  P3[P3 per-world Script API] --> P4[P4 Lua API surface]
+  P3 --> P5
+  P4 --> P5
+  P6[P6 data-scene errors] --> P8[P8 JSON Props]
+  P7[P7 measure extract] -.optional.-> P7b[draw-list cache]
 ```
 
-Two crossing mechanisms, chosen on cost:
+P1, P2, P3 and P6 are independent and can run in parallel. P4 needs P3 (new thunks take the host handle). P5 needs P2
+(numbers) and P4 (time API). P8 needs P6 (clean missing/invalid distinction).
 
-1. **Odin to Lua**: classic `lua_pcall`, one call per (script, actor, phase). Pre-resolved with `luaL_ref`, no string lookups per frame.
-2. **Lua to Odin**: **LuaJIT FFI**, not the `lua_CFunction` stack API. FFI calls to C function pointers are compiled into the trace; a `lua_CFunction` goes through the Lua stack on every call. (Orders of magnitude from LuaJIT documentation and experience, not measured here: phase 4 measures it on this engine.) Data (Transform etc.) is read and written **in place** through `ffi` pointers, with no copies.
+## P0 Housekeeping
 
-New code layout:
+- 0.1 Decide where the LuaJIT design lives. Recommended: restore it from `HEAD` as `luajit-design.md` at the repo root, and repoint the three references above. (`docs/` is gitignored, so it cannot live there.)
+- 0.2 Note the untracked `src/scenes/city/` (not part of this work): P1's CLI must not clobber it; it is registered in `src/scene.odin` by hand today.
 
-```
-third_party/luajit/            git submodule, pinned commit of LuaJIT v2.1
-src/engine/luajit/             minimal Odin binding of the Lua 5.1 C API + luajit.h (state, pcall, ref, loadfile, openlibs)
-src/engine/script_host.odin    lua_State lifecycle, load/reload, error handling, GC budget
-src/engine/script_api.odin     the C-ABI function table handed to Lua (proc "c")
-src/engine/script_types.odin   Script prop, Lua-visible struct layouts + size checks
-src/engine/script/engine.lua   ffi.cdef + metatypes, the `engine` module (embedded with #load)
-src/scenes/<scene>/*.lua        user scripts, next to the scene that uses them (demo: src/scenes/scriptdemo/spinner.lua)
-```
+Done when: `grep -rn "plan.md" Makefile README.md src` points at files that exist.
 
-`luajit` is a leaf package (no engine imports). Everything that needs `World` lives in package `engine`, because
-`World` must call the host and the host must call `World` (avoids an import cycle).
+## P1 Scaffolding CLI (item 1)
 
-## 3. Odin to Lua interface
-
-### 3.1 Script prop
-
-```odin
-// Prop: attaches a Lua behaviour. path is borrowed (must outlive the actor), like Model.path.
-Script :: struct {
-	path: string,
-}
-```
-
-`Script` is registered in `world_create` through `register_props` like every builtin:
-
-- `added`: ensure the host exists (lazy, first Script creates the `lua_State`), load or reuse the module for `path`, create the per-actor `self` table (stored in the registry via `luaL_ref`, kept on the slot), call `module.create(self, actor)`.
-- `removed`: call `module.destroy(self, actor)`, `luaL_unref`.
-
-### 3.2 Tick and fixed tick: thin wrappers
-
-The user-facing contract: **`tick` and `fixed_tick` are just wrappers over a Lua call.**
-
-```odin
-// Registered once; every Script actor gets these. No logic of its own.
-script_tick       :: proc(world: ^World, id: Actor_Id, dt: f32) { script_call(world, id, .Tick, dt) }
-script_fixed_tick :: proc(world: ^World, id: Actor_Id, dt: f32) { script_call(world, id, .Fixed_Tick, dt) }
-```
-
-- `world_update(world, dt)` runs `script_tick` after the Odin actor ticks, before the physics step.
-- New `world_fixed_update(world, dt)` runs Odin `fixed_tick` procs and then `script_fixed_tick`. Scenes call it from `Scene.fixed_tick` (the hook already exists, `Config.fixed_hz`).
-- `register_type` gains an optional trailing `fixed_tick` parameter (default nil, source compatible).
-- Caveat that already exists today: some scenes set `fixed_tick = world_update` (physics). Those get Lua `tick` at the fixed rate and must not also call `world_fixed_update`. Documented in `world.odin`.
-
-### 3.3 Calling Lua from Odin by name
-
-For events (collisions, damage, UI) Odin calls a named function in the actor's module:
-
-```odin
-script_call(world, id, "on_hit", damage)      // variadic any: f32, i32, bool, string, Actor_Id
-```
-
-Missing function is a no-op (returns false). Arguments are pushed with `lua_pushnumber` etc.; no allocation for scalars.
-
-### 3.4 Batch mode (the performance escape hatch)
-
-Per-actor `pcall` has a fixed cost per call (stack setup, error frame); estimated at a few hundred ns to ~1 us, to be measured in phase 4. At 1000 scripted actors that is on the order of 0.5 ms of pure call overhead. For large
-populations a script can be declared **batch**: one call per frame, Lua iterates the actors inside a JIT-compiled loop.
-
-```lua
-M.batch = true
-function M.tick_all(ids, count, dt)     -- ids: Actor[count] cdata, contiguous
-  for i = 0, count - 1 do
-    local t = ids[i]:transform()
-    t.position.y = t.position.y + dt
-  end
-end
-```
-
-Guideline (measured, section 7 "Measured on this machine"): before the FFI fix, per-actor was cheaper than batch at 5000 and 50000 actors (batch JIT aborted on the struct-by-value `actor_transform`). After the fix (Actor thunks take `u32` index/generation), both modes compile and are close: at 50000 per-actor 3.2 ms vs batch 3.7 ms script time. **Decision: per-actor is the default; batch stays an opt-in with no measured win for this body** (revisit if a script keeps cross-actor state in flat arrays). Odin remains about 5x cheaper than per-actor Lua at 50000 (frame-level number from before the change).
-
-Implementation: `tick_all` / `fixed_tick_all` are called once per frame from `script_update`, after the per-actor pass. `ids` is a contiguous `Actor_Id` buffer in the temp allocator, wrapped by engine.lua's `_batch` (cdata cast cached by address). A Lua error faults every actor of that module until reload; other modules keep running. `CUBES_JIT_V=1` turns on LuaJIT's `jit.v` trace dump (stderr) at host creation.
-
-## 4. Lua to Odin interface
-
-### 4.1 How the API is exposed (cross-platform safe)
-
-Odin does **not** export symbols for `ffi.C` lookup: exporting from an executable differs on Windows (`dllexport`),
-macOS and Linux (`-rdynamic`). Instead Odin builds one table of `proc "c"` function pointers and passes it at init:
-
-```odin
-Script_API :: struct {
-	version:         u32,
-	actor_valid:     proc "c" (index, generation: u32) -> bool,
-	actor_transform: proc "c" (index, generation: u32) -> ^Transform,
-	actor_destroy:   proc "c" (index, generation: u32),
-	actor_find:      proc "c" (name: cstring, out: ^Actor_Id),
-	actor_prop:      proc "c" (index, generation: u32, name: cstring) -> rawptr, // Prop pointer by exposed name; nil if absent
-	spawn_model:     proc "c" (path: cstring, x, y, z: f32, out: ^Actor_Id),
-	input_button:    proc "c" (name: cstring) -> i32,
-	input_down:      proc "c" (action: i32) -> bool,
-	input_pressed:   proc "c" (action: i32) -> bool,
-	mouse:           proc "c" (out: ^[2]f32),
-	hud_text:        proc "c" (text: cstring, x, y: f32),
-	log:             proc "c" (level: i32, msg: cstring), // 0 debug, 1 info, 2 warn, else error
-	camera_position: proc "c" (out: ^[3]f32), // camera world position; zeros with no ctx bound
-}
-```
-
-`script_api.odin` stores `^World`, `^input.System` and the camera source `^Context` in package-level variables bound by `script_bind(world, inputs: ^input.System, ctx: ^Context = nil)`;
-the thunks read them. One world per host in v1 (stated limit). `ctx` nil makes `camera_position` write zeros.
-
-Why index/generation and out-params: LuaJIT's trace recorder (`lj_crecord.c` `rec_ccall`) compiles C calls only when args and return are number, pointer or enum. A struct passed or returned by value aborted the trace (`NYI: unsupported C function type`), so every thunk takes `(index, generation: u32)` and struct results go through `out: ^Actor_Id`. `input_button(name)` returns the action index (-1 if unknown; engine.lua caches it); `input_down` / `input_pressed` take that index. The Lua `Actor` metatype wraps the pair again, so scripts still see a struct.
-
-### 4.2 Lua side
-
-```lua
--- engine.lua (embedded). One cdef, one metatype, zero table allocations in hot paths.
-local ffi = require("ffi")
-local api_ptr, layout = ...
-ffi.cdef[[
-typedef struct { float x, y, z; } Vec3;
-typedef struct { float x, y, z, w; } Quat;
-typedef struct { Vec3 position; Quat rotation; Vec3 scale; } Transform;
-typedef struct { uint32_t index, generation; } Actor;
-typedef struct {
-  uint32_t version;
-  bool (*actor_valid)(uint32_t index, uint32_t generation);
-  Transform *(*actor_transform)(uint32_t index, uint32_t generation);
-  void (*actor_destroy)(uint32_t index, uint32_t generation);
-  void (*actor_find)(const char *name, Actor *out);
-  void *(*actor_prop)(uint32_t index, uint32_t generation, const char *name);
-  void (*spawn_model)(const char *path, float x, float y, float z, Actor *out);
-  int32_t (*input_button)(const char *name);
-  bool (*input_down)(int32_t action);
-  bool (*input_pressed)(int32_t action);
-  void (*mouse)(float *out);
-  void (*hud_text)(const char *text, float x, float y);
-  void (*log)(int32_t level, const char *msg);
-  void (*camera_position)(float *out);
-} ScriptAPI;
-]]
-local api = ffi.cast("ScriptAPI*", api_ptr)
-
--- Typed pointer type per exposed name, cast once.
-local prop_types = {}
-ffi.metatype("Actor", {
-  __index = {
-    valid = function(a) return api.actor_valid(a.index, a.generation) end,
-    transform = function(a) return api.actor_transform(a.index, a.generation) end,
-    destroy = function(a) api.actor_destroy(a.index, a.generation) end,
-    prop = function(a, name)
-      local p = api.actor_prop(a.index, a.generation, name)
-      if p == nil then return nil end
-      local t = prop_types[name]
-      if t == nil then
-        t = ffi.typeof(name .. "*")
-        prop_types[name] = t
-      end
-      return ffi.cast(t, p)
-    end,
-  },
-})
-
--- Reused buffer: the returned float[3] cdata is overwritten by the next call; read c[0..2] at once.
-local camera_out = ffi.new("float[3]")
-function M.camera_position()
-  api.camera_position(camera_out)
-  return camera_out
-end
-```
-
-Layout safety: for every struct shared with Odin, Odin passes `size_of`/`offset_of` values at init; Lua asserts
-`ffi.sizeof(...)` and `ffi.offsetof(...)` match and aborts script loading with a clear error otherwise. Same
-pattern as the `#assert(size_of(...))` already used for shader parameter structs.
-
-### 4.3 Exposing your own Props to Lua
-
-```odin
-Health :: struct { hp, max_hp: f32 }
-register_props(&world, Health)
-script_expose(&world, Health, "Health", "typedef struct { float hp, max_hp; } Health;")
-```
-
-```lua
-local h = a:prop("Health")          -- Health* or nil; live pointer, valid until the prop is removed
-h.hp = h.hp - 10
-```
-
-`script_expose` records `size_of(T)` and the cdef text; the size check above runs on it. Props are heap blocks with
-stable addresses until removed (see `Prop_Block`), so a pointer fetched this frame is valid for the whole call.
-Never cache one across frames.
-
-## 5. Example: end to end
-
-**Odin (scene):**
-
-```odin
-spinner_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
-	state := new(State); demo.state = state
-	state.world = engine.world_create(&ctx.gfx)
-	engine.script_bind(&state.world, &ctx.input)             // binds input + world for the API table
-	engine.spawn(&state.world,
-		engine.Model{path = "static/models/ship.glb"},
-		engine.Script{path = "src/scenes/scriptdemo/spinner.lua"})
-	return true
-}
-spinner_tick       :: proc(demo: ^engine.Scene, ctx: ^engine.Context, dt: f32) { /* world_update + world_render */ }
-spinner_fixed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, dt: f32) { engine.world_fixed_update(&state.world, dt) }
-```
-
-**Lua (`src/scenes/scriptdemo/spinner.lua`):**
-
-```lua
-local engine = require("engine")
-local M = {}
-
-function M.create(self, a)
-  self.speed = 1.5
-  self.t = 0
-end
-
-function M.tick(self, a, dt)                    -- every frame
-  local t = a:transform()
-  t.position.y = 1 + math.sin(self.t) * 0.25
-  self.t = self.t + dt
-  if engine.input.down("W") then t.position.z = t.position.z - 5 * dt end
-end
-
-function M.fixed_tick(self, a, dt)              -- fixed rate (physics-adjacent logic)
-  -- deterministic stepping here
-end
-
-function M.on_hit(self, a, damage)              -- called from Odin: script_call(world, id, "on_hit", 10.0)
-  local h = a:prop("Health")
-  if h then h.hp = h.hp - damage; if h.hp <= 0 then a:destroy() end end
-end
-
-function M.reload(self, a)                      -- optional, after hot reload; self is preserved
-  self.speed = 1.5
-end
-
-return M
-```
-
-**Odin extending an existing Lua actor** (Odin scripting stays on top):
-
-```odin
-Ship :: struct { fuel: f32 }
-ship := engine.register_type(&world, Ship, nil, ship_tick, nil)
-engine.spawn_typed(&world, ship, Ship{fuel = 100},
-	engine.Model{path = "static/models/ship.glb"},
-	engine.Script{path = "src/scenes/scriptdemo/spinner.lua"})     // same actor: ship_tick runs, then spinner.lua tick
-```
-
-## 6. Execution order per frame
-
-1. `script_host_poll_reload` (mtime check, throttled to 4 Hz, runs before any script).
-2. `world_update`: Odin actor ticks (slot order) -> Lua `tick` (slot order) -> physics step -> transform sync -> animation, camera.
-3. `world_fixed_update` (0..N times, when the scene calls it): Odin `fixed_tick` -> Lua `fixed_tick`.
-4. GC budget step (section 7.4).
-
-Within a phase, Lua ticks run in slot order, like Odin ticks. Spawning from Lua mid-tick is allowed; new actors
-follow the existing `born` rule (they start ticking next frame).
-
-## 7. Performance considerations
-
-1. **Crossing cost dominates, not Lua speed.** Hot loops stay inside Lua (JIT) or inside Odin; avoid ping-pong. FFI function-pointer calls are trace-compiled; `lua_CFunction` calls are not.
-2. **Zero allocation in tick.** No tables, closures, strings or varargs created per frame; use ffi cdata, reuse locals. Allocation makes GC work and aborts traces.
-3. **No string lookups per frame.** Function refs via `luaL_ref`; input action names are interned once (`input.down("W")` converts to a cached action id after first use).
-4. **GC budget.** LuaJIT 2.1 has an incremental collector only (no generational mode). The host stops automatic GC after setup and runs `lua_gc(LUA_GCSTEP, n)` once per frame with a configurable budget (default ~0.2 ms); `lua_gc(LUA_GCCOLLECT)` on scene switch.
-5. **Trace friendliness.** Avoid NYI features in hot loops (`pairs` over big tables, string building, `unpack`, FFI callbacks). A debug flag enables `jit.v`/`jit.dump` output so authors can see aborts.
-6. **Batch mode** (3.4) for large populations.
-7. **Pointer fetch cost.** `a:transform()` is one FFI call to a small thunk (index check + pointer). Cache within a tick, never across frames.
-8. **Reload does not thrash JIT.** Reload swaps the module table; old traces die with their functions. `jit.flush()` is called only when a reload actually changed a file.
-9. **Budget visibility.** The existing stats overlay gets a `script` timing row (tick, fixed_tick, gc), next to `cpu extract` and `cpu prepare`, so a regression is visible immediately. Current baseline for comparison: CPU extract 0.17 ms, prepare 0.44 ms, frame 3.31 ms on `benchmark`.
-10. **Single state, main thread only.** `lua_State` is not thread-safe. Scripts never run from the job pool. Per-worker states for parallel scripts are out of scope.
-
-### Measured on this machine (macOS arm64 M-series)
-
-Commands, from repo root, after `make default-shaders shaders luajit && odin build src -out:/tmp/cubes_v`:
-
-`CUBES_SCRIPT_NOMODEL=1 CUBES_SCRIPT_N=<N> /tmp/cubes_v <scene> --bench 5`
-
-`CUBES_SCRIPT_NOMODEL=1` spawns actors without `Model` (no draw calls), so the numbers are script and world cost. Each config run twice; both runs shown. Windowed, msaa 4x, 4 s warmup + 5 s sampled. `script ms` = `script_take_frame_ms` per frame (tick + fixed_tick + gc). Odin baseline has no Lua host, so only frame ms.
-
-| Scene | N | script ms avg / p95, after (run 1, run 2) | script ms avg / p95, before (run 1, run 2) |
-|---|---|---|---|
-| scriptdemo (per-actor) | 100 | 0.058 / 0.109, 0.017 / 0.021 | 0.186 / 0.356, 0.215 / 0.363 |
-| scriptdemo (per-actor) | 1000 | 0.260 / 0.357, 0.256 / 0.346 | 0.731 / 0.854, 0.733 / 0.911 |
-| scriptdemo (per-actor) | 5000 | 0.432 / 0.476, 0.437 / 0.483 | 2.456 / 2.621, 2.424 / 2.591 |
-| scriptdemo (per-actor) | 50000 | 3.191 / 3.490, 3.177 / 3.509 | 30.362 / 32.530, 30.302 / 32.712 |
-| scriptdemo_batch | 100 | 0.028 / 0.082, 0.045 / 0.111 | not measured |
-| scriptdemo_batch | 1000 | 0.271 / 0.374, 0.229 / 0.350 | not measured |
-| scriptdemo_batch | 5000 | 0.422 / 0.504, 0.419 / 0.485 | 2.640 / 2.861, 2.617 / 2.803 |
-| scriptdemo_batch | 50000 | 3.753 / 4.202, 3.637 / 4.161 | 34.825 / 37.496, 34.993 / 37.324 |
-| scriptdemo_batch, after batch-id merge (no second slot scan) | 50000 | 3.108 / 3.445, 3.248 / 3.596, 3.411 / 4.257 (3 runs) | 3.692 / 4.364, 3.874 / 4.460 (pre-merge, 2 runs) |
-| scriptdemo (per-actor), after batch-id merge, same build | 50000 | 3.198 / 3.500, 3.268 / 3.617, 3.281 / 3.587 (3 runs) | 3.204 / 3.623, 3.212 / 3.590 (2 runs) |
-
-Odin baseline (no Lua host), frame ms, before the change: 1.68 at N=100/1000/5000, 6.2 at 50000. Frame ms not re-captured after the change; script ms is the number that moved.
-
-Findings:
-- Root cause: `Actor` (8-byte struct) passed by value across the FFI. LuaJIT's recorder (`lj_crecord.c` `rec_ccall`) accepts only number/pointer/enum args and returns, so every `a:transform()` aborted the trace with `NYI: unsupported C function type` and the loop was blacklisted. All of tick_all ran interpreted.
-- Fix (API side): Script_API thunks take `(index, generation: u32)`. Struct returns (`actor_find`, `spawn_model`) became out-params (`^Actor_Id`). The `Actor` cdef stays for users; metatype methods unpack `a.index, a.generation`. Layout check and `script_api_engine_layout_matches_odin` still pass.
-- Verified with `CUBES_JIT_V=1`, N=5000: `spinner_batch.lua:17 loop` gets a root trace with a side trace, no `blacklist`. Per-actor `spinner.lua` loop also compiles, no `blacklist`.
-- Fixed: `M.find` / `M.spawn_model` reuse one module-level `out_actor` and return a copy only when found; a scratch 3000-iteration `engine.find` hot loop (test deleted) compiles with no NYI.
-- Fixed: batch gap. Cause: `script_batch_tick` did a second full slot scan (`slot_component` per slot, about 0.8 ms at 50000) to build the ids buffer, on top of the scan `script_update` already does. Fix: `script_update` appends batch ids to `Script_Module.ids` in its existing pass; `script_batch_tick` re-checks them (alive, generation, module, faulted) only when a per-actor hook or an earlier batch call ran. Batch now 3.26 ms avg vs per-actor 3.25 ms avg (3 runs each, interleaved, machine load about 28). Not more than 15% faster, so per-actor stays the default. Lua loop shape (`state[a.index]`, `ids[i]` copy) is not the cost: call time 1.78-2.01 ms across variants.
-- Fixed: `BOOTSTRAP_SRC` `make_actor` NYI (`return to lower frame at ffi.new`, then `at ffi.meta.__call`). Cause: closure is entered from a C pcall, so its trace aborts on the return. Fix: `jit.off(make)`; create-time only, interpreted is fine. Trace at `scriptdemo --bench 2` has no NYI/abort/blacklist lines.
-- Per-actor is now about 0.06 us/actor at 50000 (was about 0.6 us). The 3.4 batch-for-thousands guideline no longer has a measured advantage at this body size.
-
-### Benchmark scene: Odin vs Lua
-
-Replica of `benchmark` in Lua: per boat sail, flee from camera, wrap (`boat_step`), sea height and tilt (`src/scenes/sea/sea_wave.lua`, `sea.tilt`). Scenes `benchmark_lua` (`src/scenes/benchmark/boat.lua`, per-actor) and `benchmark_lua_batch` (`src/scenes/benchmark/boat_batch.lua`, one `tick_all` per frame). Odin baseline `benchmark`. Lua variants skip the Odin boat loop and keep the sea mesh, camera, HUD and keys.
-
-Commands, from repo root: `CUBES_BENCH_PER_MODEL=<n> /tmp/cubes_v <scene> --bench 5`. `n` = boats per model (32 models, so objects = 32n + 12 dragons). Default n = 150. `CUBES_JIT_V=1` shows trace status.
-
-Odin frame ms and Lua `script ms` (per frame), 2 runs each unless noted:
-
-| n | Odin frame ms avg | per-actor script ms avg | batch script ms avg (before split) | batch script ms avg (after split) |
-|---|---|---|---|---|
-| 100 | 27.9, 22.7 | 8.7, 9.0 | 24.9, 22.4 | 7.9, 4.4 |
-| 150 | 25.5, 33.5 | 13.0, 12.5 (3rd run 12.9) | 39.6, 33.0 | 11.1, 2.2, 11.5, 11.4 |
-| 400 | 36.9, 64.0 | 80.8, 46.2 | 78.6, 35.5 | 5.0, 29.6 |
-
-Findings:
-- Noise: machine shared with other agents. Frame ms swings to 100+ ms outliers in both Odin and Lua runs; trust medians and repeats, not single averages. The n=400 numbers differ 2x between runs.
-- Batch was slower than per-actor (about 40 ms vs 13 ms at n=150). Cause: JIT blacklisted the outer `tick_all` loop. The `sea.height` inner loops (`sea_wave.lua:20` unroll limit) inlined into the outer loop trace and aborted it, so `tick_all` ran interpreted.
-- Fix (script side): split `tick_all` into a sail pass and a sea/transform pass. Sea pass no longer blacklisted (`CUBES_JIT_V=1`: `boat_batch.lua:90` compiles to root trace with side traces; `sea_wave.lua:20` unroll-limit lines remain). Batch now about 11 ms at n=150, same as per-actor.
-- Per-actor cost, n=150: about 13 ms per frame, about 6 us per boat. Per-actor and batch are close after the split; per-actor stays the simpler default.
-- `[INFERENCE]` Lua visible instances differ from Odin (2218 vs 2159 at n=150): the Lua variants use unseeded `math.random` for speed and heading, so culling differs. Layout positions are the same.
-- Known limit: per-actor sea time is per boat (`self.t`). Boats added mid-run with `=` start at phase 0 and are out of phase with the sea mesh (Odin uses `sea_state.time`). Batch uses one module clock, no such issue.
-- **No Odin-vs-Lua conclusion yet.** A second interleaved run by the orchestrator (n=150 and 400, 2 runs each) was also unusable: Odin `benchmark` frame avg ranged 25-167 ms (max 3500 ms) when the same scene ran at about 3.3 ms earlier on a quiet machine; load average was 18-34 and free memory very low. Observed only: both Lua variants run without JIT blacklists after the split, and per-actor and batch are the same order of magnitude. Repeat on an idle machine (close other apps, check `uptime`) and compare `script ms` p50 plus frame ms p50 before drawing a ratio.
-
-## 8. Hot reload
-
-- `Script_Host` keeps `path -> {module ref, mtime, error state}`. Every 250 ms, `os.stat` each loaded path (cheap: tens of files).
-- On change: `luaL_loadfile` into a fresh chunk and run it. If load or the top-level run fails, **keep the old module**, log file:line and traceback, retry on next mtime change.
-- On success: replace the module table reference; per-actor `self` tables are untouched; call `module.reload(self, a)` if defined for each live actor of that path.
-- Runtime errors (`pcall` fails in tick): log traceback once, mark that actor's script `faulted` (skipped) until the file changes. One broken script never stops the frame.
-- Key `F5` calls `script_reload_all` (bound as `app.reload_scripts` in `host.odin`, listed in the help panel).
-- Not supported: changing the struct layout of an exposed Prop (needs an Odin rebuild; the layout check rejects the script).
-
-## 9. Multi-platform build
-
-LuaJIT is vendored as a submodule (pinned commit) and built as a **static library** per platform, so no system Lua is required
-and the binary has no runtime dependency. Same style as `third_party/goose` and `make shaders`.
-
-| Platform | Build command (from `make luajit`) | Output | Odin foreign import |
-|---|---|---|---|
-| macOS arm64 | `make -C third_party/luajit amalg BUILDMODE=static MACOSX_DEPLOYMENT_TARGET=15.0` | `src/libluajit.a` | `"../../third_party/luajit/src/libluajit.a"` |
-| macOS x86_64 | same, `XCFLAGS=-DLUAJIT_ENABLE_GC64` | same | same |
-| Linux x86_64 / arm64 | `make -C third_party/luajit amalg BUILDMODE=static XCFLAGS=-DLUAJIT_ENABLE_GC64` | `src/libluajit.a` | `.a` path, plus `system:m`, `system:dl` |
-| Windows x64 (CRT **/MD** via `set CL=/MD`; UNVERIFIED until run on Windows, see Decisions) | `scripts\build_luajit_windows.bat` from the repo root in a VS x64 prompt (= `set CL=/MD` + `msvcbuild.bat static gc64`; `make luajit` calls it on Windows) | `src/lua51.lib` | `"../../third_party/luajit/src/lua51.lib"` |
-
-Decisions and reasons:
-
-- **GC64 everywhere** (64-bit GC pointers). Avoids LuaJIT's old "all memory below 2 GB" constraint, so no `-pagezero_size`/`-image_base` linker hacks on macOS x86_64 and no allocator surprises on Windows. arm64 already defaults to it.
-- **Relative `foreign import` paths per OS** in `src/engine/luajit/luajit.odin` (a `when ODIN_OS` ladder), so plain `odin build src` works with no extra linker flags. (Verified in the abandoned experiment: relative paths work; absolute ones do not.)
-- **Odin has no `vendor:luajit`.** `vendor:lua/5.1` has the exact 5.1 API shapes LuaJIT implements; we copy only the ~40 procs we use plus `luaJIT_setmode`, not the whole package.
-- **Windows CRT: decided `/MD` via `set CL=/MD`; status UNVERIFIED until run on Windows.** `msvcbuild.bat static` compiles `lj_*.c lib_*.c` at line 120 without `%LJDYNBUILD%` (`/DLUA_BUILD_AS_DLL /MD`, line 21), so cl's default `/MT` would apply. `scripts\build_luajit_windows.bat` sets `set CL=/MD` before `msvcbuild.bat static gc64`, so every cl call in the build uses `/MD`. Mixing CRTs (`/MT` lib in an `/MD` binary, or the reverse) is a known source of link and heap errors. Odin's Windows CRT is assumed to be `/MD` [INFERENCE, not confirmed]; check with `dumpbin /directives` on the built binary. Acceptance step: `dumpbin /directives third_party\luajit\src\lua51.lib | findstr DEFAULTLIB` must show `MSVCRT`, not `LIBCMT`.
-- **macOS distribution:** a notarized, hardened-runtime app needs the `com.apple.security.cs.allow-jit` entitlement or LuaJIT's JIT will be killed (it falls back to the interpreter). Not an issue for local development.
-- **Makefile:** `make luajit` target builds the lib; it becomes a prerequisite of `test-engine`, `build`, `run`, `debug`. `make clean` removes the build output. The submodule pin lives in `.gitmodules`.
-- **Dev fallback:** `LUAJIT=system` Makefile variable uses `/opt/homebrew/lib/libluajit-5.1.a` (installed here: LuaJIT 2.1) to iterate without building the submodule. Never used for release.
-- **Cross-target check (from macOS host, Odin brew 2026-10, `odin check` only, no link or build):**
-  - `odin check src/engine/luajit -no-entry-point`: linux_amd64 PASS (exit 0), linux_arm64 PASS (exit 0), windows_amd64 NOT RUN (`-windows-sdk-root:<path> must be used to target Windows`, a build-only flag; exit 1).
-  - `odin check src -define:EDITOR=false`: linux_amd64 and linux_arm64 FAIL (exit 1) on compile-time panics in unrelated vendor packages: `vendor:cgltf`, `vendor:stb` (truetype, image, rect_pack), `vendor:box3d` (`lib/linux-amd64/libbox3d.a`, `lib/linux-arm64/libbox3d.a` missing). Engine package also imports gfx and physics, so `src/engine` is blocked the same way. Our code was not type-checked on these targets. windows_amd64 NOT RUN (same flag error).
-  - CRT: `msvcbuild.bat static` alone would build with `/MT`; the build script forces `/MD` via `set CL=/MD` (see Decisions). UNVERIFIED.
-  - Makefile: `ifeq ($(OS),Windows_NT)` branch sets `LUAJIT_LIB` to `$(LUAJIT_DIR)/src/lua51.lib` and runs `scripts\build_luajit_windows.bat`. UNVERIFIED: not run on Windows.
-  - Match: `lua51.lib` name and `../../../third_party/luajit/src/lua51.lib` foreign import path (msvcbuild writes to `src/`).
-  - Not verified: `script_host.odin` and `script_api.odin` on any non-macOS target. Portable calls only (`os.stat`, `os.get_env`, `time`). Risk: module keys are raw path strings, so `a\b.lua` and `a/b.lua` load as two modules on Windows.
-
-## 10. Errors, safety, lifetime
-
-- Every Odin to Lua call goes through `lua_pcall` with an error handler that appends `debug.traceback`. No unprotected calls.
-- `Actor` in Lua is the `(index, generation)` cdata struct, 8 bytes, the same layout as Odin's `Actor_Id`, passed by value between Lua functions. Odin-side thunks take `index, generation: u32` instead of the struct so LuaJIT can compile the calls (see 4.1). Every thunk validates the id (`world_valid`) before use, so a stale handle is a no-op or nil, never a crash.
-- Pointers handed to Lua (`Transform*`, `Prop*`) are valid only until the actor or prop is destroyed. Rule: fetch inside the call, don't store.
-- Exposed libs: base, table, string, math, bit, jit, ffi. `os`/`io` are opened only when `Script_Config.allow_io` is set (a convenience, not a sandbox: `ffi` can reach C anyway; stated plainly in the docs).
-- A `Script` actor outliving its host (scene change) is impossible: the host is owned by `World` and closed in `world_destroy` after all actors are destroyed.
-
-## 11. Testing and verification
-
-Permanent tests (`src/engine/script_test.odin`, no GPU, same style as `world_test.odin` using `world_create(nil)`):
-
-1. Odin to Lua tick: spawn an actor with a script file written to a temp dir that increments `Transform.position.x`; run `world_update` 3 times; assert position.
-2. Fixed tick: same, `world_fixed_update` N times.
-3. Hot reload: change the temp file (new mtime), run the poll, assert the new behaviour is used and `self` state survived.
-4. Broken reload: write a syntax error, assert the old module keeps running and no crash.
-5. Runtime error: script that errors in tick; assert the actor is marked faulted and other actors still tick.
-6. Layout check: Odin `size_of(Transform)` (40 bytes) and `offset_of` for rotation/scale, plus each exposed Prop, equal `ffi.sizeof`/`ffi.offsetof` in Lua; mismatch = script load or `script_expose` fails with an error (catches padding drift on every platform in CI).
-7. Stale handle: destroy an actor, call API from Lua with the old id; assert safe.
-
-Smoke/benchmark (each step):
-
-- Build: `make luajit && make default-shaders shaders && odin build src -out:/tmp/cubes_v && make test-engine`.
-- New scene `scriptdemo`: N actors with a Lua spinner; `--bench 5` prints the `script` timing row. Targets to measure, not guess: per-actor mode at 100 / 1000 / 5000 actors, batch mode at 5000 / 50000, and an equivalent Odin `register_type` tick as the baseline. Record the table in this file after phase 3.
-- Visual: run `scriptdemo` windowed, edit `src/scenes/scriptdemo/spinner.lua`, confirm the change applies without restart (screenshot before/after).
-
-## 12. Phases
-
-| Phase | Deliverable | Verified by | Status |
-|---|---|---|---|
-| 0 | Decide submodule pin; `make luajit` on macOS; `src/engine/luajit` binding; smoke program evaluates `return 6*7` and an `ffi` call | smoke binary prints 42, `make test-engine` green | done (macOS arm64) |
-| 1 | `Script_Host`, `Script` prop, `tick` and `fixed_tick` wrappers, `world_fixed_update`, `register_type` fixed_tick param, pcall and error handling | tests 1, 2, 5, 7 | done (macOS arm64) |
-| 2 | FFI API table, `engine.lua`, layout checks, input and spawn and find, `script_expose` | tests 6, scriptdemo runs | done (macOS arm64) |
-| 3 | Hot reload, `reload` hook, error recovery, reload key | tests 3, 4; manual edit demo | done (macOS arm64); F5 keypress exercised on macOS (F5 in the F1 panel logs `script reloaded`) |
-| 4 | GC budget, stats overlay row, batch mode, benchmarks table | numbers recorded here | done (macOS arm64) |
-| 5 | Linux and Windows build rules and CI-style smoke (`make luajit` there) | build and `--bench 2` on each OS (needs access to those machines; see risks) | partial: Linux arm64 (ubuntu:24.04 container, Odin dev-2026-11a) passes `make luajit`, `odin test src/engine/luajit`, `odin check src`, `odin build src -build-mode:obj`, and full link to ELF (SDL3 from source); not yet run: `make test-engine`, `--bench 2`, binary execution on Linux. Linux x86_64 and Windows pending |
-
-## 13. Risks and open decisions
-
-- **Windows and Linux x86_64 unverified from here.** Linux arm64 is verified: `make luajit` and `odin test src/engine/luajit` pass in an ubuntu:24.04 arm64 container (Odin dev-2026-11a, llvm/clang-18). Linux x86_64 and Windows remain untested; their build rules are from LuaJIT's documented procedure and need those machines to prove them.
-- **Windows CRT: decided `/MD` via `set CL=/MD`, UNVERIFIED.** Acceptance: `dumpbin /directives third_party\luajit\src\lua51.lib | findstr DEFAULTLIB` shows `MSVCRT`, not `LIBCMT` (section 9). Pending a run on Windows.
-- **Windows build in Makefile (UNVERIFIED).** `make luajit` on Windows runs `scripts\build_luajit_windows.bat`, which builds `lua51.lib`. Not yet executed on Windows.
-- **LuaJIT is a rolling release** (no tagged 2.1 final). Pin a commit; update deliberately.
-- **Quaternion layout** assumed `{x, y, z, w}` for Odin `quaternion128` ([INFERENCE]); test 6 settles it on day one.
-- **Lua 5.1 semantics**: no integer type (doubles), no `//`, `goto` exists in LuaJIT 2.1, `bit` library instead of operators. Document for script authors.
-- **World singleton in the API table** (4.1) means one scripted World at a time. Acceptable for the current scene model (one world per scene); a scene stack with two live scripted worlds needs a per-world API table later.
-- **Decided: per-actor default, batch opt-in** (section 3.4 and 7 "Measured": batch is not faster after the by-value FFI fix).
-- **Open decision, Lua access to gfx.** Out of scope; if wanted, expose `Material` parameters (tint, uniforms) through the same `script_expose` mechanism, never raw `gfx.*`.
-- **Alternative considered and rejected:** PUC Lua 5.4 (simpler build, but no FFI and no JIT, so slower on numeric loops; the gap is to be measured, not assumed, if it is ever reconsidered); Odin DLL hot reload (full speed, but layout fragility and no scripting for non-programmers). The second is complementary and can be done later without conflict.
+Goal: one command creates a scene (file with the main functions, registered) and one creates an actor (state + procs,
+wired into a scene).
+
+Design:
+
+- Odin program `tools/cubes/main.odin`, run as `odin run tools/cubes -- <command>`; thin Makefile wrappers `make new-scene NAME=x` and `make new-actor NAME=y SCENE=x`. No dependency beyond `core:`.
+- `new scene <name> [--data]`:
+  - default (code scene) writes `src/scenes/<name>/scene.odin`: package `<name>`, `State` with a `world: engine.World`, `<name>_scene :: proc() -> engine.Scene`, `create` (world_create, camera_fly, one demo spawn), `tick` (world_update + world_render(&world, ctx.blend)), `destroy`. Pattern: `src/scenes/skinned/scene.odin`.
+  - `--data` writes only `src/scenes/<name>/scene.json` (the registry already runs an entry without `make` from its JSON, see `scene_registry.odin:24`).
+  - registers the scene in `src/scene.odin`: one import and one `SCENES` entry, inserted at marker comments `// cubes:imports` and `// cubes:scenes` (the CLI adds the markers on first use if missing).
+- `new actor <name> --scene <scene>` writes `src/scenes/<scene>/<name>.odin`: `<Name>` state struct, `<name>_create`, `<name>_tick`, `<name>_destroy` with the engine signatures, header comment per the convention in `game_player.odin`; prints (and, with the marker `// cubes:actors`, inserts) the `engine.register_type` + `engine.spawn_typed` lines into the scene.
+- Safety: names must match `[a-z][a-z0-9_]*` and not be Odin keywords or an existing package/scene; never overwrite an existing file; `--dry-run` prints what would change; on a registration failure nothing is left half-written (write files last, or roll back).
+
+Tasks:
+
+- 1.1 Template strings and name validation (pure procs, no IO).
+- 1.2 Scene command: file generation + registration edit with markers.
+- 1.3 Actor command: file generation + scene wiring.
+- 1.4 Makefile targets and README section.
+- 1.5 Tests (`tools/cubes/*_test.odin`): validation table; registration insert is idempotent and keeps order; a generated scene in a temp copy of `src/` passes `odin check`.
+
+Done when: from a clean tree `make new-scene NAME=demo`, then `make new-actor NAME=bot SCENE=demo`, then `odin build src` succeeds; `/tmp/cubes_v demo --bench 2` runs and the actor ticks; `git status` shows only generated files plus the two registry lines. Undo with `git checkout src/scene.odin` plus deleting the generated directory.
+
+Non-goals: Lua script generation, editor integration, templates for gfx-heavy scenes.
+
+## P2 Valid Odin vs Lua benchmark (item 1)
+
+Problem: the benchmark runs of 2026-11-24 were taken at load average 18-34; Odin `benchmark` averaged 25-167 ms per frame (max 3.5 s) against ~3.3 ms on a quiet machine. No conclusion is valid yet.
+
+Tasks:
+
+- 2.1 `make bench-script` target (or a script) that: refuses to run if `uptime` load average (1 min) is above 2, runs `benchmark`, `benchmark_lua`, `benchmark_lua_batch` interleaved, 3 runs each, at n=100, 150, 400, and prints a table of frame ms p50/p95 and script ms p50/p95.
+- 2.2 Make the Lua scenes comparable first: complete P5.1 and P5.2 (seed and shared constants) so the three scenes run the same boats. Until then only per-boat cost (script ms) is comparable, not frame ms.
+- 2.3 Record the table and the reading (where the time goes: script ms vs the frame delta) in `luajit-design.md` section 7. Mark any inference.
+
+Done when: three consecutive runs of the same scene differ by less than 10% in frame ms p50, and the table is recorded with the load average at the time.
+
+## P3 Per-world Script API (item 2)
+
+Problem: the thunks read package globals, so a second scripted world (scene stack, tests) overwrites the first.
+
+Design: every `Script_API` function takes the host handle as its first parameter (`rawptr`, the `^Script_Host`). `engine.lua` receives the handle once at load and captures it in its closures, so scripts do not see it. A scalar pointer argument stays traceable by LuaJIT (struct by value does not, see the measured section). Each thunk resolves `host.world`, `host.inputs`, `host.ctx`, `host.context` from the handle; the globals go away. `script_bind(world, inputs, ctx)` fills the host instead of the globals.
+
+Tasks:
+
+- 3.1 Move `script_world/inputs/ctx/context` into `Script_Host`; thunks take the host pointer first; update `Script_API`, `script_push_layout` and the ScriptAPI cdef.
+- 3.2 `engine.lua`: capture the handle, keep the public `engine.*` signatures unchanged (scripts, `boat*.lua`, `spinner*.lua` untouched).
+- 3.3 Remove `script_unbind` global state handling; `script_reload_all` reloads every live host (keep a small registry of hosts) or takes a world.
+- 3.4 Test: two worlds alive at once, each with its own Script actors; scripts in each see only their own world (`engine.find` of a name that exists in one world only; input from two different `input.System`s).
+- 3.5 Re-run `scriptdemo` bench: `script ms` must not regress by more than 5% (the extra argument is the only added cost).
+
+Done when: the two-world test passes, no package-level `script_*` mutable globals remain in `script_api.odin`, `make test-engine` green, benchmark within 5%.
+
+## P4 Lua API surface (item 2)
+
+Principle: only scalars, pointers and out-params cross the FFI (struct by value aborts LuaJIT traces). No Lua tables on hot paths.
+
+- 4.1 Collision events.
+  - `physics.odin`: expose Box3D contact-begin and sensor-begin events after `step` (a slice of body-id pairs per step; no allocation beyond a reused buffer).
+  - `World`: map `b3.BodyId` back to `Actor_Id` (Collider already stores the body in the slot); after `phys.step` in `world_update`, for each pair call a hook.
+  - Odin side: `register_type` gains an optional `contact` proc (`world, id, self, other`), same transmute convention as `tick`.
+  - Lua side: calls `module.on_contact(self, a, other)` if defined (resolved once at load like `tick`; no string lookup per event). Faulted rules unchanged.
+  - Test: a falling Dynamic sphere on a Static ground in a `world_create(nil)` world: one contact-begin per touch, delivered to Odin hook and to a Lua `on_contact`.
+- 4.2 Spawn with props from Lua without tables: `engine.spawn_model(path, x, y, z)` exists. Add thunks `actor_set_scale(i, g, sx, sy, sz)`, `actor_add_box_collider(i, g, hx, hy, hz, static)`, `actor_add_sphere_collider(i, g, r)`, `actor_set_name(i, g, name)`. Cdef, layout entries, tests.
+- 4.3 Camera and environment control. `Camera` and `Environment` hold `Maybe(...)` fields, which have no stable C layout, so they are not exposed through `script_expose`. Provide scalar setters instead: `engine.camera_look_at(x, y, z)`, `engine.camera_set_fov(f)`, `engine.set_fog(r, g, b, distance)` / `engine.clear_fog()`, `engine.set_sun(x, y, z)`.
+- 4.4 HUD helpers: `engine.hud_text` exists; add a colour variant and a window-size getter (`engine.window_size()` returning a reused `float[2]`, same convention as `camera_position`).
+- 4.5 `engine.time()`: scene clock accumulated in `world_update` (`world.time`). Used by P5.3.
+- 4.6 Docs: README Lua section lists the API; `luajit-design.md` section 4 updated.
+- 4.7 Example: a small `src/scenes/scriptdemo` script using `on_contact` (balls that change behaviour on touch) to prove the end-to-end path.
+
+Done when: each new thunk has a test (or a stated reason it cannot be tested without a GPU), the layout test passes, `CUBES_JIT_V=1` on the example shows no NYI/blacklist from `engine.lua`, `make test-engine` green.
+
+## P5 Lua scene fixes (item 2)
+
+- 5.1 Shared boat constants and initial state. Expose a `Boat` prop `{heading, speed: f32}` with `script_expose`; Odin `benchmark_populate` sets it for every boat (and the Odin path uses it too, replacing the `Boat_Slot` fields), so Odin and Lua scenes start identical and `math.random` disappears from the scripts.
+- 5.2 Constants single source: Odin passes `FLEE_RADIUS`, `FLEE_TURN_RATE`, `SAIL_X_LIMIT`, `SAIL_Z_NEAR`, `SAIL_Z_FAR` once at scene create through a `script_set_config(world, name, value)` call exposed as `engine.config.<name>` (a plain Lua table read at script load, not per tick: copy into locals). Remove the duplicated Lua constants.
+- 5.3 Sea phase: per-actor `self.t` replaced by `engine.time()` (P4.5); the Odin scene sets `sea_state.time = world.time` so mesh, Odin boats and Lua boats share one clock.
+- 5.4 Test: Odin and Lua boat step produce the same position after N ticks for the same initial prop values (tolerance for float32 vs double).
+
+Done when: `benchmark`, `benchmark_lua`, `benchmark_lua_batch` show visually matching fleets, boats added with `=` are in phase with the sea, and the parity test passes.
+
+## P6 Data-scene error handling (item 3)
+
+Problem: `scene_file_load` returns a bool; a missing mandatory file and an invalid file look the same, and the missing case logs `cannot read` without naming the scene.
+
+- 6.1 `scene_file_load` returns an enum `{Ok, Missing, Invalid}` (callers: `data_load`, `data_create`, `data_reload`, `scene_registry`, tests).
+- 6.2 Code scenes (registry): `Missing` is silent (already behaves that way via `os.exists`; use the enum instead). Data scenes: `Missing` logs one error `scene "<name>": definition file <path> not found`; `Invalid` keeps the parse error with file/line.
+- 6.3 Tests: missing, invalid JSON, valid; `odin test` fails on `log.errorf`, so the quiet paths prove themselves and the error paths use `log.nil_logger()`.
+
+Done when: running a data scene with its JSON renamed prints exactly one error naming the scene and the run fails cleanly; code scenes without JSON print nothing.
+
+## P7 World extract cost (item 3, measure first)
+
+Problem: `improvements.md` left a contingency (cache the draw-pointer list) with no measurement.
+
+- 7.1 Measure with the stats row `cpu extract` at `benchmark` n=400 (about 12.8k actors) on an idle machine: report extract ms p50 and its share of frame ms p50.
+- 7.2 Gate: implement the cache only if extract is above 5% of frame p50. Cache design: `World.draw_list: [dynamic]^gfx.Draw` rebuilt when `spawn`/`destroy`/`Model` add or remove sets a dirty flag; `Slot.draw` addresses must stay stable (slots reallocate on spawn, so rebuild after any growth).
+- 7.3 If under the gate: record the number in `luajit-design.md`/`README` and close the item with no code change.
+
+Done when: the decision and the measurement are recorded; if implemented, benchmark draw calls and instances are identical before and after (±0) and `cpu extract` drops.
+
+## P8 JSON Props: Collider and Environment (item 3)
+
+Problem: scene JSON cannot describe colliders or environment, so physics and sky/fog scenes need code.
+
+- 8.1 `Actor_Def` gains `collider` (`shape: "box"|"sphere"`, `half` or `radius`, `body: "dynamic"|"static"`, `density`) and `environment` (`skybox`, `fog {color, distance}`, `shadows`, `sun_direction`, `uncapped`), as `Maybe(...)` with `omitempty`.
+- 8.2 `world_apply_scene` / hot reload (`scene_apply.odin`): typed `sync_kind` for both Props (value equality needs content, as for the other builtins); `actor_to_def` and `world_save_scene` write them back (round trip test).
+- 8.3 Out of scope and documented: `Raw_Draw` and user-registered custom Props stay code-only.
+- 8.4 Demo: convert `src/scenes/physics` ground and `benchmark` environment to JSON only if it removes code without changing behaviour; otherwise leave the scenes alone and add a tiny data scene as the example.
+
+Done when: a data scene with a collider and an environment loads, simulates (sphere rests on the ground) and survives hot reload and Ctrl+S round trip; `make test-engine` green.
+
+## Risks
+
+- P1 edits `src/scene.odin` by text insertion: a hand-edited file without the markers needs a first-run fallback; the CLI must refuse rather than guess when the structure is unrecognised.
+- P3 changes every thunk signature: the layout test and a grep for `api.` calls in `engine.lua` are the safety net; scripts are unaffected because `engine.*` stays the same.
+- P4.1 depends on Box3D event semantics (begin-touch only fires with `enableContactEvents` on the shape); [INFERENCE] until the first test confirms it.
+- P7 may conclude "no change needed"; that is a valid outcome.
+- Machine load: P2 and P7 numbers are only valid on an idle machine; the bench script enforces it.
