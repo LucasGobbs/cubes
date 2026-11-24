@@ -24,7 +24,7 @@ capture above).
 
 ```
 make build                     # release binary ./main
-make run ARGS=skinned           # scenes: skinned, game, forest_naive, forest_instanced, benchmark (default); fullscreen by default
+make run ARGS=skinned           # scenes: skinned, game, forest_naive, forest_instanced, benchmark (default), city; fullscreen by default
 make run ARGS="benchmark --bench 10"  # run 10 s without input, print fps/draws/triangles/CPU stats, exit
 make run ARGS="skinned --WINDOWED"     # windowed (goes through the compositor)
 make editor                    # debug build with the microui editor overlay

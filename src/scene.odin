@@ -6,6 +6,7 @@ import boat "scenes/boat"
 import benchmark "scenes/benchmark"
 import forest_naive "scenes/forest_naive"
 import forest_instanced "scenes/forest_instanced"
+import city "scenes/city"
 import game "scenes/game"
 import physics "scenes/physics"
 import scriptdemo "scenes/scriptdemo"
@@ -29,5 +30,6 @@ SCENES := [?]engine.Scene_Entry {
 	{name = "skinned", group = "demo", make = skinned.skinned_scene},
 	{name = "game", group = "demo", make = game.game_scene},
 	{name = "stencil", group = "demo", make = stencil.stencil_scene},
+	{name = "city", group = "city", make = city.city_scene},
 	// cubes:scenes
 }
