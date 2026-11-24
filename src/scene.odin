@@ -1,4 +1,4 @@
-// Scene registry for the host. Order = number keys 1..9.
+// Scene registry for the host. Scenes are grouped: number keys pick a group, Q/E step within it.
 package main
 
 import engine "engine"
@@ -14,20 +14,20 @@ import stencil "scenes/stencil"
 // cubes:imports
 
 SCENES := [?]engine.Scene_Entry {
-	{name = "skinned", make = skinned.skinned_scene},
-	{name = "game", make = game.game_scene},
-	{name = "forest_naive", make = forest_naive.forest_naive_scene},
-	{name = "forest_instanced", make = forest_instanced.forest_instanced_scene},
-	{name = "benchmark", make = benchmark.benchmark_scene},
-	{name = "benchmark_lua", make = benchmark.benchmark_lua_scene},
-	{name = "benchmark_lua_batch", make = benchmark.benchmark_lua_batch_scene},
-	{name = "boat", make = boat.boat_scene},
-	{name = "physics", make = physics.physics_scene},
-	{name = "stencil", make = stencil.stencil_scene},
-	{name = "scriptdemo", make = scriptdemo.scriptdemo_scene},
-	{name = "scriptdemo_batch", make = scriptdemo.scriptdemo_batch_scene},
-	{name = "scriptdemo_odin", make = scriptdemo.scriptdemo_odin_scene},
-	{name = "scriptdemo_balls", make = scriptdemo.scriptdemo_balls_scene},
-	{name = "data_physics"},
+	{name = "boat", group = "sea", make = boat.boat_scene},
+	{name = "benchmark", group = "sea", make = benchmark.benchmark_scene},
+	{name = "benchmark_lua", group = "sea", make = benchmark.benchmark_lua_scene},
+	{name = "benchmark_lua_batch", group = "sea", make = benchmark.benchmark_lua_batch_scene},
+	{name = "forest_naive", group = "forest", make = forest_naive.forest_naive_scene},
+	{name = "forest_instanced", group = "forest", make = forest_instanced.forest_instanced_scene},
+	{name = "scriptdemo", group = "script", make = scriptdemo.scriptdemo_scene},
+	{name = "scriptdemo_batch", group = "script", make = scriptdemo.scriptdemo_batch_scene},
+	{name = "scriptdemo_odin", group = "script", make = scriptdemo.scriptdemo_odin_scene},
+	{name = "scriptdemo_balls", group = "script", make = scriptdemo.scriptdemo_balls_scene},
+	{name = "physics", group = "physics", make = physics.physics_scene},
+	{name = "data_physics", group = "physics"},
+	{name = "skinned", group = "demo", make = skinned.skinned_scene},
+	{name = "game", group = "demo", make = game.game_scene},
+	{name = "stencil", group = "demo", make = stencil.stencil_scene},
 	// cubes:scenes
 }

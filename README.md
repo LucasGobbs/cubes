@@ -37,7 +37,7 @@ repo root (the `make` targets do this) or from inside `dist/`.
 
 ## Controls
 
-- `1`-`9`, `0`: switch scene at runtime with a fade (order of `SCENES` in `src/scene.odin`).
+- `1`-`9`, `0`: switch to a scene group with a fade; `Q`/`E`: previous/next scene in the current group. Scenes are grouped by the `group` field in `SCENES` (`src/scene.odin`); a group opens on the scene it showed last. Scene names show at the top, the group and position at the top right.
 - `F1`: stats panel; `P` logs it. `M`: toggle MSAA. `Esc`: quit.
 
 ## Scene files and transitions

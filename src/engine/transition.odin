@@ -147,6 +147,7 @@ transition_commit :: proc(ctx: ^Context, scene: ^Scene) -> bool {
 		next = loaded
 	}
 	host_scene_swap(ctx, scene, transition.kind, transition.target, transition.policy, next)
+	host_scene_shown(transition.target)
 	return true
 }
 

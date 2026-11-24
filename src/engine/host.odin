@@ -10,9 +10,9 @@ import "input"
 import "jobs"
 import sdl "vendor:sdl3"
 
-// Number keys bind the first MAX_SCENE_KEYS scenes (1-9, 0); the rest open only
-// from the CLI or change_scene.
-MAX_SCENE_KEYS :: 10
+// Number keys pick a scene group (1-9, 0) in order of first appearance; the rest
+// of the groups open only from the CLI or change_scene.
+MAX_GROUP_KEYS :: 10
 
 Config :: struct {
 	title:       string,
@@ -21,7 +21,7 @@ Config :: struct {
 	fullscreen:  bool,
 	resizable:   bool, // window can be resized; host follows WINDOW_PIXEL_SIZE_CHANGED
 	cursor:      bool, // free system cursor: no relative mouse mode, no grab
-	scenes:      []Scene_Entry, // order = number keys 1..9,0
+	scenes:      []Scene_Entry, // grouped by Scene_Entry.group; groups in order of first appearance
 	start:       string,
 	after_frame: proc(ctx: ^Context, scene_name: string, dt: f32, user: rawptr), // may call request_quit
 	before_exit: proc(ctx: ^Context, scene_name: string, user: rawptr), // after the loop, before teardown
@@ -36,12 +36,15 @@ Config :: struct {
 @(private) host_config: Config
 @(private) host_scene: Scene
 @(private) fixed_accumulator: f32
-@(private) switch_count: int
 @(private) quit_action, msaa_action, reload_action: input.Button_Action
 @(private) shift_action, pop_action: input.Button_Action // dev: Shift+number pushes, Backspace pops
 @(private) preload: ^Load_Context // preload_scene: the single in-flight/finished preload
 @(private) dropped_loads: [dynamic]^Load_Context // replaced preloads finishing in the background
-@(private) switch_actions: [MAX_SCENE_KEYS]input.Button_Action
+@(private) group_actions: [MAX_GROUP_KEYS]input.Button_Action
+@(private) group_labels: [MAX_GROUP_KEYS]string // owned: the group actions' descriptions
+@(private) scene_prev_action, scene_next_action: input.Button_Action // Q/E within the current group
+@(private) host_groups: Scene_Groups
+@(private) group_count: int
 // Input state before the scene registered its own actions; switching rewinds
 // to it so scenes do not accumulate dead actions and bindings.
 @(private) scene_input_mark: input.Mark
@@ -61,7 +64,8 @@ run :: proc(config: Config) {
 host_run :: proc(config: Config, scene: Scene) {
 	host_config = config
 	host_scene = scene
-	switch_count = min(len(config.scenes), MAX_SCENE_KEYS)
+	host_groups = scene_groups_build(config.scenes)
+	group_count = min(len(host_groups.names), MAX_GROUP_KEYS)
 
 	ctx: Context
 	// Fullscreen skips the compositor (~2 ms floor, 16 ms spikes); --WINDOWED opts out.
@@ -76,11 +80,16 @@ host_run :: proc(config: Config, scene: Scene) {
 	shift_action = input.button(&ctx.input, "app.push_modifier", .LSHIFT, "Hold with a scene number to push it")
 	input.bind_key(&ctx.input, shift_action, .RSHIFT)
 	pop_action = input.button(&ctx.input, "app.pop", .BACKSPACE, "Pop scene")
-	for index in 0 ..< switch_count {
-		switch_actions[index] = input.button(&ctx.input, config.scenes[index].name, input.Key(int(input.Key._1) + index), config.scenes[index].name)
+	for g in 0 ..< group_count {
+		group_labels[g] = fmt.aprintf("%s (%d)", host_groups.names[g], len(host_groups.members[g]))
+		key := input.Key(int(input.Key._1) + g)
+		group_actions[g] = input.button(&ctx.input, fmt.tprintf("app.group.%s", host_groups.names[g]), key, group_labels[g])
 	}
+	scene_prev_action = input.button(&ctx.input, "app.scene_prev", .Q, "Previous scene in group")
+	scene_next_action = input.button(&ctx.input, "app.scene_next", .E, "Next scene in group")
 	transition_create(&ctx.gfx)
 	stats_create(&ctx)
+	scene_title_create(&ctx.gfx)
 	scene_input_mark = input.system_mark(&ctx.input)
 	if host_scene.load != nil {
 		// Startup has no transition to hide the wait: load synchronously.
@@ -90,17 +99,21 @@ host_run :: proc(config: Config, scene: Scene) {
 	}
 	scene_ok := host_scene_create(&ctx, &host_scene)
 	assert(scene_ok)
+	host_scene_shown(current_scene)
 
 	host_loop(&ctx)
 
 	if config.before_exit != nil do config.before_exit(&ctx, host_scene.name, config.user)
 	transition_destroy(&ctx.gfx)
+	scene_title_destroy(&ctx.gfx)
 	stats_destroy(&ctx.gfx) // before the device goes: it frees GPU resources
 	host_scene_destroy(&ctx, &host_scene)
 	host_stack_destroy(&ctx)
 	host_loads_destroy()
 	jobs.destroy(&ctx.jobs) // before the device goes
 	context_destroy(&ctx)
+	for g in 0 ..< group_count do delete(group_labels[g])
+	scene_groups_destroy(&host_groups)
 }
 
 host_loop :: proc(ctx: ^Context) {
@@ -142,18 +155,22 @@ host_tick :: proc(ctx: ^Context, delta_time: f32) {
 	}
 	if input.pressed(&ctx.input, reload_action) do script_reload_all()
 	shift := input.down(&ctx.input, shift_action)
-	for index in 0 ..< switch_count {
-		if !input.pressed(&ctx.input, switch_actions[index]) do continue
-		// shortcut: transition picked by target index, cycles through the grid ones
+	for g in 0 ..< group_count {
+		if !input.pressed(&ctx.input, group_actions[g]) do continue
+		// shortcut: transition picked by group index, cycles through the grid ones
 		transitions := [?]Scene_Transition{.Dots, .Dots_Wave, .Squares, .Circle, .Diamond, .Blinds}
-		transition := transitions[index % len(transitions)]
-		if shift do push_scene(host_config.scenes[index].name, .Keep, transition, 0.8)
-		else if index != current_scene do change_scene(host_config.scenes[index].name, transition, 0.8)
+		transition := transitions[g % len(transitions)]
+		target := host_groups.last[g]
+		if shift do push_scene(host_config.scenes[target].name, .Keep, transition, 0.8)
+		else if host_groups.group_of[current_scene] != g do change_scene(host_config.scenes[target].name, transition, 0.8)
 	}
+	if input.pressed(&ctx.input, scene_prev_action) do host_step_scene(false)
+	if input.pressed(&ctx.input, scene_next_action) do host_step_scene(true)
 	if input.pressed(&ctx.input, pop_action) do pop_scene(.Dots, 0.8)
 	host_loads_tick(ctx)
 	camera_update(ctx, delta_time)
 	if transition_tick(ctx, scene, delta_time) do return
+	scene_title_tick(&ctx.gfx, delta_time, host_corner_tag())
 	stats_tick(ctx, delta_time, scene.name)
 	if scene.fixed_tick != nil {
 		hz := host_config.fixed_hz > 0 ? host_config.fixed_hz : 30
@@ -178,6 +195,31 @@ host_tick :: proc(ctx: ^Context, delta_time: f32) {
 	}
 
 	if host_config.after_frame != nil do host_config.after_frame(ctx, scene.name, delta_time, host_config.user)
+}
+
+// Q/E: the neighbouring scene of the current group, wrapping. A single-scene group stays put.
+host_step_scene :: proc(forward: bool) {
+	group := host_groups.group_of[current_scene]
+	members := host_groups.members[group]
+	if len(members) < 2 do return
+	position := host_groups.position[current_scene]
+	next := group_next(position, len(members)) if forward else group_prev(position, len(members))
+	change_scene(host_config.scenes[members[next]].name)
+}
+
+// Corner tag: the current group and position; empty for single-scene groups.
+host_corner_tag :: proc() -> string {
+	group := host_groups.group_of[current_scene]
+	count := len(host_groups.members[group])
+	if count < 2 do return ""
+	return fmt.tprintf("%s %d/%d  Q/E", host_groups.names[group], host_groups.position[current_scene] + 1, count)
+}
+
+// Every visible-scene change (change, push, pop) ends here: records the scene for its
+// group and shows its title.
+host_scene_shown :: proc(index: int) {
+	scene_groups_visit(&host_groups, index)
+	scene_title_show(host_config.scenes[index].name)
 }
 
 // preload_scene: starts the named scene's load now. One preload at a time; a replaced one finishes

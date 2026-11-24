@@ -48,13 +48,13 @@ help_panel_draw :: proc(gfx_ctx: ^gfx.Device, system: ^input.System, screen_widt
 	panel_width := inner_width + 2 * STATS_PADDING
 	panel_height := line_height * f32(1 + shown) + 2 * STATS_PADDING
 	solid := [2]f32{gfx.FONT_WHITE_U, gfx.FONT_WHITE_V}
-	stats_push_rect(gfx_ctx, left, top, left + panel_width, top + panel_height, solid, STATS_BACKGROUND)
-	stats_push_text(gfx_ctx, inner_left, top + STATS_PADDING, HELP_TITLE, {1, 1, 1, 1})
+	overlay_push_rect(gfx_ctx, &stats.vertices, left, top, left + panel_width, top + panel_height, solid, STATS_BACKGROUND)
+	overlay_push_text(gfx_ctx, &stats.vertices, &stats.font, inner_left, top + STATS_PADDING, HELP_TITLE, {1, 1, 1, 1})
 	for action, index in entries {
 		column, row := index / rows, index % rows
 		y := top + STATS_PADDING + line_height * f32(1 + row)
-		stats_push_text(gfx_ctx, column_x[column], y, action.keys, HELP_KEY_COLOR)
-		stats_push_text(gfx_ctx, column_x[column] + key_widths[column] + gap, y, help_description(action), {1, 1, 1, 1})
+		overlay_push_text(gfx_ctx, &stats.vertices, &stats.font, column_x[column], y, action.keys, HELP_KEY_COLOR)
+		overlay_push_text(gfx_ctx, &stats.vertices, &stats.font, column_x[column] + key_widths[column] + gap, y, help_description(action), {1, 1, 1, 1})
 	}
 }
 

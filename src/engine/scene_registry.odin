@@ -7,8 +7,9 @@ package engine
 import "core:strings"
 
 Scene_Entry :: struct {
-	name: string,
-	make: proc() -> Scene, // nil: the JSON alone defines the scene
+	name:  string,
+	group: string, // number-key group and Q/E cycle; "" = a group of its own named after `name`
+	make:  proc() -> Scene, // nil: the JSON alone defines the scene
 }
 
 scene_path :: proc(name: string) -> string {

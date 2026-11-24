@@ -157,9 +157,9 @@ stats_tick :: proc(ctx: ^Context, delta_time: f32, scene_name: string) {
 	clear(&stats.vertices)
 	// Solid rect: sample the atlas's white block.
 	solid := [2]f32{gfx.FONT_WHITE_U, gfx.FONT_WHITE_V}
-	stats_push_rect(gfx_ctx, left, top, left + panel_width, top + panel_height, solid, STATS_BACKGROUND)
+	overlay_push_rect(gfx_ctx, &stats.vertices, left, top, left + panel_width, top + panel_height, solid, STATS_BACKGROUND)
 	for line, index in lines {
-		stats_push_text(gfx_ctx, left + STATS_PADDING, top + STATS_PADDING + line_height * f32(index), line, {1, 1, 1, 1})
+		overlay_push_text(gfx_ctx, &stats.vertices, &stats.font, left + STATS_PADDING, top + STATS_PADDING + line_height * f32(index), line, {1, 1, 1, 1})
 	}
 
 	// Graph: solid frame lines on top/bottom, dotted average, fps polyline.
@@ -168,8 +168,8 @@ stats_tick :: proc(ctx: ^Context, delta_time: f32, scene_name: string) {
 	gy0 := top + 2 * STATS_PADDING + line_height * f32(len(lines))
 	gy1 := gy0 + STATS_GRAPH_HEIGHT
 	frame := [4]f32{0.8, 0.8, 0.8, 0.9}
-	stats_push_rect(gfx_ctx, gx0, gy0, gx1, gy0 + 1, solid, frame)
-	stats_push_rect(gfx_ctx, gx0, gy1 - 1, gx1, gy1, solid, frame)
+	overlay_push_rect(gfx_ctx, &stats.vertices, gx0, gy0, gx1, gy0 + 1, solid, frame)
+	overlay_push_rect(gfx_ctx, &stats.vertices, gx0, gy1 - 1, gx1, gy1, solid, frame)
 	range := max(hi - lo, 1) // flat history would otherwise divide by zero
 	y_of := proc(fps, lo, range, gy0, gy1: f32) -> f32 {return gy1 - 3 - (fps - lo) / range * (gy1 - gy0 - 6)}
 	mid := y_of(avg, lo, range, gy0, gy1)
@@ -177,25 +177,28 @@ stats_tick :: proc(ctx: ^Context, delta_time: f32, scene_name: string) {
 	prev: [2]f32
 	for i in 0 ..< STATS_HISTORY {
 		point := [2]f32{gx0 + f32(i) * step, y_of(stats.history[(stats.head + i) % STATS_HISTORY], lo, range, gy0, gy1)}
-		if i > 0 do stats_push_line(gfx_ctx, prev, point, solid, {0.4, 1, 0.5, 1})
+		if i > 0 do overlay_push_line(gfx_ctx, &stats.vertices, prev, point, solid, {0.4, 1, 0.5, 1})
 		prev = point
 	}
 	for x := gx0; x < gx1; x += 8 { // dotted average, drawn over the curve
-		stats_push_rect(gfx_ctx, x, mid - 0.5, min(x + 4, gx1), mid + 1.5, solid, {1, 0.85, 0.3, 1})
+		overlay_push_rect(gfx_ctx, &stats.vertices, x, mid - 0.5, min(x + 4, gx1), mid + 1.5, solid, {1, 0.85, 0.3, 1})
 	}
 	help_panel_draw(gfx_ctx, inputs, f32(visible_width), f32(visible_height))
 	gfx.mesh_update_unindexed(&gfx_ctx.renderer, &stats.mesh, stats.vertices[:])
 }
 
+// Overlay vertices are clip space, built from pixel-space (y-down) coordinates into `out`
+// by the tick and drawn by overlay_draw. Layout only: GPU uploads belong to the tick.
+
 // 1.5 px thick segment as a quad, offset along the perpendicular.
-stats_push_line :: proc(gfx_ctx: ^gfx.Device, a, b: [2]f32, solid: [2]f32, color: [4]f32) {
+overlay_push_line :: proc(gfx_ctx: ^gfx.Device, out: ^[dynamic]gfx.VertexData, a, b: [2]f32, solid: [2]f32, color: [4]f32) {
 	d := linalg.normalize0(b - a)
 	n := [2]f32{-d.y, d.x} * 0.75
 	width, height := f32(gfx_ctx.window_size.x), f32(gfx_ctx.window_size.y)
 	ndc := proc(p: [2]f32, w, h: f32) -> [3]f32 {return {p.x / w * 2 - 1, 1 - p.y / h * 2, 0}}
 	p0, p1, p2, p3 := ndc(a + n, width, height), ndc(b + n, width, height), ndc(b - n, width, height), ndc(a - n, width, height)
 	append(
-		&stats.vertices,
+		out,
 		gfx.VertexData{position = p0, color = color, uv = solid},
 		gfx.VertexData{position = p1, color = color, uv = solid},
 		gfx.VertexData{position = p2, color = color, uv = solid},
@@ -207,8 +210,9 @@ stats_push_line :: proc(gfx_ctx: ^gfx.Device, a, b: [2]f32, solid: [2]f32, color
 
 // Pixel-space rect (y-down) to two clip-space triangles. With `quad`, UVs come
 // from the glyph; otherwise both corners sample the single `solid` texel.
-stats_push_rect :: proc(
+overlay_push_rect :: proc(
 	gfx_ctx: ^gfx.Device,
+	out: ^[dynamic]gfx.VertexData,
 	x0, y0, x1, y1: f32,
 	solid: [2]f32,
 	color: [4]f32,
@@ -225,7 +229,7 @@ stats_push_rect :: proc(
 	}
 	p0, p1, p2, p3 := ndc(x0, y0, width, height), ndc(x1, y0, width, height), ndc(x1, y1, width, height), ndc(x0, y1, width, height)
 	append(
-		&stats.vertices,
+		out,
 		gfx.VertexData{position = p0, color = color, uv = uv0},
 		gfx.VertexData{position = p1, color = color, uv = uv1},
 		gfx.VertexData{position = p2, color = color, uv = uv2},
@@ -235,38 +239,44 @@ stats_push_rect :: proc(
 	)
 }
 
-// Text whose line top is `top` (y-down) and left edge `x`, in the stats font.
-stats_push_text :: proc(gfx_ctx: ^gfx.Device, x, top: f32, text: string, color: [4]f32) {
-	pen_x, pen_y := x, top + f32(stats.font.baseline)
+// Text whose line top is `top` (y-down) and left edge `x`, in `font`.
+overlay_push_text :: proc(gfx_ctx: ^gfx.Device, out: ^[dynamic]gfx.VertexData, font: ^gfx.Font, x, top: f32, text: string, color: [4]f32) {
+	pen_x, pen_y := x, top + f32(font.baseline)
 	quads: [dynamic]gfx.Font_Quad
 	quads.allocator = context.temp_allocator
-	gfx.font_layout(&stats.font, text, &pen_x, &pen_y, &quads)
+	gfx.font_layout(font, text, &pen_x, &pen_y, &quads)
 	for quad in quads {
-		stats_push_rect(gfx_ctx, quad.x0, quad.y0, quad.x1, quad.y1, {}, color, quad)
+		overlay_push_rect(gfx_ctx, out, quad.x0, quad.y0, quad.x1, quad.y1, {}, color, quad)
 	}
 }
 
-stats_draw :: proc(ctx: ^gfx.Pass_Ctx, _: rawptr) {
-	if !stats.visible || len(stats.vertices) == 0 do return
+// Draws the first `count` vertices of `mesh` in its own overlay pass over the frame.
+// pipelines/materials: index 0 for scene_color targets, 1 for post-process outputs.
+overlay_draw :: proc(ctx: ^gfx.Pass_Ctx, pipelines: [2]gfx.Pipeline_Handle, materials: ^[2]gfx.Material, mesh: ^gfx.Mesh, count: int) {
 	gfx_ctx := ctx.gfx_ctx
 	gfx.renderer_begin_overlay_pass(ctx.renderer, ctx.color)
 	pass := ctx.renderer.pass
 	target := 0 if ctx.color == ctx.renderer.scene_color else 1 // pipeline color format must match the target
-	pipeline := gfx.pipeline_get(gfx_ctx, stats.pipelines[target])
+	pipeline := gfx.pipeline_get(gfx_ctx, pipelines[target])
 	gfx.pipeline_bind_native(pass, pipeline, false) // overlay pass is always 1x
-	gfx.pipeline_bind_material(gfx_ctx, pass, gfx_ctx.command_buffer, &stats.materials[target])
+	gfx.pipeline_bind_material(gfx_ctx, pass, gfx_ctx.command_buffer, &materials[target])
 	gfx.pipeline_bind_draw(
 		gfx_ctx,
-		stats.pipelines[target],
+		pipelines[target],
 		gfx_ctx.command_buffer,
 		{
 			view_projection = linalg.MATRIX4F32_IDENTITY,
 			model_transform = linalg.MATRIX4F32_IDENTITY,
-			material = &stats.materials[target],
+			material = &materials[target],
 		},
 	)
-	vertex_buffer := gfx.buffer_get(gfx_ctx, stats.mesh.vertex_buffer)
+	vertex_buffer := gfx.buffer_get(gfx_ctx, mesh.vertex_buffer)
 	sdl.BindGPUVertexBuffers(pass, 0, &(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}), 1)
-	sdl.DrawGPUPrimitives(pass, u32(len(stats.vertices)), 1, 0, 0)
+	sdl.DrawGPUPrimitives(pass, u32(count), 1, 0, 0)
 	gfx.renderer_end_pass(ctx.renderer)
+}
+
+stats_draw :: proc(ctx: ^gfx.Pass_Ctx, _: rawptr) {
+	if !stats.visible || len(stats.vertices) == 0 do return
+	overlay_draw(ctx, stats.pipelines, &stats.materials, &stats.mesh, len(stats.vertices))
 }
