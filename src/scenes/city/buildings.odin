@@ -1,11 +1,11 @@
 // CPU building generators. Each appends one building to a Mesh_Builder.
-// Units: 1 unit = 1 window = 1/64 of the atlas, so a wall w wide and h stories tall spans (w/64, h/64) uv.
+// Units: 1 unit = 1 window. A wall w wide and h stories tall spans (w/TILE_WINDOWS, h/TILE_WINDOWS) uv in its tile;
+// uv may run past 1 and the shader wraps it inside the tile.
 package city
 
 import "core:math"
 import "core:math/linalg"
 
-ATLAS_WINDOWS :: WINDOW_TEXTURE_SIZE / 8 // windows per atlas side (8 px each)
 BUILDING_ROOF :: [4]f32{0, 0, 0, 1} // roofs and spikes are black: the shader multiplies by vertex colour
 building_tints := [4][4]f32{{1, 0.94, 0.8, 1}, {1, 0.9, 0.45, 1}, {0.72, 0.85, 1, 1}, {1, 1, 1, 1}} // warm white, yellow, pale blue, white
 BLOCKY_RECT_TRIES :: 16
@@ -15,9 +15,11 @@ CLASSIC_TAPER :: 0.85
 
 Building_Proc :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2]f32, stories: int)
 
-// Per-building appearance: wall tint and atlas offset (a multiple of 1/64, so window borders stay aligned).
+// Per-building appearance: wall tint, atlas tile (0..TILE_COUNT-1) and offset inside the tile (a multiple of
+// 1/TILE_WINDOWS, so window borders stay aligned).
 Facade :: struct {
 	color: [4]f32,
+	tile:  u8,
 	uv:    [2]f32,
 }
 
@@ -26,10 +28,13 @@ Rect :: struct {
 	x0, x1, z0, z1: f32,
 }
 
+WINDOW_UV :: 1.0 / TILE_WINDOWS
+
 building_facade :: proc(rng: ^Rng) -> Facade {
 	return {
 		color = building_tints[rng_int(rng, 0, len(building_tints) - 1)],
-		uv = {f32(rng_int(rng, 0, ATLAS_WINDOWS - 1)) / ATLAS_WINDOWS, f32(rng_int(rng, 0, ATLAS_WINDOWS - 1)) / ATLAS_WINDOWS},
+		tile = u8(rng_int(rng, 0, TILE_COUNT - 1)),
+		uv = {f32(rng_int(rng, 0, TILE_WINDOWS - 1)) * WINDOW_UV, f32(rng_int(rng, 0, TILE_WINDOWS - 1)) * WINDOW_UV},
 	}
 }
 
@@ -56,29 +61,35 @@ rect_side :: proc(r: Rect, i: int) -> (a, c: [2]f32) {
 }
 
 // Vertical wall from a to c (XZ), y0..y1. Normal is cross(c - a, up): outward for the wall orders above.
-building_wall :: proc(b: ^Mesh_Builder, f: Facade, a, c: [2]f32, y0, y1: f32) {
+// u is the uv x at a; returns the uv x at c, so the caller can run u on around a corner.
+building_wall :: proc(b: ^Mesh_Builder, f: Facade, a, c: [2]f32, y0, y1: f32, u: f32) -> f32 {
 	w := linalg.length(c - a)
+	color := f.color
+	color.a = (f32(f.tile) + 0.5) / TILE_COUNT // tile index, decoded in shaders/city.slang
 	builder_quad(
 		b,
 		{a.x, y0, a.y},
 		{c.x, y0, c.y},
 		{c.x, y1, c.y},
 		{a.x, y1, a.y},
-		f.uv,
-		f.uv + {w / ATLAS_WINDOWS, (y1 - y0) / ATLAS_WINDOWS},
-		f.color,
+		{u, f.uv.y},
+		{u + w * WINDOW_UV, f.uv.y + (y1 - y0) * WINDOW_UV},
+		color,
 	)
+	return u + w * WINDOW_UV
 }
 
 building_roof :: proc(b: ^Mesh_Builder, r: Rect, y: f32) {
 	builder_quad(b, {r.x0, y, r.z0}, {r.x0, y, r.z1}, {r.x1, y, r.z1}, {r.x1, y, r.z0}, {}, {}, BUILDING_ROOF)
 }
 
-// Four walls and a black top: a box with no bottom face.
+// Four walls and a black top: a box with no bottom face. Each wall starts one window back from the previous wall's
+// end, so the corner column is shared and the texture runs on around the corner instead of mirroring.
 building_block :: proc(b: ^Mesh_Builder, f: Facade, r: Rect, y0, y1: f32) {
+	u := f.uv.x
 	for i in 0 ..< 4 {
 		a, c := rect_side(r, i)
-		building_wall(b, f, a, c, y0, y1)
+		u = building_wall(b, f, a, c, y0, y1, u) - WINDOW_UV
 	}
 	building_roof(b, r, y1)
 }
@@ -153,9 +164,10 @@ building_modern :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2
 		count += 1
 	}
 	centre := Vec3{origin.x, top, origin.z}
+	u := f.uv.x
 	for k in 0 ..< count {
 		next := ring[(k + 1) % count]
-		building_wall(b, f, next, ring[k], origin.y, top)
+		u = building_wall(b, f, next, ring[k], origin.y, top, u)
 		builder_tri(b, {next.x, top, next.y}, {ring[k].x, top, ring[k].y}, centre, BUILDING_ROOF)
 	}
 }

@@ -1,4 +1,4 @@
-// Window atlas: a compute pass writes the 512x512 lit/dark texture the buildings sample.
+// Window atlas: a compute pass writes the 2048x2048 texture of 4x4 tiles that the buildings sample.
 package city
 
 import gfx "../../engine/gfx"
@@ -6,8 +6,12 @@ import shader_parameters "../../shader_parameters"
 import "core:mem"
 import sdl "vendor:sdl3"
 
-WINDOW_TEXTURE_SIZE :: 512
-WINDOW_SHAPE_COUNT :: 8 // shader glass() masks, see shaders/city_windows.slang
+WINDOW_PX :: 8 // one window in the atlas, see shaders/city_windows.slang
+TILE_PX :: 512
+TILE_COUNT_SIDE :: 4
+TILE_COUNT :: TILE_COUNT_SIDE * TILE_COUNT_SIDE
+TILE_WINDOWS :: TILE_PX / WINDOW_PX // windows per tile side: uv of one window is 1 / TILE_WINDOWS
+ATLAS_SIZE :: TILE_COUNT_SIDE * TILE_PX
 
 WINDOW_SAMPLER :: sdl.GPUSamplerCreateInfo {
 	min_filter     = .NEAREST,
@@ -27,29 +31,18 @@ window_texture_create :: proc(gfx_ctx: ^gfx.Device) -> Window_Texture {
 		pipeline = gfx.compute_pipeline_create(gfx_ctx, shader_parameters.city_windows_compute()),
 		texture = gfx.texture_create_with_usage(
 			gfx_ctx,
-			WINDOW_TEXTURE_SIZE,
-			WINDOW_TEXTURE_SIZE,
+			ATLAS_SIZE,
+			ATLAS_SIZE,
 			.R8G8B8A8_UNORM,
 			{.SAMPLER, .COMPUTE_STORAGE_WRITE},
 		),
 	}
 }
 
-// Shape for a seed: finalizer hash of the seed, so each seed starts with a varied window.
-window_shape_for_seed :: proc(seed: u32) -> u32 {
-	h := seed
-	h ~= h >> 16
-	h *= 0x7feb352d
-	h ~= h >> 15
-	h *= 0x846ca68b
-	h ~= h >> 16
-	return h % WINDOW_SHAPE_COUNT
-}
-
 // Must run outside a render pass with the frame open (scene before-hook).
-window_texture_generate :: proc(gfx_ctx: ^gfx.Device, window: ^Window_Texture, seed: u32, shape: u32) {
-	params := shader_parameters.CityWindowsComputeWindowParams{seed = seed, shape = shape}
-	groups := WINDOW_TEXTURE_SIZE / shader_parameters.CITY_WINDOWS_COMPUTE_THREAD_COUNT.x
+window_texture_generate :: proc(gfx_ctx: ^gfx.Device, window: ^Window_Texture, seed: u32) {
+	params := shader_parameters.CityWindowsComputeWindowParams{seed = seed}
+	groups := ATLAS_SIZE / shader_parameters.CITY_WINDOWS_COMPUTE_THREAD_COUNT.x
 	gfx.compute_dispatch(
 		gfx_ctx,
 		window.pipeline,

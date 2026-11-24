@@ -1,4 +1,4 @@
-// Unlit textured geometry for the city: the window atlas times vertex color.
+// Unlit textured geometry for the city: the window atlas times vertex colour. Vertex alpha carries the atlas tile.
 
 struct Uniforms {
     float4x4 mvp;
@@ -40,6 +40,9 @@ SamplerState window_sampler;
 float4 pixelMain(VertexOutput input) : SV_Target0 {
     // The compute shader writes display-referred values into a UNORM texture (storage textures cannot be sRGB);
     // the swapchain is sRGB, so linearize here or dark windows come out washed grey.
-    float4 texel = window_texture.Sample(window_sampler, input.uv);
-    return float4(pow(texel.rgb, 2.2), texel.a) * input.color;
+    // Alpha is (tile + 0.5) / 16 (see building_wall): uv wraps inside its tile, so the atlas tile is picked here.
+    uint tile = min(uint(input.color.a * 16.0), 15u);
+    float2 uv = (float2(tile % 4, tile / 4) + frac(input.uv)) / 4.0;
+    float4 texel = window_texture.Sample(window_sampler, uv);
+    return float4(pow(texel.rgb, 2.2) * input.color.rgb, 1.0);
 }

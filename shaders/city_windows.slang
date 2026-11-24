@@ -1,16 +1,20 @@
-// Window atlas: a 512x512 texture of 64x64 windows, 8x8 px each. Each window is
-// lit or dark by a PCG hash of (window x, window y, seed). A 1 px black border
-// surrounds every window, so the glass area is the 6x6 interior.
+// Window atlas: 4x4 tiles of 512x512 texels (2048 x 2048). Each tile is 64x64 windows of 8 px, each window a 1 px
+// black border around a 6x6 glass interior. A tile's look comes from a hash of (seed, tile index): its lit ratio,
+// its room size (windows per lit or dark room, rooms aligned to the tile grid with a per-tile offset), and its
+// window shape (one of 8 glass masks).
 //
-// Per window (all from the hash, deterministic): lit or dark (about 50%), a warm
-// base tint, a brightness (lit: 0.55..1.0; dark: 0..15% spill), a fade from the
-// top row (100%) to the bottom row (60%), and up to 3 dark furniture patches in
-// the lower half. Per pixel: independent colour noise and a little grey noise.
-// The window shape (uniform `shape`) masks the same 6x6 interior for every window.
+// Lighting per window: its room is lit with probability lit_ratio. A window in a lit room is off with 8% chance,
+// a window in a dark room is on with 3% chance. Lit windows then get the detail below.
+//
+// Per window (all from the hash, deterministic): a brightness (lit: 0.55..1.0; dark: 0..15% spill), a warm base
+// tint, a fade from the top row (100%) to the bottom row (60%), and up to 3 dark furniture patches in the lower half.
+// Per pixel: independent colour noise and a little grey noise.
 //
 // SDL_GPU binding order for compute: uniforms -> read-write storage textures.
 
-static const uint WINDOWS_PER_SIDE = 64;
+static const uint TILE_COUNT_SIDE = 4;
+static const uint TILE_PX = 512;
+static const uint TILE_WINDOWS = 64; // windows per tile side
 static const uint WINDOW_PX = 8;
 static const uint BORDER_PX = 1;
 static const uint GLASS_PX = 6; // interior, inside the border
@@ -19,9 +23,9 @@ static const float INV_U32 = 1.0 / 4294967296.0;
 // Padded to 16 bytes: push uniform data is read as one vec4.
 struct WindowParams {
     uint seed;
-    uint shape;
     uint pad1;
     uint pad2;
+    uint pad3;
 };
 
 [[vk::binding(0, 0)]]
@@ -96,14 +100,50 @@ float furniture_factor(uint window_hash, uint x, uint y) {
     return factor;
 }
 
+// Per-tile look. salt seeds the room hashes, so the rooms differ from tile to tile.
+struct TileParams {
+    uint salt;
+    float lit_ratio;
+    uint room_w;
+    uint room_h;
+    uint shape;
+    uint off_x;
+    uint off_y;
+};
+
+TileParams tile_params(uint tile_index) {
+    TileParams t;
+    t.salt = pcg(pcg(tile_index ^ 0x7F4A7C15u) + params.seed);
+    uint s = t.salt;
+    t.lit_ratio = lerp(0.15, 0.75, next_rand(s));
+    t.room_w = 1 + min(uint(next_rand(s) * 6.0), 5u);
+    t.room_h = 1 + min(uint(next_rand(s) * 3.0), 2u);
+    t.shape = min(uint(next_rand(s) * 8.0), 7u);
+    t.off_x = min(uint(next_rand(s) * float(TILE_WINDOWS)), TILE_WINDOWS - 1);
+    t.off_y = min(uint(next_rand(s) * float(TILE_WINDOWS)), TILE_WINDOWS - 1);
+    return t;
+}
+
+// Whether the room holding window (wx, wy) of the tile is lit: rooms are room_w x room_h windows on a grid
+// shifted by the tile offset.
+bool room_lit(TileParams t, uint wx, uint wy) {
+    uint rx = (wx + t.off_x) / t.room_w;
+    uint ry = (wy + t.off_y) / t.room_h;
+    uint h = pcg(pcg(rx ^ (ry << 16)) + t.salt);
+    return float(h) * INV_U32 < t.lit_ratio;
+}
+
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void computeMain(uint2 tid : SV_DispatchThreadID)
 {
-    uint2 window = tid / WINDOW_PX;
-    uint2 local = tid % WINDOW_PX;
+    uint2 tile = tid / TILE_PX;
+    uint tile_index = tile.y * TILE_COUNT_SIDE + tile.x;
+    uint2 in_tile = tid % TILE_PX;
+    uint2 window = in_tile / WINDOW_PX;
+    uint2 local = in_tile % WINDOW_PX;
 
-    uint h = pcg(pcg(window.x ^ (window.y << 16)) + params.seed);
+    TileParams t = tile_params(tile_index);
     bool border = min(local.x, local.y) < BORDER_PX || max(local.x, local.y) >= WINDOW_PX - BORDER_PX;
     if (border) {
         output_image[tid] = float4(0.0, 0.0, 0.0, 1.0);
@@ -112,14 +152,16 @@ void computeMain(uint2 tid : SV_DispatchThreadID)
 
     uint x = local.x - BORDER_PX;
     uint y = local.y - BORDER_PX;
-    if (!glass(params.shape, x, y)) {
+    if (!glass(t.shape, x, y)) {
         output_image[tid] = float4(0.0, 0.0, 0.0, 1.0);
         return;
     }
 
-    // Window-level values: a separate chain from the lit bit, so lit stays ~50%.
+    // Window-level values: one hash per window, drawn in a fixed order.
+    uint h = pcg(pcg(window.x | (window.y << 6) | (tile_index << 12)) + params.seed);
     uint s = h;
-    bool lit = h < 0x80000000u;
+    float flip = next_rand(s);
+    bool lit = room_lit(t, window.x, window.y) ? flip >= 0.08 : flip < 0.03;
     float bright = lerp(0.55, 1.0, next_rand(s));
     float tint = next_rand(s);
     float spill = next_rand(s) * 0.15;

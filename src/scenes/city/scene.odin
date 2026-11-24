@@ -1,4 +1,4 @@
-// City step 5: 1024 x 1024 city plan of CPU-generated buildings, textured with the window atlas. Dev view draws streets.
+// City step 6: 2048 x 2048 window atlas of 4x4 tiles, per-building tiles with lit room groups. Dev view draws streets.
 package city
 
 import engine "../../engine"
@@ -24,10 +24,8 @@ City_State :: struct {
 	roads:        engine.Actor_Id, // the streets' Raw_Draw; only alive in the dev view
 	road_material: gfx.Material, // unlit blue
 	dev:          bool,
-	shape:        u32, // window shape 0..7, T steps it, R keeps it
 	regenerate:   bool, // the before-hook regenerates the atlas when set
 	reroll:       input.Button_Action,
-	next_shape:   input.Button_Action,
 	toggle_dev:   input.Button_Action,
 }
 
@@ -61,7 +59,6 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx.set_unlit_color(&state.road_material, ROAD_COLOR)
 
 	state.seed = CITY_SEED_START
-	state.shape = window_shape_for_seed(state.seed)
 	state.regenerate = true
 	state.plan = city_plan(state.seed)
 	city_spawn(state)
@@ -69,7 +66,6 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	if CITY_DEV_START do city_set_dev(state, &ctx.gfx.renderer, true)
 
 	state.reroll = input.button(&ctx.input, "city.reroll", .R, "Re-roll city")
-	state.next_shape = input.button(&ctx.input, "city.shape", .T, "Next window shape")
 	state.toggle_dev = input.button(&ctx.input, "city.dev", .G, "Toggle dev view (streets)")
 	gfx.renderer_add_scene_hook(&ctx.gfx.renderer, gfx.Scene_Hook{name = "city_windows", before = city_before, user = state})
 	return true
@@ -80,7 +76,7 @@ city_before :: proc(renderer: ^gfx.Renderer, user: rawptr) {
 	state := cast(^City_State)user
 	if !state.regenerate do return
 	state.regenerate = false
-	window_texture_generate(renderer.gfx_ctx, &state.window, state.seed, state.shape)
+	window_texture_generate(renderer.gfx_ctx, &state.window, state.seed)
 }
 
 city_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
@@ -94,10 +90,6 @@ city_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 		state.seed = s
 		state.regenerate = true
 		city_rebuild(state)
-	}
-	if input.pressed(&ctx.input, state.next_shape) {
-		state.shape = (state.shape + 1) % WINDOW_SHAPE_COUNT
-		state.regenerate = true
 	}
 	if input.pressed(&ctx.input, state.toggle_dev) do city_set_dev(state, &ctx.gfx.renderer, !state.dev)
 	engine.world_update(&state.world, delta_time)
