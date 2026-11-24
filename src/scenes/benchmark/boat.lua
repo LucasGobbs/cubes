@@ -2,7 +2,7 @@
 -- sea loop in benchmark_tick). Constants copied from that file; keep them in sync.
 -- Sea time is per actor (self.t), so boats spawned mid-run start their wave phase at 0.
 local engine = require("engine")
-local sea = require("sea_wave")
+local sea = require("src.scenes.sea.sea_wave")
 
 local M = {}
 

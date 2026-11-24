@@ -14,8 +14,8 @@ LUA_NOREF :: -2
 // Error handler: appends a traceback to the message of every protected call.
 HANDLER_SRC :: "return function(e) return debug.traceback(tostring(e), 2) end"
 
-// Returns make_actor(index, generation) -> Actor cdata. The Actor cdef lives in engine.lua. jit.off: called from a C pcall, a trace of it aborts (NYI return to lower frame); create-time only, so interpreted is fine. The first line lets scripts require() sibling modules from scripts/ (cwd-relative, like script paths).
-BOOTSTRAP_SRC :: "package.path = 'scripts/?.lua;' .. package.path; local ffi = require('ffi'); local Actor = ffi.typeof('Actor'); local make = function(i, g) return Actor(i, g) end; jit.off(make); return make"
+// Returns make_actor(index, generation) -> Actor cdata. The Actor cdef lives in engine.lua. jit.off: called from a C pcall, a trace of it aborts (NYI return to lower frame); create-time only, so interpreted is fine. Scripts require() modules by cwd-relative dotted path (require("src.scenes.sea.sea_wave")) via the default ./?.lua in package.path.
+BOOTSTRAP_SRC :: "local ffi = require('ffi'); local Actor = ffi.typeof('Actor'); local make = function(i, g) return Actor(i, g) end; jit.off(make); return make"
 
 // Wall time between hot reload checks started by world_update.
 SCRIPT_RELOAD_INTERVAL :: 250 * time.Millisecond

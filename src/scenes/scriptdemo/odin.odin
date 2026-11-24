@@ -1,4 +1,4 @@
-// Odin baseline for scriptdemo: the same actors and motion as scripts/spinner.lua, ticked by a
+// Odin baseline for scriptdemo: the same actors and motion as spinner.lua, ticked by a
 // register_type proc. No Script prop and no Lua host.
 package scriptdemo
 

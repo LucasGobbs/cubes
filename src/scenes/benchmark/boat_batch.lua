@@ -3,7 +3,7 @@
 -- One module clock (advanced once per tick_all) drives every boat's wave phase.
 local ffi = require("ffi")
 local engine = require("engine")
-local sea = require("sea_wave")
+local sea = require("src.scenes.sea.sea_wave")
 
 local M = {}
 M.batch = true

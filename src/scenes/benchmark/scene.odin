@@ -71,8 +71,8 @@ FLEE_TURN_RATE :: 1.5 // rad/s
 SAIL_X_LIMIT :: 700 // boats wrap across x in [-SAIL_X_LIMIT, SAIL_X_LIMIT]
 SAIL_Z_NEAR :: -20 // and across z in [SAIL_Z_FAR, SAIL_Z_NEAR]
 SAIL_Z_FAR :: -650
-BOAT_LUA_PATH :: "scripts/boat.lua"
-BOAT_LUA_BATCH_PATH :: "scripts/boat_batch.lua"
+BOAT_LUA_PATH :: "src/scenes/benchmark/boat.lua"
+BOAT_LUA_BATCH_PATH :: "src/scenes/benchmark/boat_batch.lua"
 
 // Rest position in x/z; tick sets its height and tilt from the sea. Heading (radians)
 // drives sailing; yaw is rebuilt from it.

@@ -1,4 +1,4 @@
-// Scriptdemo: a grid of actors, each driven by the Lua script scripts/spinner.lua.
+// Scriptdemo: a grid of actors, each driven by the Lua script src/scenes/scriptdemo/spinner.lua.
 // Env: CUBES_SCRIPT_N = actor count (default 100); CUBES_SCRIPT_NOMODEL=1 spawns actors
 // without Model, so a bench measures script/world cost instead of drawing ships.
 package scriptdemo
@@ -12,8 +12,8 @@ import engine "../../engine"
 SCRIPTDEMO_COUNT :: 100
 SCRIPTDEMO_SPACING :: 3.0
 SCRIPTDEMO_MODEL_PATH :: "static/models/sea/ship-small.glb"
-SCRIPTDEMO_SCRIPT_PATH :: "scripts/spinner.lua"
-SCRIPTDEMO_BATCH_SCRIPT_PATH :: "scripts/spinner_batch.lua"
+SCRIPTDEMO_SCRIPT_PATH :: "src/scenes/scriptdemo/spinner.lua"
+SCRIPTDEMO_BATCH_SCRIPT_PATH :: "src/scenes/scriptdemo/spinner_batch.lua"
 
 Scriptdemo_State :: struct {
 	world: engine.World,

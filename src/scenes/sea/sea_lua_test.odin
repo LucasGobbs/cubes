@@ -1,7 +1,7 @@
 package sea
 
-// Parity: scripts/sea_wave.lua against the Odin surface_height and tilt * yaw, on the same samples.
-// Run from the repo root (make test-engine does): the script host resolves require("sea_wave") cwd-relative.
+// Parity: src/scenes/sea/sea_wave.lua against the Odin surface_height and tilt * yaw, on the same samples.
+// Run from the repo root (make test-engine does): the script host resolves require("src.scenes.sea.sea_wave") cwd-relative.
 
 import "core:c"
 import "core:fmt"
@@ -42,7 +42,7 @@ sea_parity_sample :: proc(i: int) -> Sea_Parity_Sample {
 sea_parity_lua :: `
 local ffi = require("ffi")
 local engine = require("engine") -- loads the Quat cdef
-local sea = require("sea_wave")
+local sea = require("src.scenes.sea.sea_wave")
 local q = ffi.new("Quat")
 parity = {}
 parity_y = sea.Y

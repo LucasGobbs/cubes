@@ -36,7 +36,7 @@
 //   // spawn:  engine.spawn_typed(world, ship, Ship{target = player_type})
 // Ticks run in slot order (spawn order, reused slots included), once per world_update.
 // Actors spawned during world_update first tick on the next one.
-// Lua behaviour: Script{path = "scripts/x.lua"} runs the module's create and destroy
+// Lua behaviour: Script{path = "src/scenes/<scene>/x.lua"} runs the module's create and destroy
 // around its Prop's lifetime, and tick / fixed_tick in world_update / world_fixed_update.
 // A runtime error faults that actor's script only (logged once). script_call calls a
 // named Lua function from Odin.

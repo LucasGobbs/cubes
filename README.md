@@ -138,7 +138,7 @@ gbbfx.gfx_render(gfx, &scene)
 
 ## Lua scripting
 
-Actors can run a LuaJIT behaviour: `engine.Script{path = "scripts/spinner.lua"}`. See `scripts/*.lua`
+Actors can run a LuaJIT behaviour: `engine.Script{path = "src/scenes/scriptdemo/spinner.lua"}`. See the `*.lua` files next to their scenes under `src/scenes/`
 for examples. A module returns a table with optional `create(self, a)`, `tick(self, a, dt)`,
 `fixed_tick`, `destroy` and `reload` hooks; `a:transform()` gives the live `Transform*`, `engine.input.down(name)`
 and `engine.find` / `engine.spawn_model` are also available. Odin calls named hooks with `script_call`.
@@ -147,8 +147,8 @@ and `engine.find` / `engine.spawn_model` are also available. Odin calls named ho
   `F5` reloads all scripts. A runtime error faults only that actor until its file changes.
 - `CUBES_JIT_V=1` dumps LuaJIT's trace log (`jit.v`) to stderr at host creation.
 - `make luajit` builds the vendored LuaJIT 2.1 static lib (`third_party/luajit`); `test-engine` depends on it.
-- Scenes: `scriptdemo` (grid driven by `scripts/spinner.lua`, per-actor ticks), `scriptdemo_batch`
-  (`scripts/spinner_batch.lua`, one Lua call per frame), `scriptdemo_odin` (Odin `register_type` baseline, no Lua).
+- Scenes: `scriptdemo` (grid driven by `src/scenes/scriptdemo/spinner.lua`, per-actor ticks), `scriptdemo_batch`
+  (`src/scenes/scriptdemo/spinner_batch.lua`, one Lua call per frame), `scriptdemo_odin` (Odin `register_type` baseline, no Lua).
 - `CUBES_SCRIPT_N=<count>` sets the actor count (default 100). `CUBES_SCRIPT_NOMODEL=1` spawns without models
   so a bench measures script cost only, e.g. `make run ARGS="scriptdemo --bench 5"`.
 - Design, API and measurements: [plan.md](plan.md).

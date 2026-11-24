@@ -55,7 +55,7 @@ src/engine/script_host.odin    lua_State lifecycle, load/reload, error handling,
 src/engine/script_api.odin     the C-ABI function table handed to Lua (proc "c")
 src/engine/script_types.odin   Script prop, Lua-visible struct layouts + size checks
 src/engine/script/engine.lua   ffi.cdef + metatypes, the `engine` module (embedded with #load)
-scripts/                       user scripts (demo: scripts/spinner.lua)
+src/scenes/<scene>/*.lua        user scripts, next to the scene that uses them (demo: src/scenes/scriptdemo/spinner.lua)
 ```
 
 `luajit` is a leaf package (no engine imports). Everything that needs `World` lives in package `engine`, because
@@ -242,14 +242,14 @@ spinner_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	engine.script_bind(&state.world, &ctx.input)             // binds input + world for the API table
 	engine.spawn(&state.world,
 		engine.Model{path = "static/models/ship.glb"},
-		engine.Script{path = "scripts/spinner.lua"})
+		engine.Script{path = "src/scenes/scriptdemo/spinner.lua"})
 	return true
 }
 spinner_tick       :: proc(demo: ^engine.Scene, ctx: ^engine.Context, dt: f32) { /* world_update + world_render */ }
 spinner_fixed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, dt: f32) { engine.world_fixed_update(&state.world, dt) }
 ```
 
-**Lua (`scripts/spinner.lua`):**
+**Lua (`src/scenes/scriptdemo/spinner.lua`):**
 
 ```lua
 local engine = require("engine")
@@ -290,7 +290,7 @@ Ship :: struct { fuel: f32 }
 ship := engine.register_type(&world, Ship, nil, ship_tick, nil)
 engine.spawn_typed(&world, ship, Ship{fuel = 100},
 	engine.Model{path = "static/models/ship.glb"},
-	engine.Script{path = "scripts/spinner.lua"})     // same actor: ship_tick runs, then spinner.lua tick
+	engine.Script{path = "src/scenes/scriptdemo/spinner.lua"})     // same actor: ship_tick runs, then spinner.lua tick
 ```
 
 ## 6. Execution order per frame
@@ -350,7 +350,7 @@ Findings:
 
 ### Benchmark scene: Odin vs Lua
 
-Replica of `benchmark` in Lua: per boat sail, flee from camera, wrap (`boat_step`), sea height and tilt (`sea_wave.lua`, `sea.tilt`). Scenes `benchmark_lua` (`scripts/boat.lua`, per-actor) and `benchmark_lua_batch` (`scripts/boat_batch.lua`, one `tick_all` per frame). Odin baseline `benchmark`. Lua variants skip the Odin boat loop and keep the sea mesh, camera, HUD and keys.
+Replica of `benchmark` in Lua: per boat sail, flee from camera, wrap (`boat_step`), sea height and tilt (`src/scenes/sea/sea_wave.lua`, `sea.tilt`). Scenes `benchmark_lua` (`src/scenes/benchmark/boat.lua`, per-actor) and `benchmark_lua_batch` (`src/scenes/benchmark/boat_batch.lua`, one `tick_all` per frame). Odin baseline `benchmark`. Lua variants skip the Odin boat loop and keep the sea mesh, camera, HUD and keys.
 
 Commands, from repo root: `CUBES_BENCH_PER_MODEL=<n> /tmp/cubes_v <scene> --bench 5`. `n` = boats per model (32 models, so objects = 32n + 12 dragons). Default n = 150. `CUBES_JIT_V=1` shows trace status.
 
@@ -433,7 +433,7 @@ Smoke/benchmark (each step):
 
 - Build: `make luajit && make default-shaders shaders && odin build src -out:/tmp/cubes_v && make test-engine`.
 - New scene `scriptdemo`: N actors with a Lua spinner; `--bench 5` prints the `script` timing row. Targets to measure, not guess: per-actor mode at 100 / 1000 / 5000 actors, batch mode at 5000 / 50000, and an equivalent Odin `register_type` tick as the baseline. Record the table in this file after phase 3.
-- Visual: run `scriptdemo` windowed, edit `scripts/spinner.lua`, confirm the change applies without restart (screenshot before/after).
+- Visual: run `scriptdemo` windowed, edit `src/scenes/scriptdemo/spinner.lua`, confirm the change applies without restart (screenshot before/after).
 
 ## 12. Phases
 
