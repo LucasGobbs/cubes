@@ -108,14 +108,16 @@ city_despawn_roads :: proc(state: ^City_State) {
 	engine.world_destroy_actor(&state.world, state.roads)
 }
 
-// Dev view: streets on or off.
+// Dev view: streets on, or the night view with the sky on. Sky and streets are never alive together.
 city_set_dev :: proc(state: ^City_State, renderer: ^gfx.Renderer, dev: bool) {
 	state.dev = dev
 	if dev {
+		city_despawn_sky(state)
 		city_spawn_roads(state)
 		renderer.clear_color = CITY_CLEAR_COLOR
 	} else {
 		city_despawn_roads(state)
+		city_spawn_sky(state)
 		renderer.clear_color = CITY_NIGHT_COLOR
 	}
 }

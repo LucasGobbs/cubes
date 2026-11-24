@@ -49,6 +49,17 @@
       "name": "city_windows",
       "source": "shaders/city_windows.slang",
       "compute": "computeMain"
+    },
+    {
+      "name": "city_sky",
+      "source": "shaders/city_sky.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
+      "name": "city_sky_gen",
+      "source": "shaders/city_sky_gen.slang",
+      "compute": "computeMain"
     }
   ]
 }
