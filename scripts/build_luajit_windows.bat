@@ -1,6 +1,6 @@
 @echo off
 rem UNVERIFIED on Windows: written from reading msvcbuild.bat only; never executed on Windows.
-rem Builds third_party\luajit\src\lua51.lib (static, GC64) with the /MD CRT (plan.md section 9).
+rem Builds third_party\luajit\src\lua51.lib (static, GC64) with the /MD CRT (luajit-design.md section 9).
 rem Run from the repo root in an x64 Native Tools / VS x64 developer prompt. Called by `make luajit` on Windows.
 setlocal
 

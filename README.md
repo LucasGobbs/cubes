@@ -141,17 +141,30 @@ gbbfx.gfx_render(gfx, &scene)
 Actors can run a LuaJIT behaviour: `engine.Script{path = "src/scenes/scriptdemo/spinner.lua"}`. See the `*.lua` files next to their scenes under `src/scenes/`
 for examples. A module returns a table with optional `create(self, a)`, `tick(self, a, dt)`,
 `fixed_tick`, `destroy` and `reload` hooks; `a:transform()` gives the live `Transform*`, `engine.input.down(name)`
-and `engine.find` / `engine.spawn_model` are also available. Odin calls named hooks with `script_call`.
+and `engine.find` / `engine.spawn_model` are also available. `a:set_scale`, `a:add_box_collider`, `a:add_sphere_collider` and `a:set_name` write components; `engine.camera_look_at`, `engine.camera_set_fov`, `engine.set_fog`, `engine.clear_fog`, `engine.set_sun`, `engine.set_shadows`, `engine.hud_text` (optional sRGB colour), `engine.window_size()` and `engine.time()` (scene seconds) are available too (see `luajit-design.md` 4.4). Odin calls named hooks with `script_call`; `on_contact(self, a, other)` runs when a contact begins.
 
 - Hot reload: scripts are polled every 250 ms and reload on save; a failed reload keeps the old module.
   `F5` reloads all scripts. A runtime error faults only that actor until its file changes.
 - `CUBES_JIT_V=1` dumps LuaJIT's trace log (`jit.v`) to stderr at host creation.
 - `make luajit` builds the vendored LuaJIT 2.1 static lib (`third_party/luajit`); `test-engine` depends on it.
 - Scenes: `scriptdemo` (grid driven by `src/scenes/scriptdemo/spinner.lua`, per-actor ticks), `scriptdemo_batch`
-  (`src/scenes/scriptdemo/spinner_batch.lua`, one Lua call per frame), `scriptdemo_odin` (Odin `register_type` baseline, no Lua).
+  (`src/scenes/scriptdemo/spinner_batch.lua`, one Lua call per frame), `scriptdemo_odin` (Odin `register_type` baseline, no Lua),
+  `scriptdemo_balls` (`src/scenes/scriptdemo/balls.lua`: dynamic spheres on a static ground, `on_contact` grows them).
 - `CUBES_SCRIPT_N=<count>` sets the actor count (default 100). `CUBES_SCRIPT_NOMODEL=1` spawns without models
   so a bench measures script cost only, e.g. `make run ARGS="scriptdemo --bench 5"`.
-- Design, API and measurements: [plan.md](plan.md).
+- Design, API and measurements: [luajit-design.md](luajit-design.md).
+
+## Scaffolding
+
+```
+make new-scene NAME=my_scene            # code scene: src/scenes/my_scene/scene.odin
+make new-scene NAME=my_data DATA=1      # data-only scene: scene.json, no import
+make new-actor NAME=bot SCENE=my_scene  # actor file + register/spawn wiring in the scene
+```
+
+Add `DRY=1` to print the plan without writing. Names are `[a-z][a-z0-9_]*`; existing files are never
+overwritten. Registry edits in `src/scene.odin` go between the `// cubes:imports`, `// cubes:scenes`
+and `// cubes:actors` markers: keep them. The tool is `tools/cubes/` (run from the repo root).
 
 ## Layout
 

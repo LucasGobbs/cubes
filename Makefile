@@ -11,7 +11,7 @@ GOOSE_BUILD         := $(GOOSE_DIR)/src/tools/build
 GOOSE_BUILD_BIN     := goose-build.bin
 GOOSE_MANIFEST      := shaders/goose.json
 DEFAULT_MANIFEST := src/engine/gfx/goose.json
-# LuaJIT: vendored submodule built as a static lib (plan.md section 9). Windows builds
+# LuaJIT: vendored submodule built as a static lib (luajit-design.md section 9). Windows builds
 # via scripts/build_luajit_windows.bat (msvcbuild.bat, /MD; UNVERIFIED until run on Windows).
 # LUAJIT=vendored (default): `make luajit` builds $(LUAJIT_LIB).
 # LUAJIT=system: `make luajit` is a no-op; the binding will point at a system lib
@@ -43,7 +43,8 @@ EDITOR_DEFINE := -define:EDITOR=$(EDITOR)
 
 .PHONY: all build run run-optimized debug debug-optimized shaders default-shaders \
         submodules luajit test-input test-input-optimized test-engine \
-        test-engine-optimized test test-optimized compute editor example clean
+        test-engine-optimized test test-optimized compute editor example clean \
+        new-scene new-actor
 all: build
 
 # Fail early with the fix instead of an Odin "package not found" error.
@@ -140,6 +141,27 @@ clean:
 	rm -f src/shader_parameters/*_shader_parameters.odin \
 		src/engine/gfx/*_shader_parameters.odin
 	@if [ -f $(LUAJIT_DIR)/Makefile ]; then $(MAKE) -C $(LUAJIT_DIR) clean $(LUAJIT_OS_FLAGS); fi
+
+# Odin vs Lua benchmark (plan.md P2.1). Build first: make default-shaders shaders luajit && odin build src -out:/tmp/cubes_v
+# Vars: BENCH_BIN (or BIN=) binary, N boats-per-model list, RUNS per scene, WAIT seconds to wait for idle (default 0 = refuse now).
+BENCH_BIN ?= /tmp/cubes_v
+ifeq ($(origin BIN),command line)
+BENCH_BIN := $(BIN)
+endif
+N     ?= 100 150 400
+RUNS  ?= 3
+WAIT  ?= 0
+bench-script:
+	BIN="$(BENCH_BIN)" N="$(N)" RUNS="$(RUNS)" WAIT="$(WAIT)" scripts/bench_script.sh
+
+# Scaffolding (tools/cubes). DATA=1: data-only scene. DRY=1: print plan, write nothing.
+new-scene:
+	@test -n "$(NAME)" || { echo "usage: make new-scene NAME=<name> [DATA=1] [DRY=1]"; exit 1; }
+	$(ODIN) run tools/cubes -- new scene $(NAME) $(if $(DATA),--data) $(if $(DRY),--dry-run)
+
+new-actor:
+	@test -n "$(NAME)" -a -n "$(SCENE)" || { echo "usage: make new-actor NAME=<name> SCENE=<scene> [DRY=1]"; exit 1; }
+	$(ODIN) run tools/cubes -- new actor $(NAME) --scene $(SCENE) $(if $(DRY),--dry-run)
 
 .PHONY: dist
 # Release bundle: binary + static assets. Shaders are embedded at build time,
