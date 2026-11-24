@@ -105,7 +105,9 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx.renderer_set_passes(&gfx_ctx.renderer, .Post, []gfx.Render_Pass{gfx.bloom_pass(&state.bloom)})
 	flare_create(gfx_ctx, &state.flare)
 	crosshair_create(gfx_ctx, &state.crosshair, input.button(&ctx.input, "forest.crosshair", .C, "Toggle crosshair")) // after flare: flare resets After_Scene
-	showcase_create(gfx_ctx)
+	spawn := showcase_spawn()
+	showcase := showcase_create(gfx_ctx, spawn)
+	physics_cubes_create(&state.physics, showcase, spawn)
 
 	forest_stream(state, gfx_ctx, &ctx.jobs, 1 << 20, START_RADIUS, true)
 	return true

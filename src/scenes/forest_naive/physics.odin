@@ -33,6 +33,12 @@ Ball :: struct {
 	draw:  int,
 }
 
+// Showcase cube: dynamic box body; draw follows its blended pose.
+Cube :: struct {
+	track: phys.Tracked,
+	draw:  int,
+}
+
 // Owned by a scene state; `material` must outlive it (it points into the scene state).
 Physics :: struct {
 	world:            phys.World,
@@ -42,6 +48,8 @@ Physics :: struct {
 	ball_next:        int, // oldest slot, reused once full
 	ball_mesh:        gfx.Mesh,
 	material:         ^gfx.Material,
+	cubes:            [SHOWCASE_COUNT]Cube,
+	cube_count:       int, // slots in use; set by physics_cubes_create
 }
 
 // Sets up the Box3D world (only one may exist at a time) and all static colliders.
@@ -61,10 +69,11 @@ physics_destroy :: proc(state: ^Physics, gfx_ctx: ^gfx.Device) {
 	gfx.mesh_destroy(gfx_ctx, &state.ball_mesh)
 }
 
-// Advances the world by one fixed step and snapshots ball poses for blending.
+// Advances the world by one fixed step and snapshots ball and cube poses for blending.
 physics_step :: proc(state: ^Physics, dt: f32) {
 	phys.step(state.world, dt)
 	for &ball in state.balls[:state.ball_count] do phys.tracked_snapshot(&ball.track)
+	for &cube in state.cubes[:state.cube_count] do phys.tracked_snapshot(&cube.track)
 }
 
 // Draws every ball at the pose blended between the last two fixed steps.
@@ -73,6 +82,19 @@ physics_draw :: proc(state: ^Physics, gfx_ctx: ^gfx.Device, blend: f32) {
 		ball_pos, ball_rot := phys.tracked_blend(ball.track, blend)
 		gfx.draw_move(gfx_ctx, ball.draw, ball_pos, ball_rot, {1, 1, 1})
 	}
+	for cube in state.cubes[:state.cube_count] {
+		cube_pos, cube_rot := phys.tracked_blend(cube.track, blend)
+		gfx.draw_move(gfx_ctx, cube.draw, cube_pos, cube_rot, {1, 1, 1})
+	}
+}
+
+// Adds the showcase cubes as dynamic boxes at positions; draws[i] is the draw showcase_create made for cube i.
+physics_cubes_create :: proc(state: ^Physics, draws: [SHOWCASE_COUNT]int, positions: [SHOWCASE_COUNT][3]f32) {
+	half := b3.Vec3{SHOWCASE_HALF, SHOWCASE_HALF, SHOWCASE_HALF}
+	for i in 0 ..< SHOWCASE_COUNT {
+		state.cubes[i] = Cube{track = phys.track(phys.body_box(state.world, positions[i], half)), draw = draws[i]}
+	}
+	state.cube_count = SHOWCASE_COUNT
 }
 
 // Heightfield over the centre region, sampled from the same terrain_height as the visual mesh.
