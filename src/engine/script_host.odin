@@ -14,8 +14,8 @@ LUA_NOREF :: -2
 // Error handler: appends a traceback to the message of every protected call.
 HANDLER_SRC :: "return function(e) return debug.traceback(tostring(e), 2) end"
 
-// Returns make_actor(index, generation) -> Actor cdata. The Actor cdef lives in engine.lua.
-BOOTSTRAP_SRC :: "local ffi = require('ffi'); return function(i, g) return ffi.new('Actor', i, g) end"
+// Returns make_actor(index, generation) -> Actor cdata. The Actor cdef lives in engine.lua. jit.off: called from a C pcall, a trace of it aborts (NYI return to lower frame); create-time only, so interpreted is fine.
+BOOTSTRAP_SRC :: "local ffi = require('ffi'); local Actor = ffi.typeof('Actor'); local make = function(i, g) return Actor(i, g) end; jit.off(make); return make"
 
 // Wall time between hot reload checks started by world_update.
 SCRIPT_RELOAD_INTERVAL :: 250 * time.Millisecond
@@ -77,6 +77,7 @@ script_host_destroy :: proc(host: ^Script_Host) {
 	for key, module in host.modules {
 		delete(key)
 		delete(module.path)
+		delete(module.ids)
 		free(module)
 	}
 	delete(host.modules)
@@ -418,13 +419,20 @@ script_update :: proc(world: ^World, dt: f32, phase: Script_Phase) {
 	host := world.scripts
 	start := time.tick_now()
 	defer host.frame_time += time.tick_diff(start, time.tick_now())
+	for _, module in host.modules do if module.batch do clear(&module.ids)
+	hooked := false // a per-actor hook ran: it may have destroyed or un-scripted collected batch actors
 	for index := 0; index < len(world.slots); index += 1 {
 		slot := &world.slots[index]
 		if !slot.alive || slot.born do continue
 		script := slot_component(slot, Script)
-		if script == nil || script.faulted || script.module == nil || script.module.batch do continue
-		// A hook may destroy actors or spawn (growing world.slots): take nothing from slot after the call.
+		if script == nil || script.faulted || script.module == nil do continue
 		id := Actor_Id{u32(index), slot.generation}
+		if script.module.batch {
+			append(&script.module.ids, id)
+			continue
+		}
+		hooked = true
+		// A hook may destroy actors or spawn (growing world.slots): take nothing from slot after the call.
 		switch phase {
 		case .Tick:
 			if script.module.tick != LUA_NOREF do script_invoke(world, id, script, script.module.tick, "tick", dt)
@@ -435,12 +443,15 @@ script_update :: proc(world: ^World, dt: f32, phase: Script_Phase) {
 	// Collected before any batch call: a hook may spawn, and a spawn can load a module into host.modules.
 	batches := make([dynamic]^Script_Module, context.temp_allocator)
 	for _, module in host.modules do if module.batch do append(&batches, module)
-	for module in batches do script_batch_tick(world, module, dt, phase)
+	for module in batches {
+		script_batch_tick(world, module, dt, phase, hooked)
+		hooked = true // a batch hook may destroy actors of the modules still to run
+	}
 }
 
-// One tick_all / fixed_tick_all call for the module's live actors. The ids buffer is contiguous Actor_Id
-// in the temp allocator, reset each frame. An error faults every actor of the module until reload.
-script_batch_tick :: proc(world: ^World, module: ^Script_Module, dt: f32, phase: Script_Phase) {
+// One tick_all / fixed_tick_all call for the module's live actors, ids collected by script_update.
+// hooked: re-check the ids first, since hooks ran after collection. An error faults every actor of the module until reload.
+script_batch_tick :: proc(world: ^World, module: ^Script_Module, dt: f32, phase: Script_Phase, hooked: bool) {
 	fn := module.tick_all
 	what: cstring = "tick_all"
 	if phase == .Fixed_Tick {
@@ -448,23 +459,27 @@ script_batch_tick :: proc(world: ^World, module: ^Script_Module, dt: f32, phase:
 		what = "fixed_tick_all"
 	}
 	if fn == LUA_NOREF do return
-	ids := make([dynamic]Actor_Id, context.temp_allocator)
-	for index := 0; index < len(world.slots); index += 1 {
-		slot := &world.slots[index]
-		if !slot.alive || slot.born do continue
-		script := slot_component(slot, Script)
-		if script == nil || script.faulted || script.module != module do continue
-		append(&ids, Actor_Id{u32(index), slot.generation})
+	if hooked {
+		live := 0
+		for id in module.ids {
+			slot := &world.slots[id.index]
+			if !slot.alive || slot.generation != id.generation do continue
+			script := slot_component(slot, Script)
+			if script == nil || script.faulted || script.module != module do continue
+			module.ids[live] = id
+			live += 1
+		}
+		resize(&module.ids, live)
 	}
-	if len(ids) == 0 do return
+	if len(module.ids) == 0 do return
 	host := world.scripts
 	L := host.L
 	top := luajit.gettop(L)
 	defer luajit.settop(L, top)
 	luajit.rawgeti(L, luajit.REGISTRYINDEX, host.handler) // top+1
 	luajit.rawgeti(L, luajit.REGISTRYINDEX, fn)
-	luajit.pushnumber(L, luajit.Number(uintptr(raw_data(ids))))
-	luajit.pushnumber(L, luajit.Number(len(ids)))
+	luajit.pushnumber(L, luajit.Number(uintptr(raw_data(module.ids))))
+	luajit.pushnumber(L, luajit.Number(len(module.ids)))
 	luajit.pushnumber(L, luajit.Number(dt))
 	if luajit.pcall(L, 3, 0, top+1) == luajit.LUA_OK do return
 	log.errorf("script %q: %s: %s", module.path, what, luajit.tostring(L, -1))

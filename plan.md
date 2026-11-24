@@ -325,8 +325,8 @@ Commands, from repo root, after `make default-shaders shaders luajit && odin bui
 | scriptdemo_batch | 1000 | 0.271 / 0.374, 0.229 / 0.350 | not measured |
 | scriptdemo_batch | 5000 | 0.422 / 0.504, 0.419 / 0.485 | 2.640 / 2.861, 2.617 / 2.803 |
 | scriptdemo_batch | 50000 | 3.753 / 4.202, 3.637 / 4.161 | 34.825 / 37.496, 34.993 / 37.324 |
-| scriptdemo_batch, `_batch` ptr as number + find/spawn out-param reuse | 50000 | 3.692 / 4.364, 3.874 / 4.460 | 4.169 / 6.764 (run 1 only, pre-change) |
-| scriptdemo (per-actor), same build | 50000 | 3.204 / 3.623, 3.212 / 3.590 | 3.595 / 4.429 (run 1 only, pre-change) |
+| scriptdemo_batch, after batch-id merge (no second slot scan) | 50000 | 3.108 / 3.445, 3.248 / 3.596, 3.411 / 4.257 (3 runs) | 3.692 / 4.364, 3.874 / 4.460 (pre-merge, 2 runs) |
+| scriptdemo (per-actor), after batch-id merge, same build | 50000 | 3.198 / 3.500, 3.268 / 3.617, 3.281 / 3.587 (3 runs) | 3.204 / 3.623, 3.212 / 3.590 (2 runs) |
 
 Odin baseline (no Lua host), frame ms, before the change: 1.68 at N=100/1000/5000, 6.2 at 50000. Frame ms not re-captured after the change; script ms is the number that moved.
 
@@ -335,8 +335,8 @@ Findings:
 - Fix (API side): Script_API thunks take `(index, generation: u32)`. Struct returns (`actor_find`, `spawn_model`) became out-params (`^Actor_Id`). The `Actor` cdef stays for users; metatype methods unpack `a.index, a.generation`. Layout check and `script_api_engine_layout_matches_odin` still pass.
 - Verified with `CUBES_JIT_V=1`, N=5000: `spinner_batch.lua:17 loop` gets a root trace with a side trace, no `blacklist`. Per-actor `spinner.lua` loop also compiles, no `blacklist`.
 - Fixed: `M.find` / `M.spawn_model` reuse one module-level `out_actor` and return a copy only when found; a scratch 3000-iteration `engine.find` hot loop (test deleted) compiles with no NYI.
-- Fixed: `_batch` wrapper. Odin pushes the ids address as a number (lightuserdata cast was `NYI: unsupported C type conversion`). No engine.lua entries under `CUBES_JIT_V=1` at N=5000. Batch is still about 0.5 ms slower than per-actor at 50000 (3.8 vs 3.2 ms avg); source of the gap not isolated `[INFERENCE]`.
-- Remaining NYI (not in tick): `BOOTSTRAP_SRC` `make_actor` (`ffi.new('Actor', i, g)`, chunk line 1) reports `NYI: return to lower frame at ffi.new`. Called per actor at create, not in batch tick.
+- Fixed: batch gap. Cause: `script_batch_tick` did a second full slot scan (`slot_component` per slot, about 0.8 ms at 50000) to build the ids buffer, on top of the scan `script_update` already does. Fix: `script_update` appends batch ids to `Script_Module.ids` in its existing pass; `script_batch_tick` re-checks them (alive, generation, module, faulted) only when a per-actor hook or an earlier batch call ran. Batch now 3.26 ms avg vs per-actor 3.25 ms avg (3 runs each, interleaved, machine load about 28). Not more than 15% faster, so per-actor stays the default. Lua loop shape (`state[a.index]`, `ids[i]` copy) is not the cost: call time 1.78-2.01 ms across variants.
+- Fixed: `BOOTSTRAP_SRC` `make_actor` NYI (`return to lower frame at ffi.new`, then `at ffi.meta.__call`). Cause: closure is entered from a C pcall, so its trace aborts on the return. Fix: `jit.off(make)`; create-time only, interpreted is fine. Trace at `scriptdemo --bench 2` has no NYI/abort/blacklist lines.
 - Per-actor is now about 0.06 us/actor at 50000 (was about 0.6 us). The 3.4 batch-for-thousands guideline no longer has a measured advantage at this body size.
 
 ## 8. Hot reload

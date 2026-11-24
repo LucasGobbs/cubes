@@ -48,6 +48,17 @@ order_probe_tick :: proc(world: ^World, id: Actor_Id, self: ^Order_Probe, dt: f3
 	self.seen = script_test_number(world, "ticks")
 }
 
+// Odin-side destroyer: its tick removes one batch actor before Lua runs.
+@(private = "file")
+Batch_Killer :: struct {
+	victim: Actor_Id,
+}
+
+@(private = "file")
+batch_killer_tick :: proc(world: ^World, id: Actor_Id, self: ^Batch_Killer, dt: f32) {
+	world_destroy_actor(world, self.victim)
+}
+
 @(test)
 script_tick_counts_and_keeps_self :: proc(t: ^testing.T) {
 	path := script_test_write("tick", `
@@ -839,6 +850,122 @@ return M
 	testing.expect_value(t, script_test_number(&world, "good_ticks"), 2)
 	for id in bad_ids do testing.expect(t, slot_component(&world.slots[id.index], Script).faulted, "batch error faults every actor of the module")
 	testing.expect(t, !slot_component(&world.slots[good_id.index], Script).faulted, "healthy module keeps ticking")
+}
+
+@(test)
+script_batch_odin_tick_destroy_skips_stale_id :: proc(t: ^testing.T) {
+	context.logger = log.nil_logger()
+	sync.guard(&script_api_lock)
+	inputs := input.system_create(mock.create())
+	defer input.system_destroy(&inputs)
+	world := world_create(nil)
+	defer world_destroy(&world)
+	script_bind(&world, &inputs)
+	path := script_test_write("batch_odin_destroy", `
+local M = {}
+M.batch = true
+function M.tick_all(ids, count, dt)
+	batch_calls = (batch_calls or 0) + 1
+	batch_count = count
+	for i = 0, count - 1 do
+		if not ids[i]:valid() then stale = (stale or 0) + 1 end
+	end
+end
+return M
+`)
+	defer os.remove(path)
+	ids: [5]Actor_Id
+	for &id in ids do id = spawn(&world, Transform{}, Script{path = path})
+	victim_type := register_type(&world, Batch_Killer, nil, batch_killer_tick, nil)
+	_, _ = spawn_typed(&world, victim_type, Batch_Killer{victim = ids[2]})
+	world_update(&world, 0.1)
+	testing.expect(t, !world_valid(&world, ids[2]), "odin tick destroyed the victim before the batch")
+	testing.expect_value(t, script_test_number(&world, "batch_calls"), 1)
+	testing.expect_value(t, script_test_number(&world, "batch_count"), 4)
+	testing.expect_value(t, script_test_number(&world, "stale"), 0)
+}
+
+@(test)
+script_batch_tick_all_destroy_next_frame_count :: proc(t: ^testing.T) {
+	context.logger = log.nil_logger()
+	sync.guard(&script_api_lock)
+	inputs := input.system_create(mock.create())
+	defer input.system_destroy(&inputs)
+	world := world_create(nil)
+	defer world_destroy(&world)
+	script_bind(&world, &inputs)
+	path := script_test_write("batch_self_destroy", `
+local M = {}
+M.batch = true
+function M.tick_all(ids, count, dt)
+	batch_calls = (batch_calls or 0) + 1
+	batch_count = count
+	if batch_calls == 1 then ids[0]:destroy() end
+	local live = 0
+	for i = 0, count - 1 do
+		if ids[i]:valid() then live = live + 1 end
+	end
+	live_seen = live
+end
+return M
+`)
+	defer os.remove(path)
+	ids: [5]Actor_Id
+	for &id in ids do id = spawn(&world, Transform{}, Script{path = path})
+	world_update(&world, 0.1)
+	testing.expect_value(t, script_test_number(&world, "batch_count"), 5)
+	testing.expect_value(t, script_test_number(&world, "live_seen"), 4)
+	world_update(&world, 0.1)
+	testing.expect_value(t, script_test_number(&world, "batch_calls"), 2)
+	testing.expect_value(t, script_test_number(&world, "batch_count"), 4)
+	testing.expect_value(t, script_test_number(&world, "live_seen"), 4)
+}
+
+@(test)
+script_batch_lua_hook_destroys_collected_actor :: proc(t: ^testing.T) {
+	context.logger = log.nil_logger()
+	sync.guard(&script_api_lock)
+	inputs := input.system_create(mock.create())
+	defer input.system_destroy(&inputs)
+	world := world_create(nil)
+	defer world_destroy(&world)
+	script_bind(&world, &inputs)
+	batch := script_test_write("batch_hook_victim", `
+local ffi = require("ffi")
+local M = {}
+M.batch = true
+function M.tick_all(ids, count, dt)
+	batch_calls = (batch_calls or 0) + 1
+	batch_count = count
+	for i = 0, count - 1 do
+		if not ids[i]:valid() then stale = (stale or 0) + 1 end
+	end
+	if victim == nil then victim = ffi.new("Actor", ids[2]) end
+end
+return M
+`)
+	killer := script_test_write("batch_hook_killer", `
+local M = {}
+function M.tick(self, a, dt)
+	if victim ~= nil and not killed then
+		killed = true
+		victim:destroy()
+	end
+end
+return M
+`)
+	defer os.remove(batch)
+	defer os.remove(killer)
+	ids: [5]Actor_Id
+	for &id in ids do id = spawn(&world, Transform{}, Script{path = batch})
+	spawn(&world, Transform{}, Script{path = killer}) // ticks after the batch actors are collected
+	world_update(&world, 0.1)
+	testing.expect_value(t, script_test_number(&world, "batch_count"), 5)
+	world_update(&world, 0.1)
+	testing.expect(t, !world_valid(&world, ids[2]), "per-actor Lua hook destroyed the collected victim")
+	testing.expect_value(t, script_test_number(&world, "batch_calls"), 2)
+	testing.expect_value(t, script_test_number(&world, "batch_count"), 4)
+	testing.expect_value(t, script_test_number(&world, "stale"), 0)
 }
 
 @(test)
