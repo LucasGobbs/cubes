@@ -61,6 +61,8 @@ actor_to_def :: proc(world: ^World, id: Actor_Id, name: string) -> Actor_Def {
 		}
 	}
 	if health := actor_props(world, id, Health); health != nil do actor.health = Health_Def{current = health.current, max = health.max}
+	if collider := actor_props(world, id, Collider); collider != nil && collider.shape != nil do actor.collider = collider_to_def(collider^)
+	if environment := actor_props(world, id, Environment); environment != nil do actor.environment = environment_to_def(environment^)
 	return actor
 }
 
@@ -75,6 +77,29 @@ camera_to_def :: proc(world: ^World, id: Actor_Id) -> Maybe(Camera_Def) {
 	def := Camera_Def{position = transform.position, fov_y = cam.fov_y, blur = cam.blur}
 	if look_at, has := cam.look_at.?; has do def.look_at = look_at
 	if bloom, has := cam.bloom.?; has do def.bloom = Bloom_Def{bloom.threshold, bloom.intensity, bloom.radius}
+	return def
+}
+
+@(private = "file")
+collider_to_def :: proc(collider: Collider) -> Collider_Def {
+	def := Collider_Def{density = collider.density}
+	if collider.body == .Static do def.body = "static"
+	switch shape in collider.shape {
+	case Box:
+		def.shape = "box"
+		def.half = shape.half
+	case Sphere:
+		def.shape = "sphere"
+		def.radius = shape.radius
+	case nil:
+	}
+	return def
+}
+
+@(private = "file")
+environment_to_def :: proc(env: Environment) -> Environment_Def {
+	def := Environment_Def{skybox = env.skybox, shadows = env.shadows, sun_direction = env.sun_direction, uncapped = env.uncapped}
+	if fog, has := env.fog.?; has do def.fog = Fog_Def{fog.color, fog.distance}
 	return def
 }
 

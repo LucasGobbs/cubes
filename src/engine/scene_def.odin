@@ -40,6 +40,7 @@ Health_Def :: struct {
 	current, max: f32,
 }
 
+// Props the file can describe. Raw_Draw and user-registered Props are code-only.
 Actor_Def :: struct {
 	name:           string `json:"name,omitempty"`,
 	model:          string `json:"model,omitempty"`,
@@ -57,12 +58,38 @@ Actor_Def :: struct {
 	anim:           Maybe(Sprite_Anim_Def) `json:"anim,omitempty"`,
 	health:         Maybe(Health_Def) `json:"health,omitempty"`,
 	particles:      Maybe(particles.Emitter_Desc) `json:"particles,omitempty"`,
+	collider:       Maybe(Collider_Def) `json:"collider,omitempty"`,
+	environment:    Maybe(Environment_Def) `json:"environment,omitempty"`,
 }
 
 Sprite_Anim_Def :: struct {
 	first, last: i32,
 	fps:         f32,
 	loop:        bool,
+}
+
+// Collider: physics body at the actor's Transform. shape "box" (half) or "sphere" (radius);
+// body "dynamic" (default) or "static" (box only); density 0 => 1.
+Collider_Def :: struct {
+	shape:   string `json:"shape,omitempty"`,
+	half:    [3]f32 `json:"half,omitempty"`,
+	radius:  f32 `json:"radius,omitempty"`,
+	body:    string `json:"body,omitempty"`,
+	density: f32 `json:"density,omitempty"`,
+}
+
+Fog_Def :: struct {
+	color:    [3]f32 `json:"color,omitempty"`,
+	distance: f32 `json:"distance,omitempty"`,
+}
+
+// skybox: equirectangular path, loaded by update_sky while this Environment drives the renderer (not in assets).
+Environment_Def :: struct {
+	skybox:        string `json:"skybox,omitempty"`,
+	fog:           Maybe(Fog_Def) `json:"fog,omitempty"`,
+	shadows:       Maybe(bool) `json:"shadows,omitempty"`,
+	sun_direction: Maybe([3]f32) `json:"sun_direction,omitempty"`,
+	uncapped:      bool `json:"uncapped,omitempty"`,
 }
 
 // Everything the scene needs resident; assets_load loads it in one go.
@@ -84,19 +111,34 @@ Scene_File :: struct {
 	def:   Scene_Def,
 }
 
-scene_file_load :: proc(file: ^Scene_File, path: string) -> bool {
+Scene_File_Status :: enum {
+	Ok,
+	Missing, // the file does not exist; the caller decides whether that is an error (no log here)
+	Invalid, // unreadable, bad JSON or an invalid definition; logged here with the detail
+}
+
+scene_file_load :: proc(file: ^Scene_File, path: string) -> Scene_File_Status {
 	data, err := os.read_entire_file(path, context.temp_allocator)
 	if err != nil {
-		log.errorf("scene file %q: cannot read", path)
-		return false
+		if err == .Not_Exist do return .Missing
+		log.errorf("scene file %q: cannot read: %v", path, err)
+		return .Invalid
 	}
-	if virtual.arena_init_growing(&file.arena) != nil do return false
+	if virtual.arena_init_growing(&file.arena) != nil {
+		log.errorf("scene file %q: cannot allocate", path)
+		return .Invalid
+	}
 	if json_err := json.unmarshal(data, &file.def, allocator = virtual.arena_allocator(&file.arena)); json_err != nil {
 		log.errorf("scene file %q: %v", path, json_err)
 		virtual.arena_destroy(&file.arena)
-		return false
+		return .Invalid
 	}
-	return true
+	if problem := scene_def_problem(&file.def); problem != "" {
+		log.errorf("scene file %q: %s", path, problem)
+		virtual.arena_destroy(&file.arena)
+		return .Invalid
+	}
+	return .Ok
 }
 
 scene_file_destroy :: proc(file: ^Scene_File) {
@@ -114,7 +156,7 @@ actor_key :: proc(actor: Actor_Def, index: int) -> string {
 // in definition order (camera excluded). A duplicate name gets the id of the
 // first actor with that name. The slice uses the temp allocator.
 world_spawn_scene :: proc(world: ^World, def: ^Scene_Def) -> []Actor_Id {
-	world_apply_scene(world, def)
+	world_apply_scene(world, def, nil)
 	ids := make([]Actor_Id, len(def.actors), context.temp_allocator)
 	for actor, index in def.actors do ids[index], _ = world_find_by_name(world, actor_key(actor, index))
 	return ids
@@ -157,6 +199,8 @@ actor_props_list :: proc(actor: Actor_Def, key: string) -> []any {
 		emitter.position = {} // World overrides from Transform
 		append(&list, prop_box(Particle_Emitter(emitter)))
 	}
+	if collider, has := actor.collider.?; has do append(&list, prop_box(collider_from_def(collider)))
+	if environment, has := actor.environment.?; has do append(&list, prop_box(environment_from_def(environment)))
 	return list[:]
 }
 
@@ -175,4 +219,61 @@ camera_components :: proc(camera: Camera_Def) -> []any {
 	if bloom, has := camera.bloom.?; has do c.bloom = Bloom{bloom.threshold, bloom.intensity, bloom.radius}
 	append(&list, prop_box(c))
 	return list[:]
+}
+
+// Checks what the parser cannot: shape and body names, fields that belong to the other shape.
+// Returns "" when valid, else the problem; scene_file_load names the file.
+scene_def_problem :: proc(def: ^Scene_Def) -> string {
+	for actor, index in def.actors {
+		collider, has := actor.collider.?
+		if !has do continue
+		if problem := collider_def_problem(collider); problem != "" do return fmt.tprintf("actor %q collider: %s", actor_key(actor, index), problem)
+	}
+	return ""
+}
+
+@(private)
+collider_def_problem :: proc(c: Collider_Def) -> string {
+	switch c.body {
+	case "", "dynamic", "static":
+	case:
+		return fmt.tprintf("body %q: want \"dynamic\" or \"static\"", c.body)
+	}
+	if c.density < 0 do return "density must not be negative"
+	switch c.shape {
+	case "box":
+		if c.radius != 0 do return "box takes half, not radius"
+		if c.half.x <= 0 || c.half.y <= 0 || c.half.z <= 0 do return "box half must be > 0 on every axis"
+	case "sphere":
+		if c.half != {} do return "sphere takes radius, not half"
+		if c.radius <= 0 do return "sphere radius must be > 0"
+		if c.body == "static" do return "static sphere is not supported: use a box"
+	case:
+		return fmt.tprintf("shape %q: want \"box\" or \"sphere\"", c.shape)
+	}
+	return ""
+}
+
+// Props of the definitions; the collider and environment are read by the World at spawn and on reload.
+@(private)
+collider_from_def :: proc(def: Collider_Def) -> Collider {
+	collider := Collider{density = def.density}
+	if def.body == "static" {
+		collider.body = .Static
+	}
+	if def.shape == "box" {
+		collider.shape = Box{half = def.half}
+	} else {
+		collider.shape = Sphere{radius = def.radius}
+	}
+	return collider
+}
+
+@(private)
+environment_from_def :: proc(def: Environment_Def) -> Environment {
+	env := Environment{skybox = def.skybox, shadows = def.shadows, sun_direction = def.sun_direction, uncapped = def.uncapped}
+	if fog, has := def.fog.?; has {
+		env.fog = Fog{fog.color, fog.distance}
+	}
+	return env
 }

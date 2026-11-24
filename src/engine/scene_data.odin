@@ -23,9 +23,9 @@ Data_State :: struct {
 	name:       string, // owned copy: Scene.name is read every frame, the file arena is freed on reload
 }
 
-data_scene :: proc(definition: string) -> Scene {
+data_scene :: proc(name, definition: string) -> Scene {
 	return {
-		name = definition,
+		name = name,
 		definition = definition,
 		load = data_load,
 		unload = data_unload,
@@ -37,10 +37,23 @@ data_scene :: proc(definition: string) -> Scene {
 	}
 }
 
+// Loads the mandatory definition. Missing logs once here, naming the scene; Invalid was already logged.
+@(private)
+data_definition_load :: proc(scene: ^Scene, file: ^Scene_File) -> Scene_File_Status {
+	status := scene_file_load(file, scene.definition)
+	if status == .Missing do data_log_missing(scene, scene.definition)
+	return status
+}
+
+@(private)
+data_log_missing :: proc(scene: ^Scene, path: string) {
+	log.errorf("scene %q: definition file %q not found", scene.name, path)
+}
+
 // Job thread: parses the definition, then decodes every model and texture it lists in parallel.
 data_load :: proc(scene: ^Scene, lc: ^Load_Context) -> bool {
 	state := new(Data_State)
-	if !scene_file_load(&state.file, scene.definition) {
+	if data_definition_load(scene, &state.file) != .Ok {
 		free(state)
 		return false
 	}
@@ -63,7 +76,7 @@ data_create :: proc(scene: ^Scene, ctx: ^Context) -> bool {
 	state := cast(^Data_State)scene.state // set by data_load; nil when the scene was not loaded async
 	if state == nil {
 		state = new(Data_State)
-		if !scene_file_load(&state.file, scene.definition) {
+		if data_definition_load(scene, &state.file) != .Ok {
 			free(state)
 			return false
 		}
@@ -89,9 +102,11 @@ data_suspend :: proc(scene: ^Scene, ctx: ^Context, path: string) -> bool {
 data_resume :: proc(scene: ^Scene, ctx: ^Context, path: string) -> bool {
 	state := cast(^Data_State)scene.state
 	file: Scene_File
-	if !scene_file_load(&file, path) do return false
+	status := scene_file_load(&file, path)
+	if status == .Missing do log.errorf("scene %q: suspended state %q not found", scene.name, path)
+	if status != .Ok do return false
 	defer scene_file_destroy(&file)
-	return world_apply_scene(&state.world, &file.def)
+	return world_apply_scene(&state.world, &file.def, &state.file.def)
 }
 
 // Scene.name is read every frame (title, stats): it must own its text, not borrow the JSON arena.
@@ -114,17 +129,31 @@ data_tick :: proc(scene: ^Scene, ctx: ^Context, delta_time: f32) {
 	world_render(&state.world)
 }
 
-// Reloads when the file's mtime changed. The new mtime is recorded even on failure,
-// so a broken file logs once and the next save retries.
+// Reloads when the file's mtime changed. A missing file keeps the running state and logs once;
+// its mtime is cleared so the file's return reloads it. An invalid file logs once (scene_file_load)
+// and its new mtime is recorded, so the next save retries.
 @(private)
 data_reload :: proc(scene: ^Scene, state: ^Data_State, path: string) {
 	mtime, err := os.last_write_time_by_name(path)
-	if err != nil || mtime == state.mtime do return
+	if err != nil {
+		if state.mtime != {} && err == .Not_Exist do data_log_missing(scene, path)
+		state.mtime = {}
+		return
+	}
+	if mtime == state.mtime do return
 	state.mtime = mtime
 
 	file: Scene_File
-	if !scene_file_load(&file, path) do return // scene_file_load already logged
-	if !world_apply_scene(&state.world, &file.def) {
+	switch scene_file_load(&file, path) {
+	case .Ok:
+	case .Missing: // vanished between stat and read
+		data_log_missing(scene, path)
+		state.mtime = {}
+		return
+	case .Invalid:
+		return
+	}
+	if !world_apply_scene(&state.world, &file.def, &state.file.def) {
 		scene_file_destroy(&file)
 		return
 	}

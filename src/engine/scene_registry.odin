@@ -4,7 +4,6 @@
 // from its JSON by data_scene.
 package engine
 
-import "core:os"
 import "core:strings"
 
 Scene_Entry :: struct {
@@ -21,13 +20,13 @@ scene_lookup :: proc(entries: []Scene_Entry, name: string) -> (Scene, bool) {
 	for entry in entries {
 		if entry.name != name do continue
 		path := scene_path(name)
-		if entry.make == nil do return data_scene(strings.clone(path)), true
+		if entry.make == nil do return data_scene(name, strings.clone(path)), true
 
 		scene := entry.make()
-		// Code scenes may omit the file; built-in defaults stand in for it.
-		if !os.exists(path) do return scene, true
+		// Code scenes may omit the file; built-in defaults stand in for it. An invalid file
+		// was already logged by scene_file_load, and the defaults stand in too.
 		file: Scene_File
-		if scene_file_load(&file, path) {
+		if scene_file_load(&file, path) == .Ok {
 			defer scene_file_destroy(&file)
 			if file.def.name != "" do scene.name = strings.clone(file.def.name)
 			if camera, ok := file.def.camera.?; ok {

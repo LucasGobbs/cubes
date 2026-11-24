@@ -5,11 +5,13 @@ import "core:log"
 // Hot reload: makes the live world match def. Actors match by Name; Props
 // equal by value are refreshed in place (no renderable rebuild), changed ones are
 // replaced, missing ones added, absent ones removed. Actors without a Name are
-// never touched. Props of types the file does not describe (custom, Collider) are left alone.
+// never touched. Props of types the file does not describe (custom, Raw_Draw) are left alone.
+// Collider and Environment are removed when absent only if previous (the definition the
+// world was built from) gave them to that actor, so code-added ones survive.
 // String lifetime: after this call no Prop points into the previous arena.
 // Equal Props are overwritten with the new value, so their borrowed strings
 // move to the new arena; replaced Props drop the old value; Name is cloned.
-world_apply_scene :: proc(world: ^World, def: ^Scene_Def) -> bool {
+world_apply_scene :: proc(world: ^World, def: ^Scene_Def, previous: ^Scene_Def) -> bool {
 	assets_load(world, def.assets)
 	apply_clear_color(world, def)
 	wanted := scene_wanted(def)
@@ -19,7 +21,7 @@ world_apply_scene :: proc(world: ^World, def: ^Scene_Def) -> bool {
 	}
 	for key, want in wanted {
 		if id, found := world_find_by_name(world, key); found {
-			sync_actor(world, id, want)
+			sync_actor(world, id, want, previously_defined(previous, key))
 		} else {
 			spawn(world, ..want)
 		}
@@ -48,8 +50,26 @@ scene_wanted :: proc(def: ^Scene_Def) -> map[string][]any {
 	return wanted
 }
 
+// Which optional Props the previous definition gave one actor.
 @(private = "file")
-sync_actor :: proc(world: ^World, id: Actor_Id, want: []any) {
+Defined_Props :: struct {
+	collider, environment: bool,
+}
+
+@(private = "file")
+previously_defined :: proc(previous: ^Scene_Def, key: string) -> (defined: Defined_Props) {
+	if previous == nil do return
+	for actor, index in previous.actors {
+		if actor_key(actor, index) != key do continue
+		_, defined.collider = actor.collider.?
+		_, defined.environment = actor.environment.?
+		return
+	}
+	return
+}
+
+@(private = "file")
+sync_actor :: proc(world: ^World, id: Actor_Id, want: []any, defined: Defined_Props) {
 	carry_runtime(world, id, want)
 	// Model before Animator: an Animator plays on the model it is resolved against.
 	sync_kind(world, id, want, Transform)
@@ -58,6 +78,8 @@ sync_actor :: proc(world: ^World, id: Actor_Id, want: []any) {
 	sync_kind(world, id, want, Sprite)
 	sync_kind(world, id, want, Sprite_Anim)
 	sync_kind(world, id, want, Health)
+	sync_kind(world, id, want, Collider, defined.collider)
+	sync_kind(world, id, want, Environment, defined.environment)
 	sync_kind(world, id, want, Camera)
 	sync_kind(world, id, want, Camera_2D)
 }
@@ -74,13 +96,14 @@ carry_runtime :: proc(world: ^World, id: Actor_Id, want: []any) {
 	}
 }
 
+// owned false keeps an absent Prop: the file did not define it, so code may own it.
 @(private = "file")
-sync_kind :: proc(world: ^World, id: Actor_Id, want: []any, $T: typeid) {
+sync_kind :: proc(world: ^World, id: Actor_Id, want: []any, $T: typeid, owned := true) {
 	value, wanted := find_prop(want, T)
 	cur := actor_props(world, id, T)
 	switch {
 	case !wanted:
-		if cur != nil do actor_remove_props(world, id, T)
+		if cur != nil && owned do actor_remove_props(world, id, T)
 	case cur != nil && cur^ == value:
 		cur^ = value // same data: keep the renderable, re-point strings into the new arena
 	case:
