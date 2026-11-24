@@ -121,9 +121,9 @@ asset_prefetch_def :: proc(lc: ^Load_Context, def: ^Scene_Def) {
 	}
 	for path in def.assets.models do visit(lc, &seen, path)
 	for path in def.assets.textures do visit(lc, &seen, path)
-	for entity in def.entities {
-		visit(lc, &seen, entity.model)
-		visit(lc, &seen, entity.sprite)
+	for actor in def.actors {
+		visit(lc, &seen, actor.model)
+		visit(lc, &seen, actor.sprite)
 	}
 }
 
@@ -136,9 +136,9 @@ asset_prefetch_discard_def :: proc(def: ^Scene_Def) {
 	}
 	for path in def.assets.models do discard(path)
 	for path in def.assets.textures do discard(path)
-	for entity in def.entities {
-		discard(entity.model)
-		discard(entity.sprite)
+	for actor in def.actors {
+		discard(actor.model)
+		discard(actor.sprite)
 	}
 }
 

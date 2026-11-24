@@ -374,7 +374,7 @@ grass_apply_lod :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, cluster: ^Gr
 }
 
 // Moves world-space vertices to cluster-local x/z (so the mesh bound sits near
-// the entity) and uploads. SDL rejects 0-byte buffers, so an empty cluster gets
+// the actor) and uploads. SDL rejects 0-byte buffers, so an empty cluster gets
 // one degenerate (invisible) triangle.
 forest_upload :: proc(gfx_ctx: ^gfx.Device, data: ^Mesh_Data, ox, oz: f32) -> gfx.Mesh {
 	if len(data.verts) == 0 {

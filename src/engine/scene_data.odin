@@ -85,7 +85,7 @@ data_suspend :: proc(scene: ^Scene, ctx: ^Context, path: string) -> bool {
 	return world_save_scene(&state.world, &state.file.def, path)
 }
 
-// Applies the suspended file to the freshly created World (entities are matched by name).
+// Applies the suspended file to the freshly created World (actors are matched by name).
 data_resume :: proc(scene: ^Scene, ctx: ^Context, path: string) -> bool {
 	state := cast(^Data_State)scene.state
 	file: Scene_File

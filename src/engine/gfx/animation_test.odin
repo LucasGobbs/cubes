@@ -141,7 +141,7 @@ clip_sample_applies_translation_and_scale_channels_on_same_joint :: proc(t: ^tes
 }
 
 // Root joint sits under a non-joint transform (glTF Armature/Z_UP style). Its
-// inverse bind matches that rest global, so the palette must be identity at rest.
+// inverse bind matches that rest global, so the palette must be idactor at rest.
 @(test)
 clip_sample_applies_root_pre_transform_to_palette :: proc(t: ^testing.T) {
 	skin := make_two_joint_skin(false)

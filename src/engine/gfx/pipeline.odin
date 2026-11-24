@@ -35,6 +35,26 @@ Pipeline_Bind_Skinned_Storage_Proc :: #type proc(
 	palettes: Buffer_Handle,
 )
 
+// Stencil test for depth-target pipelines. Zero value = off.
+// Ops are per face (GPUDepthStencilState.front/back_stencil_state); masks are shared by both faces.
+Stencil_Face_Desc :: struct {
+	compare_op:    sdl.GPUCompareOp,
+	pass_op:       sdl.GPUStencilOp,
+	fail_op:       sdl.GPUStencilOp,
+	depth_fail_op: sdl.GPUStencilOp,
+}
+
+Stencil_Desc :: struct {
+	enabled:       bool,
+	front:         Stencil_Face_Desc,
+	back:          Stencil_Face_Desc,
+	// Bits of the stored/reference value taking part in the test, and in writes.
+	compare_mask:  u8,
+	write_mask:    u8,
+	// Bound with SetGPUStencilReference whenever the pipeline is bound.
+	reference:     u8,
+}
+
 Graphics_Pipeline_Desc :: struct {
 	vertex:            goose.GraphicsParameters,
 	fragment:          goose.GraphicsParameters,
@@ -76,6 +96,8 @@ Graphics_Pipeline_Desc :: struct {
 	// Hardware depth bias (shadow casters): constant in depth-resolution units, slope scaled by polygon slope. 0/0 = off.
 	depth_bias_constant: f32,
 	depth_bias_slope:    f32,
+	// Stencil test. Zero value = off (depth test only).
+	stencil:             Stencil_Desc,
 	bind_draw:         Pipeline_Bind_Draw_Proc,
 	bind_skinned_storage: Pipeline_Bind_Skinned_Storage_Proc,
 	user_data:         rawptr,
@@ -92,6 +114,9 @@ Pipeline :: struct {
 	bind_skinned_storage: Pipeline_Bind_Skinned_Storage_Proc,
 	instanced: bool,
 	skinned: bool,
+	stencil_enabled:   bool,
+	stencil_reference: u8,
+	pulled:            bool, // vertex-pulled: vertices come from a storage buffer (no vertex attributes)
 }
 
 draw_push_uniform :: proc(draw_context: ^Draw_Context, binding: goose.UniformBlock, data: ^$T) {
@@ -143,6 +168,12 @@ pipeline_create :: proc(gfx_ctx: ^Device, desc: Graphics_Pipeline_Desc) -> Pipel
 		color_target.blend_state.enable_blend = true
 	}
 	has_depth := desc.depth_test || desc.depth_write
+	assert(!desc.stencil.enabled || (has_depth && !desc.depth_only))
+	// Shadow maps stay D32; every other depth pipeline matches the scene depth target.
+	depth_format := sdl.GPUTextureFormat.INVALID
+	if has_depth {
+		depth_format = .D32_FLOAT if desc.depth_only else gfx_ctx.renderer.scene_depth_format
+	}
 	depth_compare := desc.depth_compare
 	if depth_compare == .INVALID do depth_compare = .GREATER
 	buffer_description := sdl.GPUVertexBufferDescription {
@@ -173,12 +204,27 @@ pipeline_create :: proc(gfx_ctx: ^Device, desc: Graphics_Pipeline_Desc) -> Pipel
 				enable_depth_test = desc.depth_test,
 				enable_depth_write = desc.depth_write,
 				compare_op = depth_compare,
+				enable_stencil_test = desc.stencil.enabled,
+				front_stencil_state = {
+					compare_op    = desc.stencil.front.compare_op,
+					pass_op       = desc.stencil.front.pass_op,
+					fail_op       = desc.stencil.front.fail_op,
+					depth_fail_op = desc.stencil.front.depth_fail_op,
+				},
+				back_stencil_state = {
+					compare_op    = desc.stencil.back.compare_op,
+					pass_op       = desc.stencil.back.pass_op,
+					fail_op       = desc.stencil.back.fail_op,
+					depth_fail_op = desc.stencil.back.depth_fail_op,
+				},
+				compare_mask = desc.stencil.compare_mask,
+				write_mask = desc.stencil.write_mask,
 			},
 			target_info = {
 				num_color_targets = 0 if desc.depth_only else 1,
 				color_target_descriptions = &color_target,
 				has_depth_stencil_target = has_depth,
-				depth_stencil_format = .D32_FLOAT if has_depth else .INVALID,
+				depth_stencil_format = depth_format,
 			},
 	}
 	native := sdl.CreateGPUGraphicsPipeline(gfx_ctx.gpu, info)
@@ -197,6 +243,9 @@ pipeline_create :: proc(gfx_ctx: ^Device, desc: Graphics_Pipeline_Desc) -> Pipel
 		bind_skinned_storage = desc.bind_skinned_storage,
 		instanced = desc.instanced,
 		skinned = desc.skinned,
+		stencil_enabled = desc.stencil.enabled,
+		stencil_reference = desc.stencil.reference,
+		pulled = desc.vertex_stride == 0,
 	}
 	handle := Pipeline_Handle(handle_pool_acquire(&gfx_ctx.pipeline_handles))
 	index := Resource_Handle(handle).index
@@ -214,6 +263,12 @@ pipeline_create :: proc(gfx_ctx: ^Device, desc: Graphics_Pipeline_Desc) -> Pipel
 pipeline_native :: proc(pipeline: ^Pipeline, msaa_pass: bool) -> ^sdl.GPUGraphicsPipeline {
 	if msaa_pass && pipeline.handle_msaa != nil do return pipeline.handle_msaa
 	return pipeline.handle
+}
+
+// Binds the pipeline for a pass; sets the stencil reference only when the pipeline tests stencil.
+pipeline_bind_native :: proc(pass: ^sdl.GPURenderPass, pipeline: ^Pipeline, msaa_pass: bool) {
+	sdl.BindGPUGraphicsPipeline(pass, pipeline_native(pipeline, msaa_pass))
+	if pipeline.stencil_enabled do sdl.SetGPUStencilReference(pass, pipeline.stencil_reference)
 }
 
 pipeline_get :: proc(gfx_ctx: ^Device, handle: Pipeline_Handle) -> ^Pipeline {

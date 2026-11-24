@@ -19,7 +19,7 @@ SkinnedVertexData :: struct {
 
 Joint :: struct {
 	parent:            i32, // index into Skin.joints, always < own index; -1 for roots
-	pre:               matrix[4, 4]f32, // non-joint ancestors between this joint and its parent joint (or scene root); identity when none
+	pre:               matrix[4, 4]f32, // non-joint ancestors between this joint and its parent joint (or scene root); idactor when none
 	local_translation: Vec3,
 	local_rotation:    quaternion128, // stored as xyzw via quaternion(x, y, z, w)
 	local_scale:       Vec3,

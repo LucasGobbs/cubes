@@ -275,7 +275,7 @@ transition_draw :: proc(ctx: ^gfx.Pass_Ctx, _: rawptr) {
 	pass := ctx.renderer.pass
 	target := 0 if ctx.color == ctx.renderer.scene_color else 1 // pipeline format must match the target
 	pipeline := gfx.pipeline_get(gfx_ctx, stats.pipelines[target])
-	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
+	gfx.pipeline_bind_native(pass, pipeline, false) // overlay pass is always 1x
 	gfx.pipeline_bind_material(gfx_ctx, pass, gfx_ctx.command_buffer, &stats.materials[target])
 	gfx.pipeline_bind_draw(
 		gfx_ctx,

@@ -89,6 +89,11 @@ camera_orthographic :: proc(ctx: ^Context, height, near, far: f32) {
 	gfx.camera_set_projection(gfx.camera(&ctx.gfx), lens, gfx.aspect_ratio(&ctx.gfx))
 }
 
+// World position of the renderer camera (the host or scene view).
+camera_position :: proc(ctx: ^Context) -> Vec3 {
+	return ctx.gfx.renderer.camera.position
+}
+
 @(private) camera_update :: proc(ctx: ^Context, dt: f32) {
 	switch &c in ctx.camera {
 	case nil:

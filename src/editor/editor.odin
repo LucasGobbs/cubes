@@ -332,7 +332,7 @@ editor_draw :: proc(
 	gfx.renderer_begin_present_pass(renderer)
 	pass := renderer.pass
 	pipeline := gfx.pipeline_get(gfx_ctx, ed.pipeline)
-	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
+	gfx.pipeline_bind_native(pass, pipeline, false) // present pass is always 1x
 	gfx.pipeline_bind_material(gfx_ctx, pass, gfx_ctx.command_buffer, &ed.material)
 	gfx.pipeline_bind_draw(
 		gfx_ctx,

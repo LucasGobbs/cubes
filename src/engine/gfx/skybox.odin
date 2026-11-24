@@ -14,7 +14,6 @@ Skybox :: struct {
 }
 
 // path: equirectangular (2:1) PNG/JPEG panorama, e.g. static/skybox/skybox-day.png.
-@(private = "file")
 skybox_create :: proc(gfx_ctx: ^Device, path: string) -> Skybox {
 	skybox: Skybox
 	attributes := default_skybox_vertex_attributes(VertexData)
@@ -62,12 +61,10 @@ skybox_create :: proc(gfx_ctx: ^Device, path: string) -> Skybox {
 }
 
 // Submit each frame (e.g. in a Draw list). The transform is ignored by the shader.
-@(private = "file")
 skybox_draw :: proc(skybox: ^Skybox) -> Draw {
 	return Draw{mesh = &skybox.mesh, material = &skybox.material, layer = .SKYBOX}
 }
 
-@(private = "file")
 skybox_destroy :: proc(gfx_ctx: ^Device, skybox: ^Skybox) {
 	mesh_destroy(gfx_ctx, &skybox.mesh)
 	material_destroy(&skybox.material)

@@ -10,6 +10,8 @@ Texture :: struct {
 	width, height:       u32,
 	sample_count:        sdl.GPUSampleCount,
 	mip_levels:          u32,
+	type:                sdl.GPUTextureType,
+	layer_count_or_depth: u32,
 	_temporary_raw_data: []byte,
 }
 
@@ -31,6 +33,8 @@ texture_create_with_usage :: proc(
 	// > 1 needs usage to include .COLOR_TARGET (mip generation renders to the
 	// levels). Level 0 is uploaded; uploader_flush* generates the rest.
 	mip_levels := u32(1),
+	type := sdl.GPUTextureType.D2,
+	layer_count_or_depth := u32(1),
 ) -> Texture_Handle {
 	assert(mip_levels >= 1)
 	assert(mip_levels == 1 || .COLOR_TARGET in usage, "mipmapped textures need COLOR_TARGET")
@@ -42,7 +46,8 @@ texture_create_with_usage :: proc(
 				usage = usage,
 				width = width,
 				height = height,
-				layer_count_or_depth = 1,
+				type = type,
+				layer_count_or_depth = layer_count_or_depth,
 				num_levels = mip_levels,
 				sample_count = sample_count,
 			},
@@ -53,6 +58,8 @@ texture_create_with_usage :: proc(
 		height = height,
 		sample_count = sample_count,
 		mip_levels = mip_levels,
+		type = type,
+		layer_count_or_depth = layer_count_or_depth,
 	}
 	assert(resource.handle != nil)
 	handle := Texture_Handle(handle_pool_acquire(&gfx_ctx.texture_handles))
@@ -82,10 +89,12 @@ texture_resize :: proc(gfx_ctx: ^Device, handle: ^Texture_Handle, width, height:
 	format := texture.format
 	usage := texture.usage
 	sample_count := texture.sample_count
+	texture_type := texture.type
+	layer_count := texture.layer_count_or_depth
 	mip_levels := mip_level_count(width, height) if texture.mip_levels > 1 else 1
 	_ = sdl.WaitForGPUIdle(gfx_ctx.gpu)
 	texture_destroy(gfx_ctx, handle^)
-	handle^ = texture_create_with_usage(gfx_ctx, width, height, format, usage, sample_count, mip_levels)
+	handle^ = texture_create_with_usage(gfx_ctx, width, height, format, usage, sample_count, mip_levels, texture_type, layer_count)
 	return true
 }
 

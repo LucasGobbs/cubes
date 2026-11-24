@@ -1,7 +1,7 @@
 // Instanced textured pipeline with Phong shading. The
 // per-instance model matrix comes from a storage buffer indexed by
 // SV_InstanceID instead of a per-draw MVP uniform. One draw per
-// (mesh, material) run instead of one draw per entity.
+// (mesh, material) run instead of one draw per actor.
 //
 // SDL_GPU MSL binding order for vertex stage: uniform buffers first, then
 // read-only storage buffers.

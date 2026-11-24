@@ -8,7 +8,7 @@ import engine "../../src/engine"
 HERO_MODEL :: "static/models/rigged_cesiumman.glb"
 
 App :: struct {
-	hero: engine.Entity_Id,
+	hero: engine.Actor_Id,
 }
 
 main :: proc() {
@@ -26,6 +26,6 @@ start :: proc(app: ^App, world: ^engine.World) {
 }
 
 update :: proc(app: ^App, world: ^engine.World, dt: f32) {
-	transform := engine.entity_get_component(world, app.hero, engine.Transform)
+	transform := engine.actor_props(world, app.hero, engine.Transform)
 	transform.rotation = linalg.quaternion_angle_axis_f32(dt, {0, 1, 0}) * transform.rotation
 }

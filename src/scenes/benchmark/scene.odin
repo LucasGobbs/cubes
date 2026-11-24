@@ -1,18 +1,16 @@
 // Benchmark: N instances of each boat model plus a few huge Stanford dragons, with on-screen text
-// (FPS, object count, controls) drawn through the gfx font renderer.
+// (FPS, object count, controls) drawn through the world HUD.
 // = / - add and remove instances.
 package benchmark
 
+import engine "../../engine"
+import default "../../engine/default"
+import input "../../engine/input"
+import sea "../sea"
 import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
-import gfx "../../engine/gfx"
-import default "../../engine/default"
-import input "../../engine/input"
-import sdl "vendor:sdl3"
-import engine "../../engine"
-import sea "../sea"
 
 BENCH_STEP :: 10 // per boat model, per keypress
 
@@ -62,39 +60,31 @@ DRAGON_RING_RADIUS :: 450
 FLEET_CENTER_Z :: -135 // middle of the boat spawn area in benchmark_populate
 
 FOG_VIEW_DISTANCE :: 700
+FOG_COLOR :: [3]f32{0.671, 0.757, 0.949} // skybox horizon; matches `sky` in sea.slang
 BOAT_DRAFT :: 0.1 // boat origin height above sea level at rest
 
 // Boat rest position in x/z and yaw; tick sets its height and tilt from the sea.
 Boat_Slot :: struct {
-	draw:  int,
+	actor: engine.Actor_Id,
 	x, z:  f32,
 	yaw:   linalg.Quaternionf32,
 	scale: f32,
 }
 
 Benchmark_State :: struct {
-	sampler:          gfx.Sampler_Handle,
-	models:           [BOAT_COUNT]^gfx.Model,
-	dragon:           ^gfx.Model,
-	base_draws:       int,
-	sea_pipeline:     gfx.Pipeline_Handle,
-	sea_material:     gfx.Material,
-	sea_state:        sea.State,
-	boats:            [dynamic]Boat_Slot,
-	per_model:        int,
-	font:             gfx.Font,
-	overlay_pipeline: gfx.Pipeline_Handle,
-	overlay_material: gfx.Material,
-	text_mesh:        gfx.Mesh,
-	text_vertices:    [dynamic]gfx.VertexData,
-	add_action:       input.Button_Action,
-	subtract_action:  input.Button_Action,
-	fog_action:       input.Button_Action,
-	hud_time:         f32,
-	hud_frames:       int,
-	hud_fps:          f32,
-	hud_draws:        int,
-	fog_on:           bool,
+	world:           engine.World,
+	env:             engine.Actor_Id,
+	sea_state:       sea.State,
+	boats:           [dynamic]Boat_Slot,
+	dragons:         [dynamic]engine.Actor_Id,
+	per_model:       int,
+	add_action:      input.Button_Action,
+	subtract_action: input.Button_Action,
+	fog_action:      input.Button_Action,
+	hud_time:        f32,
+	hud_frames:      int,
+	hud_fps:         f32,
+	hud_draws:       int,
 }
 
 benchmark_scene :: proc() -> engine.Scene {
@@ -106,58 +96,54 @@ benchmark_scene :: proc() -> engine.Scene {
 	}
 }
 
+benchmark_fog :: proc() -> engine.Fog {
+	return engine.Fog{color = FOG_COLOR, distance = FOG_VIEW_DISTANCE}
+}
+
 benchmark_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
-	gfx_ctx := &ctx.gfx
 	state := new(Benchmark_State)
-	state.fog_on = true // haze by default so boats and dragons share the sea's horizon blend
 	demo.state = state
 	engine.camera_fly(ctx)
-	// Uncapped: the point of this scene is measuring real frame cost.
-	gfx.set_present_mode(gfx_ctx, .IMMEDIATE)
 
-	inputs := &ctx.input
-	state.add_action = input.button(inputs, "benchmark.add", .EQUALS, "Add entities")
-	state.subtract_action = input.button(inputs, "benchmark.subtract", .MINUS, "Remove entities")
-	state.fog_action = input.button(inputs, "benchmark.fog", .V, "Toggle fog")
+	state.world = engine.world_create(&ctx.gfx)
+	state.add_action = input.button(&ctx.input, "benchmark.add", .EQUALS, "Add actors")
+	state.subtract_action = input.button(
+		&ctx.input,
+		"benchmark.subtract",
+		.MINUS,
+		"Remove actors",
+	)
+	state.fog_action = input.button(&ctx.input, "benchmark.fog", .V, "Toggle fog")
 
-	state.sampler = gfx.sampler_create(gfx_ctx, gfx.SAMPLER_TRILINEAR)
-	boat_paths := BOAT_PATHS
-	for path, index in boat_paths {
-		state.models[index] = gfx.model_add(gfx_ctx, {path = path, kind = .Textured_Instanced})
-	}
-	state.dragon = gfx.model_add(gfx_ctx, {path = DRAGON_PATH, kind = .Textured_Instanced})
-
-	// On-screen text: font atlas + blended depth-less overlay pipeline.
-	font, font_ok := gfx.font_create(gfx_ctx, "static/fonts/andale-mono.ttf")
-	assert(font_ok)
-	state.font = font
-	state.overlay_pipeline = gfx.create_textured_overlay_pipeline(gfx_ctx)
-	state.overlay_material = gfx.material_make(state.overlay_pipeline)
-	gfx.bind_textured_material(&state.overlay_material, state.font.texture, state.sampler)
-	dummy := [6]gfx.VertexData{}
-	state.text_mesh = gfx.mesh_create_unindexed(gfx_ctx, dummy[:])
-
-	gfx.skybox_add(gfx_ctx, default.SKYBOX_PATH)
-	state.sea_pipeline = sea.pipeline_create(gfx_ctx, &state.sea_state)
-	state.sea_material = gfx.material_make(state.sea_pipeline)
-	gfx.draw_create(gfx_ctx, {mesh = sea.mesh_data(), material = &state.sea_material})
-	state.base_draws = len(gfx_ctx.draws)
+	// Uncapped: the point of this scene is measuring real frame cost. Fog on by
+	// default so boats and dragons share the sea's horizon blend.
+	state.env = engine.spawn(
+		&state.world,
+		engine.Environment {
+			skybox = default.SKYBOX_PATH,
+			fog = benchmark_fog(),
+			uncapped = true,
+		},
+	)
+	_ = sea.add(&state.world, ctx, &state.sea_state)
 
 	rand.reset(1) // fixed layout: every run draws the same fleet, so results compare
-	benchmark_populate(state, gfx_ctx, 150)
+	benchmark_populate(state, 150)
 	return true
 }
 
-// Rebuilds the draw list at a new per-model instance count. Models stay
-// loaded; only the draws are recreated.
-benchmark_populate :: proc(state: ^Benchmark_State, gfx_ctx: ^gfx.Device, per_model: int) {
+// Respawns the fleet at a new per-model instance count. Models stay loaded in
+// the World's asset cache; only the actors are recreated.
+benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 	state.per_model = per_model
-	resize(&gfx_ctx.draws, state.base_draws)
+	for boat in state.boats do engine.world_destroy_actor(&state.world, boat.actor)
 	clear(&state.boats)
-	// (skybox and sea are added once in create, below base_draws)
-	for model in state.models {
+	for dragon in state.dragons do engine.world_destroy_actor(&state.world, dragon)
+	clear(&state.dragons)
+
+	for path in BOAT_PATHS {
 		for _ in 0 ..< per_model {
-			position := gfx.Vec3 {
+			position := engine.Vec3 {
 				rand.float32_range(-700, 700),
 				-0.5,
 				rand.float32_range(-650, -20),
@@ -170,91 +156,76 @@ benchmark_populate :: proc(state: ^Benchmark_State, gfx_ctx: ^gfx.Device, per_mo
 			)
 			scale := 0.25 + rand.float32_range(0, 0.2)
 			if rand.float32() < 0.12 do scale *= rand.float32_range(2, 4) // a few big ships among the small boats
-			draw := gfx.draw_create(gfx_ctx, {mesh = model, position = position, scale = {scale, scale, scale}, rotation = yaw})
-			append(&state.boats, Boat_Slot{draw = draw, x = position.x, z = position.z, yaw = yaw, scale = scale})
+			actor := engine.spawn(
+				&state.world,
+				engine.Model{path = path},
+				engine.Transform {
+					position = position,
+					rotation = yaw,
+					scale = {scale, scale, scale},
+				},
+			)
+			append(
+				&state.boats,
+				Boat_Slot{actor = actor, x = position.x, z = position.z, yaw = yaw, scale = scale},
+			)
 		}
 	}
 	// Dragons ring the fleet, facing its centre, independent of the per-model count.
 	for index in 0 ..< DRAGON_COUNT {
 		angle := f32(index) / DRAGON_COUNT * linalg.TAU
 		scale := f32(DRAGON_SCALE)
-		gfx.draw_create(gfx_ctx, {
-			mesh     = state.dragon,
-			position = {math.cos(angle) * DRAGON_RING_RADIUS, 0, FLEET_CENTER_Z + math.sin(angle) * DRAGON_RING_RADIUS},
-			scale    = {scale, scale, scale},
-			rotation = linalg.quaternion_from_euler_angles_f32(0, -angle - linalg.PI / 2, 0, .XYZ),
-		})
-	}
-}
-
-bench_to_ndc :: proc(x, y, width, height: f32) -> [3]f32 {
-	return {x / width * 2 - 1, 1 - y / height * 2, 0}
-}
-
-benchmark_push_text :: proc(
-	state: ^Benchmark_State,
-	gfx_ctx: ^gfx.Device,
-	text: string,
-	x, top: f32,
-	color: [4]f32,
-) {
-	cursor_x := x
-	cursor_y := top + f32(state.font.baseline)
-	quads: [dynamic]gfx.Font_Quad
-	defer delete(quads)
-	gfx.font_layout(&state.font, text, &cursor_x, &cursor_y, &quads)
-	width := f32(gfx_ctx.window_size.x)
-	height := f32(gfx_ctx.window_size.y)
-	for quad in quads {
-		p0 := bench_to_ndc(quad.x0, quad.y0, width, height)
-		p1 := bench_to_ndc(quad.x1, quad.y0, width, height)
-		p2 := bench_to_ndc(quad.x1, quad.y1, width, height)
-		p3 := bench_to_ndc(quad.x0, quad.y1, width, height)
-		uv0 := [2]f32{quad.s0, quad.t0}
-		uv1 := [2]f32{quad.s1, quad.t0}
-		uv2 := [2]f32{quad.s1, quad.t1}
-		uv3 := [2]f32{quad.s0, quad.t1}
-		append(
-			&state.text_vertices,
-			gfx.VertexData{position = p0, color = color, uv = uv0},
-			gfx.VertexData{position = p1, color = color, uv = uv1},
-			gfx.VertexData{position = p2, color = color, uv = uv2},
-			gfx.VertexData{position = p0, color = color, uv = uv0},
-			gfx.VertexData{position = p2, color = color, uv = uv2},
-			gfx.VertexData{position = p3, color = color, uv = uv3},
+		dragon := engine.spawn(
+			&state.world,
+			engine.Model{path = DRAGON_PATH},
+			engine.Transform {
+				position = {
+					math.cos(angle) * DRAGON_RING_RADIUS,
+					0,
+					FLEET_CENTER_Z + math.sin(angle) * DRAGON_RING_RADIUS,
+				},
+				rotation = linalg.quaternion_from_euler_angles_f32(
+					0,
+					-angle - linalg.PI / 2,
+					0,
+					.XYZ,
+				),
+				scale = {scale, scale, scale},
+			},
 		)
+		append(&state.dragons, dragon)
 	}
 }
 
 benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
-	gfx_ctx := &ctx.gfx
 	state := cast(^Benchmark_State)demo.state
 
 	inputs := &ctx.input
 	if input.pressed(inputs, state.add_action) {
-		benchmark_populate(state, gfx_ctx, state.per_model + BENCH_STEP)
+		benchmark_populate(state, state.per_model + BENCH_STEP)
 	}
 	if input.pressed(inputs, state.subtract_action) && state.per_model >= BENCH_STEP {
-		benchmark_populate(state, gfx_ctx, state.per_model - BENCH_STEP)
+		benchmark_populate(state, state.per_model - BENCH_STEP)
 	}
+	env := engine.actor_props(&state.world, state.env, engine.Environment)
 	if input.pressed(inputs, state.fog_action) {
-		state.fog_on = !state.fog_on
+		if _, fog_on := env.fog.?; fog_on {
+			env.fog = nil
+		} else {
+			env.fog = benchmark_fog()
+		}
 	}
-	fog_rgb := gfx.color_srgb_to_linear({0.671, 0.757, 0.949, 1}) // skybox horizon; matches `sky` in sea.slang
-	gfx_ctx.renderer.fog = state.fog_on ? {fog_rgb.r, fog_rgb.g, fog_rgb.b, FOG_VIEW_DISTANCE} : [4]f32{}
+	_, fog_on := env.fog.?
 
 	state.sea_state.time += delta_time
-	camera := gfx_ctx.renderer.camera.position
+	camera := engine.camera_position(ctx)
 	for boat in state.boats {
-		flat := gfx.Vec3{boat.x, sea.Y, boat.z}
+		flat := engine.Vec3{boat.x, sea.Y, boat.z}
 		h, grad := sea.surface_height(flat.xz, state.sea_state.time, linalg.distance(camera, flat))
-		gfx.draw_move(
-			gfx_ctx,
-			boat.draw,
-			{boat.x, sea.Y + h + BOAT_DRAFT, boat.z},
-			sea.tilt(grad) * boat.yaw,
-			{boat.scale, boat.scale, boat.scale},
-		)
+		transform := engine.actor_transform(&state.world, boat.actor)
+		transform.position = {boat.x, sea.Y + h + BOAT_DRAFT, boat.z}
+		transform.rotation = sea.tilt(grad) * boat.yaw
+		transform.scale = {boat.scale, boat.scale, boat.scale}
 	}
 
 	// FPS and draws refresh once per second so the text stays readable.
@@ -262,96 +233,44 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 	state.hud_frames += 1
 	if state.hud_time >= 1 || (state.hud_fps == 0 && state.hud_time > 0) {
 		state.hud_fps = f32(state.hud_frames) / state.hud_time
-		state.hud_draws = gfx_ctx.renderer.draw_calls
+		state.hud_draws = engine.draw_call_count(ctx)
 		state.hud_time, state.hud_frames = 0, 0
 	}
 
-	// HUD text.
-	clear(&state.text_vertices)
-	fps_buffer: [32]byte
-	benchmark_push_text(
-		state,
-		gfx_ctx,
-		fmt.bprintf(fps_buffer[:], "%.0f FPS", state.hud_fps),
-		10,
-		10,
-		{1, 1, 1, 1},
+	// HUD text in window pixels (y down), drawn by world_render.
+	fps_buffer, count_buffer, draws_buffer: [32]byte
+	engine.world_text(&state.world, fmt.bprintf(fps_buffer[:], "%.0f FPS", state.hud_fps), {10, 10})
+	engine.world_text(
+		&state.world,
+		fmt.bprintf(
+			count_buffer[:],
+			"objects: %d",
+			state.per_model * BOAT_COUNT + DRAGON_COUNT,
+		),
+		{10, 30},
 	)
-	count_buffer: [32]byte
-	benchmark_push_text(
-		state,
-		gfx_ctx,
-		fmt.bprintf(count_buffer[:], "objects: %d", state.per_model * BOAT_COUNT + DRAGON_COUNT),
-		10,
-		30,
-		{1, 1, 1, 1},
-	)
-	draws_buffer: [32]byte
-	benchmark_push_text(
-		state,
-		gfx_ctx,
-		fmt.bprintf(draws_buffer[:], "draws: %d", state.hud_draws),
-		10,
-		50,
-		{1, 1, 1, 1},
-	)
-	benchmark_push_text(
-		state,
-		gfx_ctx,
-		state.fog_on ? "fog + view distance on (V)" : "fog + view distance off (V)",
-		10,
-		90,
-		{1, 1, 1, 1},
-	)
-	benchmark_push_text(
-		state,
-		gfx_ctx,
+	engine.world_text(&state.world, fmt.bprintf(draws_buffer[:], "draws: %d", state.hud_draws), {10, 50})
+	engine.world_text(
+		&state.world,
 		"=/- objects  wasd move  shift fast  c smooth cam",
-		10,
-		70,
-		gfx.color_srgb_to_linear({0.8, 0.8, 0.8, 1}),
+		{10, 70},
+		{0.8, 0.8, 0.8, 1},
 	)
-	gfx.mesh_update_unindexed(&gfx_ctx.renderer, &state.text_mesh, state.text_vertices[:])
+	engine.world_text(
+		&state.world,
+		fog_on ? "fog + view distance on (V)" : "fog + view distance off (V)",
+		{10, 90},
+	)
 
-	// Frame flow: scene -> offscreen, text into the offscreen, blit out.
-	gfx.renderer_begin_frame(&gfx_ctx.renderer)
-	gfx.renderer_render_draws(&gfx_ctx.renderer, gfx_ctx.draws[:])
-	if gfx_ctx.swapchain != nil {
-		renderer := &gfx_ctx.renderer
-		gfx.renderer_begin_overlay_pass(renderer, renderer.scene_color)
-		pass := renderer.pass
-		pipeline := gfx.pipeline_get(gfx_ctx, state.overlay_pipeline)
-		sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
-		gfx.pipeline_bind_material(gfx_ctx, pass, gfx_ctx.command_buffer, &state.overlay_material)
-		gfx.pipeline_bind_draw(
-			gfx_ctx,
-			state.overlay_pipeline,
-			gfx_ctx.command_buffer,
-			{
-				view_projection = linalg.MATRIX4F32_IDENTITY,
-				model_transform = linalg.MATRIX4F32_IDENTITY,
-				material = &state.overlay_material,
-			},
-		)
-		vertex_buffer := gfx.buffer_get(gfx_ctx, state.text_mesh.vertex_buffer)
-		sdl.BindGPUVertexBuffers(
-			pass,
-			0,
-			&(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}),
-			1,
-		)
-		sdl.DrawGPUPrimitives(pass, u32(len(state.text_vertices)), 1, 0, 0)
-		gfx.renderer_end_pass(renderer)
-		gfx.renderer_present(renderer, gfx.renderer_run_post(renderer)) // run_post: global overlays (F1 stats)
-	}
-	gfx.end_frame(gfx_ctx)
+	engine.world_update(&state.world, delta_time)
+	engine.world_render(&state.world, ctx.blend)
 }
 
 benchmark_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
-	gfx_ctx := &ctx.gfx
 	state := cast(^Benchmark_State)demo.state
-	gfx.material_destroy(&state.sea_material)
-	delete(state.text_vertices)
-	gfx.material_destroy(&state.overlay_material)
+	engine.world_destroy(&state.world)
+	sea.destroy(ctx, &state.sea_state)
+	delete(state.boats)
+	delete(state.dragons)
 	free(state)
 }

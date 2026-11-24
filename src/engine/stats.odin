@@ -87,6 +87,7 @@ stats_tick :: proc(ctx: ^Context, delta_time: f32, scene_name: string) {
 	stats.frame_ms = ms if stats.frame_ms == 0 else stats.frame_ms * 0.95 + ms * 0.05
 	render_ms := f32(time.duration_microseconds(gfx_ctx.renderer.prepare_time + gfx_ctx.renderer.flush_time)) / 1000
 	stats.render_ms = render_ms if stats.render_ms == 0 else stats.render_ms * 0.95 + render_ms * 0.05
+	script_ms, script_ok := script_take_frame_ms()
 	if stats.frame_ms == ms do stats.history = 1 / max(delta_time, 1e-4) // first frame: no zero-filled history
 	// One graph sample per STATS_SAMPLE_SECONDS (mean fps of that window) keeps the curve calm.
 	stats.sample_time += delta_time
@@ -106,27 +107,34 @@ stats_tick :: proc(ctx: ^Context, delta_time: f32, scene_name: string) {
 		lo, hi, sum = min(lo, fps), max(hi, fps), sum + fps
 	}
 	avg := sum / STATS_HISTORY
-	lines := [?]string {
-		fmt.tprintf("scene   %s", scene_name),
-		fmt.tprintf("fps     %.0f (%.2f ms)  min %.0f  avg %.0f  max %.0f", 1000 / stats.frame_ms, stats.frame_ms, lo, avg, hi),
-		fmt.tprintf("draws   %d  (instanced %d, %d instances)", renderer.draw_calls, renderer.instanced_draws, renderer.instance_count),
-		fmt.tprintf("binds   pipelines %d  materials %d", renderer.pipeline_binds, renderer.material_binds),
-		fmt.tprintf("tris    %d", renderer.triangles),
+	lines: [dynamic]string
+	lines.allocator = context.temp_allocator
+	append(&lines, fmt.tprintf("scene   %s", scene_name))
+	append(&lines, fmt.tprintf("fps     %.0f (%.2f ms)  min %.0f  avg %.0f  max %.0f", 1000 / stats.frame_ms, stats.frame_ms, lo, avg, hi))
+	append(&lines, fmt.tprintf("draws   %d  (instanced %d, %d instances)", renderer.draw_calls, renderer.instanced_draws, renderer.instance_count))
+	append(&lines, fmt.tprintf("binds   pipelines %d  materials %d", renderer.pipeline_binds, renderer.material_binds))
+	append(&lines, fmt.tprintf("tris    %d", renderer.triangles))
+	append(
+		&lines,
 		fmt.tprintf(
 			"cpu     prepare %.2f  flush %.2f ms",
 			f32(time.duration_microseconds(renderer.prepare_time)) / 1000,
 			f32(time.duration_microseconds(renderer.flush_time)) / 1000,
 		),
+	)
+	if script_ok do append(&lines, fmt.tprintf("script  %.2f ms (tick, fixed, gc)", script_ms))
+	append(
+		&lines,
 		fmt.tprintf(
 			"render  %.2f ms avg = %.0f%% of %.2f ms (60 fps) budget",
 			stats.render_ms,
 			stats.render_ms / STATS_BUDGET_MS * 100,
 			f32(STATS_BUDGET_MS),
 		),
-		fmt.tprintf("window  %dx%d  msaa %s", gfx_ctx.window_size.x, gfx_ctx.window_size.y, renderer.msaa_enabled ? "4x" : "off"),
-		fmt.tprintf("camera  %.1f %.1f %.1f", camera.x, camera.y, camera.z),
-		fmt.tprintf("look    %.3f %.3f %.3f", forward.x, forward.y, forward.z),
-	}
+	)
+	append(&lines, fmt.tprintf("window  %dx%d  msaa %s", gfx_ctx.window_size.x, gfx_ctx.window_size.y, renderer.msaa_enabled ? "4x" : "off"))
+	append(&lines, fmt.tprintf("camera  %.1f %.1f %.1f", camera.x, camera.y, camera.z))
+	append(&lines, fmt.tprintf("look    %.3f %.3f %.3f", forward.x, forward.y, forward.z))
 	if input.pressed(inputs, stats.dump_action) {
 		for line in lines do log.infof("stats| %s", line)
 	}
@@ -136,7 +144,7 @@ stats_tick :: proc(ctx: ^Context, delta_time: f32, scene_name: string) {
 	inner_width := max(text_width, STATS_GRAPH_MIN_WIDTH)
 	line_height := f32(stats.font.line_height)
 	panel_width := inner_width + 2 * STATS_PADDING
-	panel_height := line_height * len(lines) + STATS_GRAPH_HEIGHT + 3 * STATS_PADDING
+	panel_height := line_height * f32(len(lines)) + STATS_GRAPH_HEIGHT + 3 * STATS_PADDING
 	// The window can be smaller than the targets sized at startup (fullscreen
 	// transitions, menu bar), and the blit crops to it: anchor to what is visible.
 	visible_width, visible_height: i32
@@ -157,7 +165,7 @@ stats_tick :: proc(ctx: ^Context, delta_time: f32, scene_name: string) {
 	// Graph: solid frame lines on top/bottom, dotted average, fps polyline.
 	gx0 := left + STATS_PADDING
 	gx1 := gx0 + inner_width
-	gy0 := top + 2 * STATS_PADDING + line_height * len(lines)
+	gy0 := top + 2 * STATS_PADDING + line_height * f32(len(lines))
 	gy1 := gy0 + STATS_GRAPH_HEIGHT
 	frame := [4]f32{0.8, 0.8, 0.8, 0.9}
 	stats_push_rect(gfx_ctx, gx0, gy0, gx1, gy0 + 1, solid, frame)
@@ -245,7 +253,7 @@ stats_draw :: proc(ctx: ^gfx.Pass_Ctx, _: rawptr) {
 	pass := ctx.renderer.pass
 	target := 0 if ctx.color == ctx.renderer.scene_color else 1 // pipeline color format must match the target
 	pipeline := gfx.pipeline_get(gfx_ctx, stats.pipelines[target])
-	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
+	gfx.pipeline_bind_native(pass, pipeline, false) // overlay pass is always 1x
 	gfx.pipeline_bind_material(gfx_ctx, pass, gfx_ctx.command_buffer, &stats.materials[target])
 	gfx.pipeline_bind_draw(
 		gfx_ctx,

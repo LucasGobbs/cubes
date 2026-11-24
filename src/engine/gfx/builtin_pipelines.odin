@@ -20,7 +20,28 @@ create_textured_pipeline :: proc(gfx_ctx: ^Device) -> Pipeline_Handle {
 	)
 }
 
+// Vertex-pulled textured pipeline: no vertex attributes or vertex buffer slots.
+// The shader reads VertexData from the storage buffer bound by mesh_draw_pulled.
+create_textured_pulled_pipeline :: proc(gfx_ctx: ^Device) -> Pipeline_Handle {
+	return pipeline_create(
+		gfx_ctx,
+		{
+			vertex = default_textured_pulled_vertex(),
+			fragment = default_textured_pulled_fragment(),
+			depth_test = true,
+			depth_write = true,
+			cull_mode = .BACK,
+			bind_draw = bind_textured_pulled_draw,
+		},
+	)
+}
+
 create_unlit_pipeline :: proc(gfx_ctx: ^Device) -> Pipeline_Handle {
+	return create_unlit_stencil_pipeline(gfx_ctx, {})
+}
+
+// Unlit depth-tested pipeline with a stencil test. Zero Stencil_Desc = off.
+create_unlit_stencil_pipeline :: proc(gfx_ctx: ^Device, stencil: Stencil_Desc) -> Pipeline_Handle {
 	attributes := default_unlit_color_vertex_attributes(VertexData)
 	return pipeline_create(
 		gfx_ctx,
@@ -32,13 +53,14 @@ create_unlit_pipeline :: proc(gfx_ctx: ^Device) -> Pipeline_Handle {
 			depth_test = true,
 			depth_write = true,
 			cull_mode = .BACK,
+			stencil = stencil,
 			bind_draw = bind_unlit_draw,
 		},
 	)
 }
 
 // Textured pipeline for screen-space overlays: no depth, alpha blending.
-// Vertices are expected in clip space with an identity view-projection
+// Vertices are expected in clip space with an idactor view-projection
 // (see renderer_begin_overlay_pass).
 create_textured_overlay_pipeline :: proc(gfx_ctx: ^Device, color_format := sdl.GPUTextureFormat.INVALID) -> Pipeline_Handle {
 	attributes := default_textured_vertex_attributes(VertexData)
@@ -310,6 +332,21 @@ bind_textured_draw :: proc(
 		},
 	}
 	draw_push_uniform(draw_context, DEFAULT_TEXTURED_VERTEX_UNIFORM_BLOCK, &uniforms)
+}
+
+bind_textured_pulled_draw :: proc(
+	user_data: rawptr,
+	draw_context: ^Draw_Context,
+	parameters: Draw_Parameters,
+) {
+	_ = user_data
+	uniforms := DefaultTexturedPulledVertexUniformBlock {
+		data = {
+			mvp           = parameters.view_projection * parameters.model_transform,
+			normal_matrix = linalg.matrix4_inverse_transpose(parameters.model_transform),
+		},
+	}
+	draw_push_uniform(draw_context, DEFAULT_TEXTURED_PULLED_VERTEX_UNIFORM_BLOCK, &uniforms)
 }
 
 bind_unlit_draw :: proc(

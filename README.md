@@ -1,7 +1,7 @@
 # Cubes
 
 Demo of the `gbbfx` renderer (Odin + SDL3 GPU + Slang) with ten scenes, plus an
-entity/component `engine` layer on top.
+actor x Props `engine` layer on top.
 
 ![Sea scene: animated waves, fog, thousands of instanced boats](media/sea.gif)
 
@@ -43,7 +43,7 @@ repo root (the `make` targets do this) or from inside `dist/`.
 ## Scene files and transitions
 
 A scene can be plain data: `src/scenes/<name>/scene.json` (name, camera with optional bloom,
-entities with model, clip, position, rotation in degrees, scale; see
+actors with model, clip, position, rotation in degrees, scale; see
 `src/engine/scene_def.odin`). An entry in `SCENES` with no `make` runs from its JSON alone.
 Game code switches scenes with
 `engine.change_scene("forest_instanced", .Fade, 0.6)` (`Cut`, `Fade`, `Fade_White`, `Wipe`);
@@ -95,26 +95,26 @@ defaults.bind_textured_skinned_material(&model.material, gbbfx.model_texture(&mo
 ```
 
 `skinned_model_create` takes the skin, so `skinned_model_destroy` then frees
-only the rest. Keep `model` at a stable address (e.g. in scene state): entities
+only the rest. Keep `model` at a stable address (e.g. in scene state): actors
 hold pointers to its mesh, material and skin.
 
-### Entities and playback
+### Actors and playback
 
 ```odin
-entity := gbbfx.scene_entity(&scene, handle)
-gbbfx.entity_add_skinned_renderable(entity, &model.mesh, &model.material, &model.skin)
-gbbfx.entity_play_clip(entity, "clip_0") // false if no such clip; current clip kept
+actor := gbbfx.scene_actor(&scene, handle)
+gbbfx.actor_add_skinned_renderable(actor, &model.mesh, &model.material, &model.skin)
+gbbfx.actor_play_clip(actor, "clip_0") // false if no such clip; current clip kept
 
 // every frame, before rendering:
 gbbfx.scene_tick_animations(&scene, dt)
 gbbfx.gfx_render(gfx, &scene)
 ```
 
-- The entity starts on clip 0 at time 0, or the rest pose if the skin has no clips.
-- `entity_play_clip` restarts the clip only when it differs from the current one.
+- The actor starts on clip 0 at time 0, or the rest pose if the skin has no clips.
+- `actor_play_clip` restarts the clip only when it differs from the current one.
 - Time wraps modulo the clip duration (looping).
 - Clip names are the glTF animation names, or `clip_N` (N = animation index in the file) when unnamed. Both bundled assets are unnamed, so they expose `clip_0`.
-- Each entity owns its pose; `entity_destroy` frees it.
+- Each actor owns its pose; `actor_destroy` frees it.
 
 ### Limits
 
@@ -122,7 +122,7 @@ gbbfx.gfx_render(gfx, &scene)
 - 64 skinned instances per frame (`MAX_SKINNED_INSTANCES`); the renderer asserts above that.
 - Only the first skin in the file is imported. Primitives on nodes using other skins are skipped with a warning; non-triangle primitives are skipped.
 - Cubic-spline channels are skipped with a warning. Linear and step interpolation are sampled.
-- Skinned entities are never frustum- or distance-culled (no bounds).
+- Skinned actors are never frustum- or distance-culled (no bounds).
 - Linear-blend skinning over up to 4 joints per vertex; weights are normalized at import.
 - Normals are approximate: the blended skin matrix's upper 3x3 transforms them, not its inverse transpose. Exact for rotation and uniform scale; non-uniform joint scale can skew shading.
 
@@ -136,11 +136,28 @@ gbbfx.gfx_render(gfx, &scene)
   license are in `static/models/README-rigged.txt`; keep it with the files
   when redistributing (`make dist` copies `static/`).
 
+## Lua scripting
+
+Actors can run a LuaJIT behaviour: `engine.Script{path = "scripts/spinner.lua"}`. See `scripts/*.lua`
+for examples. A module returns a table with optional `create(self, a)`, `tick(self, a, dt)`,
+`fixed_tick`, `destroy` and `reload` hooks; `a:transform()` gives the live `Transform*`, `engine.input.down(name)`
+and `engine.find` / `engine.spawn_model` are also available. Odin calls named hooks with `script_call`.
+
+- Hot reload: scripts are polled every 250 ms and reload on save; a failed reload keeps the old module.
+  `F5` reloads all scripts. A runtime error faults only that actor until its file changes.
+- `CUBES_JIT_V=1` dumps LuaJIT's trace log (`jit.v`) to stderr at host creation.
+- `make luajit` builds the vendored LuaJIT 2.1 static lib (`third_party/luajit`); `test-engine` depends on it.
+- Scenes: `scriptdemo` (grid driven by `scripts/spinner.lua`, per-actor ticks), `scriptdemo_batch`
+  (`scripts/spinner_batch.lua`, one Lua call per frame), `scriptdemo_odin` (Odin `register_type` baseline, no Lua).
+- `CUBES_SCRIPT_N=<count>` sets the actor count (default 100). `CUBES_SCRIPT_NOMODEL=1` spawns without models
+  so a bench measures script cost only, e.g. `make run ARGS="scriptdemo --bench 5"`.
+- Design, API and measurements: [plan.md](plan.md).
+
 ## Layout
 
 - `src/` - app (`main.odin`, scene registry `scene.odin`), `scenekit/` (shared scene type and helpers), `scenes/<name>/scene.odin` (one folder per scene).
 - `src/gbbfx/` - renderer, render passes/postfx (`rgraph.odin`), loader (glTF), and default shaders in `defaults/`.
-- `src/engine/` - `World` of entities x components, with a per-type create/tick/destroy registry (`entity_register`) and `engine.run`. See `examples/hello_engine` and the `game` scene (`src/scenes/game/game_player.odin`, `game_enemy.odin`).
+- `src/engine/` - `World` of actors x Props, with a per-type create/tick/destroy registry (`register_type`) and `engine.run`. See `examples/hello_engine` and the `game` scene (`src/scenes/game/game_player.odin`, `game_enemy.odin`).
 - `src/glove/` - input system.
 - `static/` - models, textures, fonts, skybox.
 - `third_party/goose/` - shader build tool and Slang.

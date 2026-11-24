@@ -220,7 +220,7 @@ Draw_Desc :: struct {
 	mesh:     Draw_Mesh,
 	material: ^Material, // ^Model: defaults to the model's material
 	position: Vec3,
-	rotation: linalg.Quaternionf32, // zero = identity
+	rotation: linalg.Quaternionf32, // zero = idactor
 	scale:    Vec3, // zero = {1, 1, 1}
 	layer:    Render_Layer, // zero = WORLD
 }

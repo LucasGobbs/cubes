@@ -108,17 +108,33 @@ aspect_ratio :: proc(gfx_ctx: ^Device) -> f32 {
 
 // Present mode: .VSYNC (SDL default, caps FPS at display refresh),
 // .IMMEDIATE (uncapped, may tear), .MAILBOX (uncapped without tearing where
-// supported). Falls back to vsync when the driver rejects the mode.
+// supported). Check present_mode_supported first; set_present_mode warns and
+// keeps the current mode when the window cannot present in the requested one.
 // Keeps whatever composition create() managed to set (SDR_LINEAR when supported).
 swapchain_composition :: proc(gfx_ctx: ^Device) -> sdl.GPUSwapchainComposition {
 	if sdl.WindowSupportsGPUSwapchainComposition(gfx_ctx.gpu, gfx_ctx.window, .SDR_LINEAR) do return .SDR_LINEAR
 	return .SDR
 }
 
-set_present_mode :: proc(gfx_ctx: ^Device, mode: sdl.GPUPresentMode) {
-	if sdl.WindowSupportsGPUPresentMode(gfx_ctx.gpu, gfx_ctx.window, mode) {
-		_ = sdl.SetGPUSwapchainParameters(gfx_ctx.gpu, gfx_ctx.window, swapchain_composition(gfx_ctx), mode)
+set_present_mode :: proc(gfx_ctx: ^Device, mode: sdl.GPUPresentMode) -> bool {
+	if !present_mode_supported(gfx_ctx, mode) {
+		log.warnf("present mode %v unsupported: keeping previous mode", mode)
+		return false
 	}
+	return sdl.SetGPUSwapchainParameters(gfx_ctx.gpu, gfx_ctx.window, swapchain_composition(gfx_ctx), mode)
+}
+
+present_mode_supported :: proc(gfx_ctx: ^Device, mode: sdl.GPUPresentMode) -> bool {
+	return sdl.WindowSupportsGPUPresentMode(gfx_ctx.gpu, gfx_ctx.window, mode)
+}
+
+// SDL accepts 1..3 frames in flight; 2 is the usual default.
+set_frames_in_flight :: proc(gfx_ctx: ^Device, n: u32) -> bool {
+	if n < 1 || n > 3 {
+		log.warnf("frames in flight %d out of range 1..3: unchanged", n)
+		return false
+	}
+	return sdl.SetGPUAllowedFramesInFlight(gfx_ctx.gpu, n)
 }
 
 camera :: proc(gfx_ctx: ^Device) -> ^Camera {

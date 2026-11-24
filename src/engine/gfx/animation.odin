@@ -4,7 +4,7 @@ import "core:math"
 import "core:math/linalg"
 import loader "loader"
 
-// Per-entity skinning result: one palette matrix per skin joint, already
+// Per-actor skinning result: one palette matrix per skin joint, already
 // multiplied by the inverse bind matrix, ready for the GPU.
 Pose :: struct {
 	palette: [loader.MAX_JOINTS]matrix[4, 4]f32,

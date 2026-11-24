@@ -4,12 +4,12 @@ import "core:encoding/json"
 import "core:testing"
 
 @(private = "file")
-test_def :: proc(entities: ..Entity_Def) -> Scene_Def {
-	return Scene_Def{name = "test", entities = entities}
+test_def :: proc(actors: ..Actor_Def) -> Scene_Def {
+	return Scene_Def{name = "test", actors = actors}
 }
 
 @(test)
-apply_keeps_entity_id_and_moves_transform :: proc(t: ^testing.T) {
+apply_keeps_actor_id_and_moves_transform :: proc(t: ^testing.T) {
 	world := world_create(nil)
 	defer world_destroy(&world)
 
@@ -17,13 +17,13 @@ apply_keeps_entity_id_and_moves_transform :: proc(t: ^testing.T) {
 	ids := world_spawn_scene(&world, &def)
 	testing.expect_value(t, len(ids), 1)
 
-	def.entities[0].position = {4, 5, 6}
+	def.actors[0].position = {4, 5, 6}
 	testing.expect(t, world_apply_scene(&world, &def))
 
 	id, found := world_find_by_name(&world, "a")
 	testing.expect(t, found)
 	testing.expect_value(t, id, ids[0])
-	testing.expect_value(t, entity_get_component(&world, id, Transform).position, [3]f32{4, 5, 6})
+	testing.expect_value(t, actor_props(&world, id, Transform).position, [3]f32{4, 5, 6})
 }
 
 @(test)
@@ -34,18 +34,18 @@ apply_spawns_new_and_destroys_removed :: proc(t: ^testing.T) {
 	def := test_def({name = "a"}, {name = "b"})
 	world_spawn_scene(&world, &def)
 
-	def.entities = {{name = "a"}, {name = "c"}}
+	def.actors = {{name = "a"}, {name = "c"}}
 	world_apply_scene(&world, &def)
 
 	_, has_b := world_find_by_name(&world, "b")
 	_, has_c := world_find_by_name(&world, "c")
 	testing.expect(t, !has_b)
 	testing.expect(t, has_c)
-	testing.expect_value(t, len(world_entities(&world)), 2)
+	testing.expect_value(t, len(world_actors(&world)), 2)
 }
 
 @(test)
-apply_keeps_health_and_removes_absent_component :: proc(t: ^testing.T) {
+apply_keeps_health_and_removes_absent_prop :: proc(t: ^testing.T) {
 	world := world_create(nil)
 	defer world_destroy(&world)
 
@@ -53,9 +53,9 @@ apply_keeps_health_and_removes_absent_component :: proc(t: ^testing.T) {
 	world_spawn_scene(&world, &def)
 	id, _ := world_find_by_name(&world, "hp")
 
-	def.entities[0].health = nil
+	def.actors[0].health = nil
 	world_apply_scene(&world, &def)
-	testing.expect(t, entity_get_component(&world, id, Health) == nil)
+	testing.expect(t, actor_props(&world, id, Health) == nil)
 }
 
 @(test)

@@ -127,7 +127,7 @@ flare_draw :: proc(ctx: ^gfx.Pass_Ctx, user: rawptr) {
 	gfx.renderer_begin_overlay_pass(ctx.renderer, ctx.color)
 	pass := ctx.renderer.pass
 	pipeline := gfx.pipeline_get(gfx_ctx, flare.pipeline)
-	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
+	gfx.pipeline_bind_native(pass, pipeline, false) // overlay pass is always 1x
 	gfx.pipeline_bind_material(gfx_ctx, pass, gfx_ctx.command_buffer, &flare.material)
 	gfx.pipeline_bind_draw(
 		gfx_ctx,

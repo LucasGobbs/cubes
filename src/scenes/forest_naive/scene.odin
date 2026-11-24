@@ -35,7 +35,7 @@ Chunk :: struct {
 	static_job:   Build,
 	static_data:  Mesh_Data,
 	static_mesh:  gfx.Mesh,
-	grass_entity: int, // -1 until the first grass mesh exists
+	grass_draw: int, // -1 until the first grass mesh exists
 	grass_lod:    int,
 	grass_job:    [2]Build,
 	grass_data:   [2]Mesh_Data,
@@ -74,7 +74,7 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx_ctx := &ctx.gfx
 	state := new(Forest_State)
 	demo.state = state
-	for &chunk in state.chunks do chunk.grass_entity = -1
+	for &chunk in state.chunks do chunk.grass_draw = -1
 	engine.camera_fly(ctx, {0, terrain_height(0, 0) + 2.5, 0}, {0, terrain_height(0, -10) + 2, -10})
 
 	attributes := shader_parameters.forest_vertex_attributes(gfx.VertexData)
@@ -111,7 +111,7 @@ forest_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	return true
 }
 
-// Passes the time wind runs on; the shader gets the entity model matrix so
+// Passes the time wind runs on; the shader gets the actor model matrix so
 // meshes can be stored relative to their chunk origin (tight culling bounds).
 forest_bind_draw :: proc(
 	user_data: rawptr,
@@ -189,7 +189,7 @@ chunk_coords :: proc(index: int) -> (cx, cz: int) {
 
 grass_lod_for :: proc(chunk: ^Chunk, distance: f32) -> int {
 	lod := chunk.grass_lod
-	if chunk.grass_entity < 0 do lod = 1
+	if chunk.grass_draw < 0 do lod = 1
 	if distance < GRASS_NEAR do lod = 0
 	if distance > GRASS_FAR do lod = 1
 	return lod
@@ -307,25 +307,25 @@ forest_apply_grass :: proc(state: ^Forest_State, gfx_ctx: ^gfx.Device, camera: [
 		ox, oz, distance := chunk_distance(index, camera)
 		if distance > radius do continue
 		chunk := &state.chunks[index]
-		if chunk.grass_entity >= 0 {
+		if chunk.grass_draw >= 0 {
 			// Out of range: hide the draw so it costs no fragments.
-			gfx_ctx.draws[chunk.grass_entity].hidden = distance > GRASS_MAX
+			gfx_ctx.draws[chunk.grass_draw].hidden = distance > GRASS_MAX
 		}
 		if distance > GRASS_MAX do continue
 		lod := grass_lod_for(chunk, distance)
-		if chunk.grass_entity >= 0 && lod == chunk.grass_lod do continue
+		if chunk.grass_draw >= 0 && lod == chunk.grass_lod do continue
 		if chunk.grass_job[lod].state != .Built do continue
 		chunk.grass_lod = lod
-		if chunk.grass_entity < 0 {
-			chunk.grass_entity = gfx.draw_create(gfx_ctx, {mesh = &chunk.grass_mesh[lod], material = &state.material, position = {ox, 0, oz}})
+		if chunk.grass_draw < 0 {
+			chunk.grass_draw = gfx.draw_create(gfx_ctx, {mesh = &chunk.grass_mesh[lod], material = &state.material, position = {ox, 0, oz}})
 		} else {
-			gfx_ctx.draws[chunk.grass_entity].mesh = &chunk.grass_mesh[lod]
+			gfx_ctx.draws[chunk.grass_draw].mesh = &chunk.grass_mesh[lod]
 		}
 	}
 }
 
 // Moves world-space vertices to chunk-local x/z (so the mesh bound is centred
-// near the entity), narrows indices to u16, and uploads.
+// near the actor), narrows indices to u16, and uploads.
 forest_upload :: proc(gfx_ctx: ^gfx.Device, data: ^Mesh_Data, indices: []u32, ox, oz: f32) -> gfx.Mesh {
 	assert(len(data.verts) < 1 << 16, "chunk mesh too large for u16 indices")
 	for &vertex in data.verts {

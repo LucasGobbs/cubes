@@ -12,6 +12,8 @@ import sdl "vendor:sdl3"
 
 // Sample count of the MSAA mode (4x is supported by every SDL GPU backend).
 MSAA_SAMPLES :: sdl.GPUSampleCount._4
+// Draw instanced runs through DrawGPUIndexedPrimitivesIndirect (--indirect). Same output as the direct path.
+indirect_draws := false
 
 // Skinned instances per frame; each owns MAX_JOINTS palette matrices.
 MAX_SKINNED_INSTANCES :: 64
@@ -45,6 +47,8 @@ Renderer :: struct {
 	// cleared to 0 (far), pipelines compare GREATER (see camera_perspective).
 	// Resize all targets together with renderer_resize_targets.
 	scene_depth:     Texture_Handle,
+	// Format of scene_depth and of every depth pipeline drawn in the scene pass. Chosen once at create.
+	scene_depth_format: sdl.GPUTextureFormat,
 	// MSAA: scene pass renders into scene_color_msaa (generation 0 when off)
 	// and resolves into scene_color. Toggle with renderer_set_msaa.
 	scene_color_msaa: Texture_Handle,
@@ -59,6 +63,11 @@ Renderer :: struct {
 	instance_transforms: [dynamic]matrix[4, 4]f32,
 	instance_offsets:    [dynamic]u32,
 	instance_previous:   [dynamic]matrix[4, 4]f32,
+	// One command per non-skinned instanced run, in draw order; first_instance stays 0 (SDL: incompatible with SV_InstanceID).
+	indirect_buffer:     Buffer_Handle,
+	indirect_commands:   [dynamic]sdl.GPUIndexedIndirectDrawCommand,
+	indirect_previous:   [dynamic]sdl.GPUIndexedIndirectDrawCommand,
+	indirect_cursor:     int,
 
 	// Skinned instances use their own arrays: palette index is
 	// (instance + first_instance) * MAX_JOINTS, so they cannot share the static
@@ -161,6 +170,15 @@ Renderer_Load_Desc :: struct {
 // sRGB clear color of the scene pass until a scene sets its own.
 DEFAULT_CLEAR_COLOR :: [4]f32{0.2, 0.2, 0.5, 1}
 
+// Combined depth+stencil format for the scene pass. D32 float first keeps the precision reverse-Z relies on.
+pick_depth_stencil_format :: proc(gpu: ^sdl.GPUDevice) -> sdl.GPUTextureFormat {
+	for format in ([?]sdl.GPUTextureFormat{.D32_FLOAT_S8_UINT, .D24_UNORM_S8_UINT}) {
+		if sdl.GPUTextureSupportsFormat(gpu, format, .D2, {.DEPTH_STENCIL_TARGET}) do return format
+	}
+	assert(false, "no depth+stencil texture format supported")
+	return .INVALID
+}
+
 renderer_create :: proc(gfx_ctx: ^Device) -> Renderer {
 	renderer := Renderer {
 		gfx_ctx     = gfx_ctx,
@@ -177,6 +195,7 @@ renderer_create :: proc(gfx_ctx: ^Device) -> Renderer {
 		u32(64 * size_of(matrix[4, 4]f32)),
 		.GRAPHICS_STORAGE_READ,
 	)
+	renderer.indirect_buffer = buffer_create(gfx_ctx, u32(16 * size_of(sdl.GPUIndexedIndirectDrawCommand)), .INDIRECT)
 	renderer.skinned_buffer = buffer_create(
 		gfx_ctx,
 		u32(MAX_SKINNED_INSTANCES * size_of(matrix[4, 4]f32)),
@@ -194,17 +213,18 @@ renderer_create :: proc(gfx_ctx: ^Device) -> Renderer {
 		sdl.GetGPUSwapchainTextureFormat(gfx_ctx.gpu, gfx_ctx.window),
 		{.COLOR_TARGET, .SAMPLER},
 	)
+	renderer.scene_depth_format = pick_depth_stencil_format(gfx_ctx.gpu)
 	renderer.scene_depth = texture_create_with_usage(
 		gfx_ctx,
 		u32(gfx_ctx.window_size.x),
 		u32(gfx_ctx.window_size.y),
-		.D32_FLOAT,
+		renderer.scene_depth_format,
 		{.DEPTH_STENCIL_TARGET},
 	)
 	color_format := sdl.GetGPUSwapchainTextureFormat(gfx_ctx.gpu, gfx_ctx.window)
 	renderer.msaa_supported =
 		sdl.GPUTextureSupportsSampleCount(gfx_ctx.gpu, color_format, MSAA_SAMPLES) &&
-		sdl.GPUTextureSupportsSampleCount(gfx_ctx.gpu, .D32_FLOAT, MSAA_SAMPLES)
+		sdl.GPUTextureSupportsSampleCount(gfx_ctx.gpu, renderer.scene_depth_format, MSAA_SAMPLES)
 	post_usage := sdl.GPUTextureUsageFlags{.COMPUTE_STORAGE_WRITE, .SAMPLER, .COLOR_TARGET}
 	for format in ([?]sdl.GPUTextureFormat{.R16G16B16A16_FLOAT, .R8G8B8A8_UNORM}) {
 		if sdl.GPUTextureSupportsFormat(gfx_ctx.gpu, format, .D2, post_usage) {
@@ -266,7 +286,7 @@ renderer_set_msaa :: proc(renderer: ^Renderer, enabled: bool) -> bool {
 		gfx_ctx,
 		width,
 		height,
-		.D32_FLOAT,
+		renderer.scene_depth_format,
 		{.DEPTH_STENCIL_TARGET},
 		samples,
 	)
@@ -287,11 +307,14 @@ renderer_set_msaa :: proc(renderer: ^Renderer, enabled: bool) -> bool {
 renderer_destroy :: proc(renderer: ^Renderer) {
 	assert(renderer.pass == nil)
 	buffer_destroy(renderer.gfx_ctx, renderer.instance_buffer)
+	buffer_destroy(renderer.gfx_ctx, renderer.indirect_buffer)
 	buffer_destroy(renderer.gfx_ctx, renderer.skinned_buffer)
 	buffer_destroy(renderer.gfx_ctx, renderer.palette_buffer)
 	delete(renderer.instance_transforms)
 	delete(renderer.instance_offsets)
 	delete(renderer.instance_previous)
+	delete(renderer.indirect_commands)
+	delete(renderer.indirect_previous)
 	delete(renderer.skinned_transforms)
 	delete(renderer.palettes)
 	texture_destroy(renderer.gfx_ctx, renderer.scene_color)
@@ -470,13 +493,8 @@ renderer_update_light :: proc(renderer: ^Renderer, direction: [3]f32) {
 renderer_draw_shadow :: proc(renderer: ^Renderer) {
 	assert(renderer.pass == nil)
 	gfx_ctx := renderer.gfx_ctx
-	depth_target := sdl.GPUDepthStencilTargetInfo {
-		texture     = texture_get(gfx_ctx, renderer.shadow_map).handle,
-		load_op     = .CLEAR,
-		clear_depth = 1, // conventional Z: 1 is far
-		store_op    = .STORE, // sampled later by the scene pass
-	}
-	renderer.pass = sdl.BeginGPURenderPass(gfx_ctx.command_buffer, nil, 0, &depth_target)
+	rt := Render_Target{depth = texture_get(gfx_ctx, renderer.shadow_map).handle, clear_depth = f32(1)} // conventional Z: 1 is far
+	renderer.pass = begin_pass(renderer, rt)
 	assert(renderer.pass != nil)
 	renderer.view_projection = renderer.light_view_projection
 	renderer.pass_msaa = false
@@ -608,6 +626,7 @@ renderer_prepare :: proc(renderer: ^Renderer) {
 	}
 	renderer_upload_skinned_instances(renderer)
 	if len(renderer.instance_transforms) == 0 do return
+	renderer_upload_indirect(renderer) // before the static-scene early return: grouping can change with identical transforms
 	current := slice.to_bytes(renderer.instance_transforms[:])
 	if len(renderer.instance_transforms) == len(renderer.instance_previous) &&
 	   mem.compare(current, slice.to_bytes(renderer.instance_previous[:])) == 0 {
@@ -625,6 +644,38 @@ renderer_prepare :: proc(renderer: ^Renderer) {
 	uploader_upload_buffer(&renderer.uploader, renderer.instance_buffer)
 	uploader_flush(&renderer.uploader)
 	buffer_get(renderer.gfx_ctx, renderer.instance_buffer)._temporary_raw_data = nil
+}
+// Builds one indirect command per non-skinned instanced run (same grouping as renderer_flush) and uploads on change.
+renderer_upload_indirect :: proc(renderer: ^Renderer) {
+	if !indirect_draws do return
+	clear(&renderer.indirect_commands)
+	index := 0
+	for index < len(renderer.draw_items) {
+		item := &renderer.draw_items[index]
+		pipeline := pipeline_get(renderer.gfx_ctx, item.material.pipeline)
+		if item.shadow_only || !pipeline.instanced {
+			index += 1
+			continue
+		}
+		run_end := index + 1
+		for run_end < len(renderer.draw_items) {
+			other := &renderer.draw_items[run_end]
+			if other.mesh != item.mesh || other.material != item.material || other.shadow_only do break
+			run_end += 1
+		}
+		if !pipeline.skinned {
+			append(&renderer.indirect_commands, sdl.GPUIndexedIndirectDrawCommand{num_indices = item.mesh.num_indices, num_instances = u32(run_end - index)})
+		}
+		index = run_end
+	}
+	if len(renderer.indirect_commands) == 0 || slice.equal(renderer.indirect_commands[:], renderer.indirect_previous[:]) do return
+	clear(&renderer.indirect_previous)
+	append(&renderer.indirect_previous, ..renderer.indirect_commands[:])
+	renderer.indirect_buffer = buffer_stage(renderer.gfx_ctx, renderer.indirect_buffer, renderer.indirect_commands[:], .INDIRECT)
+	uploader_begin(&renderer.uploader)
+	uploader_upload_buffer(&renderer.uploader, renderer.indirect_buffer)
+	uploader_flush(&renderer.uploader)
+	buffer_get(renderer.gfx_ctx, renderer.indirect_buffer)._temporary_raw_data = nil
 }
 
 renderer_upload_skinned_instances :: proc(renderer: ^Renderer) {
@@ -654,37 +705,77 @@ renderer_bind_static_instances :: proc(renderer: ^Renderer) {
 	sdl.BindGPUVertexStorageBuffers(renderer.pass, 0, &(instance_buffer.handle), 1)
 }
 
+// Attachments of one pass. A nil texture means the attachment is absent; a nil
+// clear value means load the existing contents.
+Render_Target :: struct {
+	color:         ^sdl.GPUTexture,   // nil for depth-only passes
+	color_msaa:    ^sdl.GPUTexture,   // when set: draw here, resolve into color at pass end
+	clear_color:   Maybe(sdl.FColor),
+	depth:         ^sdl.GPUTexture,   // nil for color-only passes
+	clear_depth:   Maybe(f32),
+	depth_store:   sdl.GPUStoreOp,    // zero value STORE
+	clear_stencil: bool,              // clear stencil to 0 and store it
+}
+
+// Opens a pass on the frame command buffer with the attachments of rt. The
+// caller assigns renderer.pass and sets the view-projection state.
+begin_pass :: proc(renderer: ^Renderer, rt: Render_Target) -> ^sdl.GPURenderPass {
+	assert(renderer.pass == nil)
+	assert(renderer.gfx_ctx.command_buffer != nil)
+	assert(rt.color != nil || rt.depth != nil)
+
+	color_target := sdl.GPUColorTargetInfo{texture = rt.color, load_op = .LOAD, store_op = .STORE}
+	if clear, ok := rt.clear_color.?; ok {
+		color_target.load_op = .CLEAR
+		color_target.clear_color = clear
+	}
+	if rt.color_msaa != nil {
+		color_target.resolve_texture = rt.color
+		color_target.texture = rt.color_msaa
+		color_target.store_op = .RESOLVE
+	}
+	depth_target := sdl.GPUDepthStencilTargetInfo{texture = rt.depth, load_op = .LOAD, store_op = rt.depth_store}
+	if clear, ok := rt.clear_depth.?; ok {
+		depth_target.load_op = .CLEAR
+		depth_target.clear_depth = clear
+	}
+	if rt.clear_stencil {
+		depth_target.stencil_load_op = .CLEAR
+		depth_target.stencil_store_op = .STORE
+	}
+
+	color_ptr: ^sdl.GPUColorTargetInfo
+	color_count: u32
+	if rt.color != nil {
+		color_ptr = &color_target
+		color_count = 1
+	}
+	depth_ptr: ^sdl.GPUDepthStencilTargetInfo
+	if rt.depth != nil do depth_ptr = &depth_target
+	pass := sdl.BeginGPURenderPass(renderer.gfx_ctx.command_buffer, color_ptr, color_count, depth_ptr)
+	assert(pass != nil)
+	return pass
+}
+
 renderer_begin_pass :: proc(renderer: ^Renderer, view_projection: matrix[4, 4]f32) {
 	assert(renderer.pass == nil)
 	assert(renderer.gfx_ctx.command_buffer != nil)
 	assert(renderer.gfx_ctx.swapchain != nil)
 
-	color_target := sdl.GPUColorTargetInfo {
-		texture     = texture_get(renderer.gfx_ctx, renderer.scene_color).handle,
-		load_op     = .CLEAR,
-		clear_color = sdl.FColor(color_srgb_to_linear(renderer.clear_color)),
-		store_op    = .STORE,
+	rt := Render_Target {
+		color         = texture_get(renderer.gfx_ctx, renderer.scene_color).handle,
+		clear_color   = sdl.FColor(color_srgb_to_linear(renderer.clear_color)),
+		depth         = texture_get(renderer.gfx_ctx, renderer.scene_depth).handle,
+		clear_depth   = f32(0), // reverse-Z: 0 is the far plane
+		depth_store   = .DONT_CARE,
+		clear_stencil = true,
 	}
 	if renderer.msaa_enabled {
 		// Draw into the multisampled texture; at pass end the samples are
 		// averaged into scene_color and the multisampled data is dropped.
-		color_target.resolve_texture = color_target.texture
-		color_target.texture = texture_get(renderer.gfx_ctx, renderer.scene_color_msaa).handle
-		color_target.store_op = .RESOLVE
+		rt.color_msaa = texture_get(renderer.gfx_ctx, renderer.scene_color_msaa).handle
 	}
-	depth_target := sdl.GPUDepthStencilTargetInfo {
-		texture     = texture_get(renderer.gfx_ctx, renderer.scene_depth).handle,
-		load_op     = .CLEAR,
-		clear_depth = 0, // reverse-Z: 0 is the far plane
-		store_op    = .DONT_CARE,
-	}
-
-	renderer.pass = sdl.BeginGPURenderPass(
-		renderer.gfx_ctx.command_buffer,
-		&color_target,
-		1,
-		&depth_target,
-	)
+	renderer.pass = begin_pass(renderer, rt)
 	assert(renderer.pass != nil)
 	renderer.view_projection = view_projection
 	renderer.pass_msaa = renderer.msaa_enabled
@@ -703,38 +794,27 @@ renderer_end_pass :: proc(renderer: ^Renderer) {
 }
 
 // Overlay pass: a LOAD-op pass over an existing target with no depth
-// attachment and identity view-projection. For UI drawn on top of the
+// attachment and idactor view-projection. For UI drawn on top of the
 // finished frame (pair with depth-less, blended pipelines). Close with
 // renderer_end_pass.
 renderer_begin_overlay_pass :: proc(renderer: ^Renderer, target: Texture_Handle) {
 	assert(renderer.pass == nil)
 	assert(renderer.gfx_ctx.command_buffer != nil)
-	color_target := sdl.GPUColorTargetInfo {
-		texture = texture_get(renderer.gfx_ctx, target).handle,
-		load_op = .LOAD,
-		store_op = .STORE,
-	}
-	renderer.pass = sdl.BeginGPURenderPass(renderer.gfx_ctx.command_buffer, &color_target, 1, nil)
+	renderer.pass = begin_pass(renderer, Render_Target{color = texture_get(renderer.gfx_ctx, target).handle})
 	assert(renderer.pass != nil)
 	renderer.view_projection = linalg.MATRIX4F32_IDENTITY
 	renderer.bound_pipeline = {}
 	renderer.bound_material = nil
 }
 
-// Present pass: a CLEAR pass directly on the swapchain with identity
+// Present pass: a CLEAR pass directly on the swapchain with idactor
 // view-projection, for compositing the final frame (editor chrome +
 // viewport) without a blit. Close with renderer_end_pass.
 renderer_begin_present_pass :: proc(renderer: ^Renderer) {
 	assert(renderer.pass == nil)
 	assert(renderer.gfx_ctx.command_buffer != nil)
 	assert(renderer.gfx_ctx.swapchain != nil)
-	color_target := sdl.GPUColorTargetInfo {
-		texture     = renderer.gfx_ctx.swapchain,
-		load_op     = .CLEAR,
-		clear_color = sdl.FColor(color_srgb_to_linear({0.08, 0.08, 0.1, 1})),
-		store_op    = .STORE,
-	}
-	renderer.pass = sdl.BeginGPURenderPass(renderer.gfx_ctx.command_buffer, &color_target, 1, nil)
+	renderer.pass = begin_pass(renderer, Render_Target{color = renderer.gfx_ctx.swapchain, clear_color = sdl.FColor(color_srgb_to_linear({0.08, 0.08, 0.1, 1}))})
 	assert(renderer.pass != nil)
 	renderer.view_projection = linalg.MATRIX4F32_IDENTITY
 	renderer.bound_pipeline = {}
@@ -772,7 +852,7 @@ renderer_draw_item :: proc(renderer: ^Renderer, item: ^DrawItem) {
 	pipeline := pipeline_get(renderer.gfx_ctx, material.pipeline)
 
 	if renderer.bound_pipeline != material.pipeline {
-		sdl.BindGPUGraphicsPipeline(renderer.pass, pipeline_native(pipeline, renderer.pass_msaa))
+		pipeline_bind_native(renderer.pass, pipeline, renderer.pass_msaa)
 		renderer.bound_pipeline = material.pipeline
 		renderer.pipeline_binds += 1
 		renderer.bound_material = nil
@@ -802,7 +882,11 @@ renderer_draw_item :: proc(renderer: ^Renderer, item: ^DrawItem) {
 			material = material,
 		},
 	)
-	mesh_draw(renderer.gfx_ctx, mesh, renderer.pass)
+	if pipeline_get(renderer.gfx_ctx, material.pipeline).pulled {
+		mesh_draw_pulled(renderer.gfx_ctx, mesh, renderer.pass)
+	} else {
+		mesh_draw(renderer.gfx_ctx, mesh, renderer.pass)
+	}
 	renderer.draw_calls += 1
 	renderer.triangles += triangle_count(mesh)
 }
@@ -815,6 +899,7 @@ renderer_draw_instanced_run :: proc(
 	item: ^DrawItem,
 	count: int,
 	first_instance: u32,
+	indirect_slot := -1,
 ) {
 	assert(renderer.pass != nil)
 	mesh := item.mesh
@@ -822,7 +907,7 @@ renderer_draw_instanced_run :: proc(
 	pipeline := pipeline_get(renderer.gfx_ctx, material.pipeline)
 
 	if renderer.bound_pipeline != material.pipeline {
-		sdl.BindGPUGraphicsPipeline(renderer.pass, pipeline_native(pipeline, renderer.pass_msaa))
+		pipeline_bind_native(renderer.pass, pipeline, renderer.pass_msaa)
 		renderer.bound_pipeline = material.pipeline
 		renderer.pipeline_binds += 1
 		renderer.bound_material = nil
@@ -852,7 +937,11 @@ renderer_draw_instanced_run :: proc(
 			first_instance = first_instance,
 		},
 	)
-	mesh_draw_instanced(renderer.gfx_ctx, mesh, renderer.pass, u32(count), 0)
+	if indirect_slot >= 0 && mesh.num_indices > 0 {
+		mesh_draw_indirect(renderer.gfx_ctx, mesh, renderer.pass, buffer_get(renderer.gfx_ctx, renderer.indirect_buffer).handle, u32(indirect_slot * size_of(sdl.GPUIndexedIndirectDrawCommand)))
+	} else {
+		mesh_draw_instanced(renderer.gfx_ctx, mesh, renderer.pass, u32(count), 0)
+	}
 	renderer.draw_calls += 1
 	renderer.instanced_draws += 1
 	renderer.instance_count += count
@@ -962,6 +1051,7 @@ renderer_flush :: proc(renderer: ^Renderer) {
 	if len(renderer.instance_transforms) > 0 {
 		renderer_bind_static_instances(renderer)
 	}
+	renderer.indirect_cursor = 0
 	index := 0
 	skinned_bound := false
 	for index < len(renderer.draw_items) {
@@ -994,11 +1084,17 @@ renderer_flush :: proc(renderer: ^Renderer) {
 			if other.mesh != item.mesh || other.material != item.material || other.shadow_only do break
 			run_end += 1
 		}
+		slot := -1
+		if indirect_draws && !pipeline.skinned {
+			slot = renderer.indirect_cursor
+			renderer.indirect_cursor += 1
+		}
 		renderer_draw_instanced_run(
 			renderer,
 			item,
 			run_end - index,
 			renderer.instance_offsets[index],
+			slot,
 		)
 		index = run_end
 	}

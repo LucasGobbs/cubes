@@ -2,15 +2,12 @@
 package skinned
 
 import engine "../../engine"
-import gfx "../../engine/gfx"
-import loader "../../engine/gfx/loader"
 
 SKINNED_MODEL_PATH :: "static/models/rigged_cesiumman.glb"
 SKINNED_CLIP :: "clip_0"
 
 Skinned_State :: struct {
-	model:    gfx.Model,
-	playback: gfx.Playback,
+	world: engine.World,
 }
 
 skinned_scene :: proc() -> engine.Scene {
@@ -23,45 +20,22 @@ skinned_scene :: proc() -> engine.Scene {
 }
 
 skinned_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
-	gfx_ctx := &ctx.gfx
 	state := new(Skinned_State)
 	demo.state = state
+	state.world = engine.world_create(&ctx.gfx)
 	engine.camera_fly(ctx)
-
-	imported, ok := loader.model_import_skinned_from_gltf(SKINNED_MODEL_PATH)
-	if !ok do return false
-	defer loader.skinned_model_destroy(&imported)
-	pipeline := gfx.builtin_material_pipeline(gfx_ctx, .Textured_Skinned)
-	state.model = gfx.model_create_skinned(gfx_ctx, &imported, pipeline)
-	gfx.model_upload_to_gpu(&state.model, &gfx_ctx.renderer.uploader)
-	gfx.bind_textured_skinned_material(
-		&state.model.material,
-		gfx.model_texture(&state.model),
-		gfx.builtin_sampler(gfx_ctx, .Trilinear),
-	)
-
-	state.playback = gfx.playback_create(&state.model.skin)
-	if !gfx.playback_play(&state.playback, SKINNED_CLIP) do return false
-
-	// Skinned meshes have no bounds (see mesh_set_bounds), so culling stays off.
-	index := gfx.draw_create(gfx_ctx, {mesh = &state.model})
-	draw := &gfx_ctx.draws[index]
-	draw.cull = false
-	draw.pose = state.playback.pose
+	engine.spawn(&state.world, engine.Model{path = SKINNED_MODEL_PATH}, engine.Animator{clip = SKINNED_CLIP})
 	return true
 }
 
 skinned_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
-	gfx_ctx := &ctx.gfx
 	state := cast(^Skinned_State)demo.state
-	gfx.playback_tick(&state.playback, delta_time)
-	gfx.render(gfx_ctx)
+	engine.world_update(&state.world, delta_time)
+	engine.world_render(&state.world, ctx.blend)
 }
 
 skinned_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
-	gfx_ctx := &ctx.gfx
 	state := cast(^Skinned_State)demo.state
-	gfx.playback_destroy(&state.playback)
-	gfx.model_unload(gfx_ctx, &state.model)
+	engine.world_destroy(&state.world)
 	free(state)
 }

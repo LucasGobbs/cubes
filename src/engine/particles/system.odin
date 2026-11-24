@@ -177,7 +177,7 @@ particles_draw :: proc(renderer: ^gfx.Renderer, user: rawptr) {
 
 		pipeline_handle := system.render_alpha if e.desc.blend == .Alpha else system.render_additive
 		pipeline := gfx.pipeline_get(gfx_ctx, pipeline_handle)
-		sdl.BindGPUGraphicsPipeline(renderer.pass, gfx.pipeline_native(pipeline, renderer.pass_msaa))
+		gfx.pipeline_bind_native(renderer.pass, pipeline, renderer.pass_msaa)
 
 		block := gfx.DefaultParticleRenderVertexUniformBlock{}
 		p := &block.params

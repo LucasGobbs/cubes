@@ -27,14 +27,24 @@ step :: proc(w: World, dt: f32, sub_steps := 4) {
 	b3.World_Step(w.id, dt, i32(sub_steps))
 }
 
-// Static box whose top face sits at y, centered on x/z = 0.
-body_ground :: proc(w: World, half_extents: b3.Vec3, y := f32(0)) -> b3.BodyId {
+// Static box centered at pos with the given half extents.
+body_static :: proc(w: World, pos: b3.Vec3, half: b3.Vec3) -> b3.BodyId {
 	bd := b3.DefaultBodyDef()
 	bd.type = .staticBody
-	bd.position = b3.ToPos({0, y - half_extents.y, 0})
+	bd.position = b3.ToPos(pos)
 	id := b3.CreateBody(w.id, bd)
-	add_box_shape(id, half_extents, 1)
+	add_box_shape(id, half, 1)
 	return id
+}
+
+// Static box whose top face sits at y, centered on x/z = 0.
+body_ground :: proc(w: World, half_extents: b3.Vec3, y := f32(0)) -> b3.BodyId {
+	return body_static(w, {0, y - half_extents.y, 0}, half_extents)
+}
+
+// Frees the body and its shapes.
+body_destroy :: proc(id: b3.BodyId) {
+	b3.DestroyBody(id)
 }
 
 // Dynamic box centered at pos with the given half extents and density.

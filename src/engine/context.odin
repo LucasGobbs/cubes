@@ -46,3 +46,8 @@ set_event_hook :: proc(ctx: ^Context, hook: proc(event: ^sdl.Event, user: rawptr
 request_quit :: proc(ctx: ^Context) {
 	ctx.running = false
 }
+
+// GPU draws issued in the last frame (HUD and profiling).
+draw_call_count :: proc(ctx: ^Context) -> int {
+	return ctx.gfx.renderer.draw_calls
+}

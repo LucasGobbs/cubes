@@ -1,7 +1,7 @@
 // 2D immediate batcher: sprites, rects, lines and text as triangles in one
 // vertex buffer, drawn in a single overlay pass after the 3D scene. Vertices
 // are converted to NDC on the CPU (world px, Y down -> NDC through the camera),
-// so the shader runs with an identity view-projection.
+// so the shader runs with an idactor view-projection.
 //
 // Lifecycle per frame: batch_begin -> draw calls -> batch_end, all outside a
 // frame (batch_end uploads the mesh). The pass body only reads the batch.
@@ -219,7 +219,7 @@ batch_draw :: proc(ctx: ^Pass_Ctx, user: rawptr) {
 	renderer_begin_overlay_pass(ctx.renderer, ctx.color)
 	pass := ctx.renderer.pass
 	pipeline := pipeline_get(gfx_ctx, b.pipeline)
-	sdl.BindGPUGraphicsPipeline(pass, pipeline.handle)
+	pipeline_bind_native(pass, pipeline, false) // overlay pass is always 1x
 	vertex_buffer := buffer_get(gfx_ctx, b.mesh.vertex_buffer)
 	sdl.BindGPUVertexBuffers(pass, 0, &(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}), 1)
 	for run in b.runs {

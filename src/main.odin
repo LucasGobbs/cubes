@@ -8,6 +8,7 @@ package main
 import "core:log"
 import "core:os"
 import "core:strconv"
+import "engine/gfx"
 import engine "engine"
 
 // Benchmark mode (--bench SECONDS); seconds 0 leaves it off.
@@ -33,6 +34,8 @@ main :: proc() {
 			i += 1
 		} else if os.args[i] == "--WINDOWED" {
 			windowed = true
+		} else if os.args[i] == "--indirect" {
+			gfx.indirect_draws = true
 		} else {
 			name = os.args[i]
 		}

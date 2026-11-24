@@ -2,19 +2,19 @@ package engine
 
 import "core:testing"
 
-// Entity state for the registry tests. Procs record into the state, so the
+// Actor state for the registry tests. Procs record into the state, so the
 // assertions see exactly what the world called.
 Counter :: struct {
 	ticks: int,
 }
 
 Killer :: struct {
-	target: Entity_Id,
+	target: Actor_Id,
 }
 
 Spawner :: struct {
-	counter: Entity_Type,
-	victim:  Entity_Id,
+	counter: Actor_Type,
+	victim:  Actor_Id,
 	done:    bool,
 }
 
@@ -26,31 +26,31 @@ destroy_saw_valid: bool
 @(private = "file")
 counter_ticks: int
 
-counter_tick :: proc(world: ^World, id: Entity_Id, self: ^Counter, dt: f32) {
+counter_tick :: proc(world: ^World, id: Actor_Id, self: ^Counter, dt: f32) {
 	self.ticks += 1
 	counter_ticks += 1
 }
 
-counter_destroy :: proc(world: ^World, id: Entity_Id, self: ^Counter) {
+counter_destroy :: proc(world: ^World, id: Actor_Id, self: ^Counter) {
 	destroy_calls += 1
 	destroy_saw_valid = world_valid(world, id)
 }
 
-killer_tick :: proc(world: ^World, id: Entity_Id, self: ^Killer, dt: f32) {
-	world_destroy_entity(world, self.target)
+killer_tick :: proc(world: ^World, id: Actor_Id, self: ^Killer, dt: f32) {
+	world_destroy_actor(world, self.target)
 }
 
 // Destroys the victim, then spawns into the victim's freed index.
-spawner_tick :: proc(world: ^World, id: Entity_Id, self: ^Spawner, dt: f32) {
+spawner_tick :: proc(world: ^World, id: Actor_Id, self: ^Spawner, dt: f32) {
 	if self.done do return
 	self.done = true
-	world_destroy_entity(world, self.victim)
+	world_destroy_actor(world, self.victim)
 	spawn_typed(world, self.counter, Counter{})
 }
 
 @(test)
-tick_runs_once_per_update_per_live_entity :: proc(t: ^testing.T) {
-	world := World{}
+tick_runs_once_per_update_per_live_actor :: proc(t: ^testing.T) {
+	world := world_create(nil)
 	defer world_destroy(&world)
 	counter := register_type(&world, Counter, nil, counter_tick, nil)
 
@@ -63,17 +63,17 @@ tick_runs_once_per_update_per_live_entity :: proc(t: ^testing.T) {
 }
 
 @(test)
-destroy_runs_on_destroy_entity_and_world_destroy :: proc(t: ^testing.T) {
+destroy_runs_on_destroy_actor_and_world_destroy :: proc(t: ^testing.T) {
 	destroy_calls = 0
 	destroy_saw_valid = false
-	world := World{}
+	world := world_create(nil)
 	counter := register_type(&world, Counter, nil, nil, counter_destroy)
 
 	id, _ := spawn_typed(&world, counter, Counter{})
-	world_destroy_entity(&world, id)
+	world_destroy_actor(&world, id)
 	testing.expect_value(t, destroy_calls, 1)
 	testing.expect(t, destroy_saw_valid)
-	world_destroy_entity(&world, id) // stale id: no second call
+	world_destroy_actor(&world, id) // stale id: no second call
 	testing.expect_value(t, destroy_calls, 1)
 
 	spawn_typed(&world, counter, Counter{})
@@ -83,9 +83,9 @@ destroy_runs_on_destroy_entity_and_world_destroy :: proc(t: ^testing.T) {
 }
 
 @(test)
-entity_destroyed_during_tick_is_not_ticked_after :: proc(t: ^testing.T) {
+actor_destroyed_during_tick_is_not_ticked_after :: proc(t: ^testing.T) {
 	counter_ticks = 0
-	world := World{}
+	world := world_create(nil)
 	defer world_destroy(&world)
 	counter := register_type(&world, Counter, nil, counter_tick, nil)
 	killer := register_type(&world, Killer, nil, killer_tick, nil)
@@ -102,12 +102,12 @@ entity_destroyed_during_tick_is_not_ticked_after :: proc(t: ^testing.T) {
 
 @(test)
 spawn_during_tick_ticks_next_update :: proc(t: ^testing.T) {
-	world := World{}
+	world := world_create(nil)
 	defer world_destroy(&world)
 	counter := register_type(&world, Counter, nil, counter_tick, nil)
 	spawner := register_type(&world, Spawner, nil, spawner_tick, nil)
 
-	// Spawner first, victim above it: the spawned entity reuses the victim's index,
+	// Spawner first, victim above it: the spawned actor reuses the victim's index,
 	// which the update loop still reaches, so it must wait for the next update.
 	_, spawner_state := spawn_typed(&world, spawner, Spawner{counter = counter})
 	victim, _ := spawn_typed(&world, counter, Counter{})
@@ -126,7 +126,7 @@ spawn_during_tick_ticks_next_update :: proc(t: ^testing.T) {
 
 @(test)
 find_state_returns_first_live_of_type :: proc(t: ^testing.T) {
-	world := World{}
+	world := world_create(nil)
 	defer world_destroy(&world)
 	counter := register_type(&world, Counter, nil, nil, nil)
 	other := register_type(&world, Killer, nil, nil, nil)
@@ -141,7 +141,7 @@ find_state_returns_first_live_of_type :: proc(t: ^testing.T) {
 	testing.expect(t, state != nil)
 	testing.expect(t, world_get_state(&world, first, Counter) == state)
 
-	world_destroy_entity(&world, first)
+	world_destroy_actor(&world, first)
 	found, _ = world_find_state(&world, counter, Counter)
 	testing.expect_value(t, found, second)
 	testing.expect_value(t, world_count(&world, counter), 1)

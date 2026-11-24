@@ -1,0 +1,7 @@
+{
+	"name": "Stencil",
+	"camera": {
+		"position": [0, 0, 6],
+		"look_at": [0, 0, 0]
+	}
+}

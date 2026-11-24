@@ -1,6 +1,6 @@
 // Scene registry: a Scene_Entry maps a name to its Odin constructor. Every scene
 // has a JSON definition src/scenes/<name>/scene.json (display name, start camera;
-// data scenes also list their entities). An entry without `make` is run entirely
+// data scenes also list their actors). An entry without `make` is run entirely
 // from its JSON by data_scene.
 package engine
 

@@ -4,6 +4,7 @@ package sea
 
 import "core:math"
 import "core:math/linalg"
+import engine "../../engine"
 import gfx "../../engine/gfx"
 import shader_parameters "../../shader_parameters"
 
@@ -13,8 +14,24 @@ Y :: -0.6
 CELLS :: 400 // 10-unit cells: coarser aliases the 32-unit waves the mesh displaces
 
 // Time the wave field advances on; the sea pipeline reads it through user_data.
+// pipeline and material are owned here: add creates them, destroy frees them.
 State :: struct {
-	time: f32,
+	time:     f32,
+	pipeline: gfx.Pipeline_Handle,
+	material: gfx.Material,
+}
+
+// Spawns the sea as a Raw_Draw actor. state must outlive the actor (it is the draw's material owner).
+add :: proc(world: ^engine.World, ctx: ^engine.Context, state: ^State) -> engine.Actor_Id {
+	state.pipeline = pipeline_create(&ctx.gfx, state)
+	state.material = gfx.material_make(state.pipeline)
+	return engine.spawn(world, engine.Raw_Draw{mesh = mesh_data(), material = &state.material})
+}
+
+// Call after world_destroy: the sea actor's Raw_Draw points at state.material.
+destroy :: proc(ctx: ^engine.Context, state: ^State) {
+	gfx.material_destroy(&state.material)
+	gfx.pipeline_destroy(&ctx.gfx, state.pipeline)
 }
 
 mesh_data :: proc() -> gfx.Mesh_Data {

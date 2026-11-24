@@ -1,8 +1,8 @@
-// Entity x component world on top of gfx. Spawn entities with components;
+// Actor x Props world on top of gfx. Spawn actors with Props (builtin or your own);
 // models, pipelines, skins, camera and post-process passes are resolved here.
 //
 // Recipe (examples/hello_engine/main.odin):
-//   App :: struct { hero: engine.Entity_Id }
+//   App :: struct { hero: engine.Actor_Id }
 //   main :: proc() { app: App; engine.run_app(&app, start, update, title = "app") }
 //   start :: proc(app: ^App, world: ^engine.World) {
 //       engine.spawn(world,
@@ -13,17 +13,33 @@
 //           engine.Animator{clip = "clip_0"})
 //   }
 //   update :: proc(app: ^App, world: ^engine.World, dt: f32) {
-//       // edit any Transform here: engine.entity_get_component(world, app.hero, engine.Transform)
+//       // edit any Transform here: engine.actor_props(world, app.hero, engine.Transform)
 //   }
 //
-// Per-entity logic (registry): a state struct plus create/tick/destroy procs.
-//   Ship :: struct { target: engine.Entity_Type }
-//   ship_create :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Ship) { /* entity_add_component */ }
-//   ship_tick :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Ship, dt: f32) { /* ... */ }
+// Custom Prop: any plain struct, registered once per World. Hooks are optional:
+// added runs after the Prop is stored (spawn: after all Props of the spawn are
+// stored), removed runs before it is replaced or freed.
+//   Hit_Box :: struct { hp: int }
+//   hit_boxes: int // counted by the hooks below
+//   hit_box_added :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Hit_Box) { hit_boxes += 1 }
+//   hit_box_removed :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Hit_Box) { hit_boxes -= 1 }
+//   // start:  engine.register_props(world, Hit_Box, hit_box_added, hit_box_removed)
+//   // spawn:  engine.spawn(world, Hit_Box{hp = 3}, engine.Transform{position = {0, 1, 0}})
+//   // read:   engine.actor_props(world, id, Hit_Box).hp
+//   // remove: engine.actor_remove_props(world, id, Hit_Box)
+//
+// Per-actor logic (registry): a state struct plus create/tick/destroy procs.
+//   Ship :: struct { target: engine.Actor_Type }
+//   ship_create :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Ship) { /* actor_add_props */ }
+//   ship_tick :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Ship, dt: f32) { /* ... */ }
 //   // start:  ship := engine.register_type(world, Ship, ship_create, ship_tick, nil)
 //   // spawn:  engine.spawn_typed(world, ship, Ship{target = player_type})
 // Ticks run in slot order (spawn order, reused slots included), once per world_update.
-// Entities spawned during world_update first tick on the next one.
+// Actors spawned during world_update first tick on the next one.
+// Lua behaviour: Script{path = "scripts/x.lua"} runs the module's create and destroy
+// around its Prop's lifetime, and tick / fixed_tick in world_update / world_fixed_update.
+// A runtime error faults that actor's script only (logged once). script_call calls a
+// named Lua function from Odin.
 package engine
 
 import "core:log"
@@ -36,23 +52,25 @@ import "core:strings"
 import gfx "gfx"
 import "jobs"
 import particles "particles"
+import phys "physics"
 
 Vec3 :: gfx.Vec3
 
-// Generation 0 is never a live slot, so the zero Entity_Id is always invalid.
-Entity_Id :: struct {
+// Generation 0 is never a live slot, so the zero Actor_Id is always invalid.
+Actor_Id :: struct {
 	index, generation: u32,
 }
 
 // Handle from register_type. Zero is invalid; handles are 1-based indices into World.types.
-Entity_Type :: distinct u32
+Actor_Type :: distinct u32
 
 // Procs are stored type-erased. The state is a heap block owned by the slot.
-Entity_Type_Info :: struct {
+Actor_Type_Info :: struct {
 	state_size, state_align: int,
-	create:                  proc(world: ^World, id: Entity_Id, state: rawptr),
-	tick:                    proc(world: ^World, id: Entity_Id, state: rawptr, dt: f32),
-	destroy:                 proc(world: ^World, id: Entity_Id, state: rawptr),
+	create:                  proc(world: ^World, id: Actor_Id, state: rawptr),
+	tick:                    proc(world: ^World, id: Actor_Id, state: rawptr, dt: f32),
+	fixed_tick:              proc(world: ^World, id: Actor_Id, state: rawptr, dt: f32),
+	destroy:                 proc(world: ^World, id: Actor_Id, state: rawptr),
 }
 
 Transform :: struct {
@@ -61,7 +79,7 @@ Transform :: struct {
 	scale:    Vec3,
 }
 
-// path is borrowed: the string must outlive the entity.
+// path is borrowed: the string must outlive the actor.
 Model :: struct {
 	path: string,
 }
@@ -77,7 +95,7 @@ Bloom :: struct {
 	radius:               i32,
 }
 
-// The first live entity with a Camera drives the renderer camera. Its position
+// The first live actor with a Camera drives the renderer camera. Its position
 // comes from its Transform; look_at (a world point) overrides the Transform rotation.
 // fov_y 0 => gfx.CAMERA_FOV_Y. bloom and blur enable those post effects for the
 // frame; blur is a radius in texels, 0 => 4.
@@ -86,6 +104,24 @@ Camera :: struct {
 	look_at: Maybe(Vec3),
 	bloom:   Maybe(Bloom),
 	blur:    Maybe(i32),
+}
+
+// The first live actor with an Environment drives the renderer on every world_update.
+// skybox: equirectangular panorama path, "" = none; borrowed, the World keeps its own copy.
+// fog nil = off; shadows nil = on; sun_direction nil = gfx.DEFAULT_LIGHT_DIRECTION.
+// uncapped switches the present mode to IMMEDIATE (tearing allowed).
+Environment :: struct {
+	skybox:        string,
+	fog:           Maybe(Fog),
+	shadows:       Maybe(bool),
+	sun_direction: Maybe(Vec3),
+	uncapped:      bool,
+}
+
+// color is sRGB. Fog starts at 60% of distance and is full at distance.
+Fog :: struct {
+	color:    [3]f32,
+	distance: f32,
 }
 
 // A textured quad drawn by the World's 2D batch at its Transform (position.xy in
@@ -109,7 +145,14 @@ Sprite_Anim :: struct {
 	time:        f32,
 }
 
-// The first live entity with a Camera_2D drives the 2D view; its position comes
+// Custom-shader escape hatch. The mesh is uploaded when the Prop is added, so the
+// vertex slices need not outlive it; material is borrowed.
+Raw_Draw :: struct {
+	mesh:     gfx.Mesh_Data,
+	material: ^gfx.Material,
+}
+
+// The first live actor with a Camera_2D drives the 2D view; its position comes
 // from Transform.position.xy (world px).
 Camera_2D :: struct {
 	zoom:          f32, // 0 = 1
@@ -117,95 +160,176 @@ Camera_2D :: struct {
 	integer_scale: bool,
 }
 
-// Plain data: game code reads and writes current through entity_get_component.
+// Plain data: game code reads and writes current through actor_props.
 Health :: struct {
 	current, max: f32,
 }
 
-// Entity name: key for world_find_by_name and hot reload. The world clones value on set.
+// Box collider half extents, relative to the actor's position.
+Box :: struct {
+	half: Vec3,
+}
+
+Sphere :: struct {
+	radius: f32,
+}
+
+Collider_Shape :: union {
+	Box,
+	Sphere,
+}
+
+// Dynamic bodies move their actor; Static bodies stay where the Transform put them. Zero = Dynamic.
+Body_Kind :: enum {
+	Dynamic,
+	Static,
+}
+
+// Physics body at the actor's Transform position, owned by the World. density 0 => 1.
+Collider :: struct {
+	shape:   Collider_Shape,
+	body:    Body_Kind,
+	density: f32,
+}
+
+// Actor name: key for world_find_by_name and hot reload. The world clones value on set.
 Name :: struct {
 	value: string,
 }
 
-// Emitter spawned at the entity Transform position; needs a World with a Device.
+// Emitter spawned at the actor Transform position; needs a World with a Device.
 Particle_Emitter :: particles.Emitter_Desc
 
-Component :: union {
-	Transform,
-	Model,
-	Animator,
-	Camera,
-	Camera_2D,
-	Sprite,
-	Sprite_Anim,
-	Health,
-	Name,
-	Particle_Emitter,
+// Type-erased hooks of one Prop type (see register_props).
+Prop_Info :: struct {
+	size, align: int,
+	added:       proc(world: ^World, id: Actor_Id, data: rawptr), // after the Prop is stored
+	removed:     proc(world: ^World, id: Actor_Id, data: rawptr), // before it is replaced or freed
+}
+
+// One Prop of an actor: heap block, stable until the Prop is removed.
+Prop_Block :: struct {
+	type: typeid,
+	data: rawptr,
 }
 
 World :: struct {
-	gfx_ctx:  ^gfx.Device, // nil is fine for worlds that only hold Transforms (tests)
-	jobs:     ^jobs.Pool, // borrowed from the renderer; nil = serial
-	slots:    [dynamic]Slot,
-	free:     [dynamic]u32,
-	types:    [dynamic]Entity_Type_Info,
-	assets:   Assets,
-	updating: bool, // true while world_update ticks; spawns then wait one frame
-	// Effects are heap-allocated on first use: render passes point at them.
-	bloom:    ^gfx.Bloom,
-	blur:     ^gfx.Blur,
+	gfx_ctx:   ^gfx.Device, // nil is fine for worlds that only hold Transforms (tests)
+	jobs:      ^jobs.Pool, // borrowed from the renderer; nil = serial
+	props:     map[typeid]Prop_Info, // registered Prop types; see register_props
+	slots:     [dynamic]Slot,
+	free:      [dynamic]u32,
+	types:     [dynamic]Actor_Type_Info,
+	assets:    Assets,
+	updating:  bool, // true while world_update ticks; spawns then wait one frame
+	bloom:     ^gfx.Bloom,
+	blur:      ^gfx.Blur,
 	particles: ^particles.System, // lazy like bloom/blur: created on the first Particle_Emitter
-	// 2D batch and view: the batch is created on the first frame with a Camera_2D
-	// and its render pass keeps its address, so the World must not move after that.
 	batch:     Maybe(gfx.Batch),
 	camera_2d: gfx.Camera2D,
+	gravity:   Vec3, // read when the physics world is created on the first Collider
+	physics:   Maybe(phys.World), // lazy like particles: created on the first Collider
+	texts:     [dynamic]Hud_Text, // queued by world_text; world_render draws and clears them
+	hud:       Maybe(Hud), // lazy like batch: created on the first world_text
+	sky:       Maybe(gfx.Skybox), // lazy: follows Environment.skybox
+	sky_path:  string, // owned copy of the path sky was built from
+	uncapped:  bool, // IMMEDIATE present mode, applied by Environment
+	scripts:   ^Script_Host, // lazy like particles: created on the first Script
 }
+
+// Font and batch of world_text; created on the first text.
+Hud :: struct {
+	batch: gfx.Batch,
+	font:  gfx.Font,
+}
+
+// Queued by world_text. position in window px, y down; color is linear rgba.
+Hud_Text :: struct {
+	text:     string,
+	position: [2]f32,
+	color:    [4]f32,
+}
+
+HUD_FONT_PATH :: "static/fonts/andale-mono.ttf"
 
 Slot :: struct {
 	generation: u32,
 	alive:      bool,
 	born:       bool, // spawned during the current world_update: skip its tick
-	components: [dynamic]Component,
+	props:      [dynamic]Prop_Block,
 	draw:       gfx.Draw,
+	owned_mesh: ^gfx.Mesh, // Raw_Draw's mesh; freed when the Prop is removed
 	playback:   Maybe(gfx.Playback), // skinned Models only
-	type:       Entity_Type, // 0 when the entity has no registered type
+	type:       Actor_Type, // 0 when the actor has no registered type
 	state:      rawptr,
-	emitter:    Maybe(particles.Emitter_Handle), // this entity's emitter; nil when none
+	emitter:    Maybe(particles.Emitter_Handle), // this actor's emitter; nil when none
+	body:       Maybe(phys.Tracked), // this actor's Collider body; nil when none
 }
 
-// Use world_create; a zero World has no asset cache.
-world_create :: proc(gfx_ctx: ^gfx.Device) -> World {
-	return World{gfx_ctx = gfx_ctx, jobs = gfx_ctx.renderer.jobs if gfx_ctx != nil else nil, assets = {models = make(map[string]^Model_Asset)}}
+// Use world_create; a zero World has no Prop registry or asset cache.
+world_create :: proc(gfx_ctx: ^gfx.Device, gravity := Vec3{0, -10, 0}) -> World {
+	world := World{gfx_ctx = gfx_ctx, jobs = gfx_ctx.renderer.jobs if gfx_ctx != nil else nil, props = make(map[typeid]Prop_Info), assets = {models = make(map[string]^Model_Asset)}, gravity = gravity}
+	register_props(&world, Transform, transform_added)
+	register_props(&world, Name, name_added, name_removed)
+	register_props(&world, Model, model_added, model_removed)
+	register_props(&world, Animator, animator_added)
+	register_props(&world, Particle_Emitter, emitter_added, emitter_removed)
+	register_props(&world, Camera)
+	register_props(&world, Camera_2D)
+	register_props(&world, Sprite)
+	register_props(&world, Sprite_Anim)
+	register_props(&world, Health)
+	register_props(&world, Collider, collider_added, collider_removed)
+	register_props(&world, Environment)
+	register_props(&world, Raw_Draw, raw_draw_added, raw_draw_removed)
+	register_props(&world, Script, script_added, script_removed)
+	return world
 }
 
-// Registers a per-entity state type. create runs after spawn, tick once per
-// world_update, destroy before the entity's components are freed. Any proc may be nil.
+// Registers a per-actor state type. create runs after spawn, tick once per
+// world_update, destroy before the actor's Props are freed. fixed_tick runs once per
+// world_fixed_update and never from world_update. Any proc may be nil.
 register_type :: proc(
 	world: ^World,
 	$T: typeid,
-	create: proc(world: ^World, id: Entity_Id, self: ^T),
-	tick: proc(world: ^World, id: Entity_Id, self: ^T, dt: f32),
-	destroy: proc(world: ^World, id: Entity_Id, self: ^T),
-) -> Entity_Type {
-	info := Entity_Type_Info{state_size = size_of(T), state_align = align_of(T)}
+	create: proc(world: ^World, id: Actor_Id, self: ^T),
+	tick: proc(world: ^World, id: Actor_Id, self: ^T, dt: f32),
+	destroy: proc(world: ^World, id: Actor_Id, self: ^T),
+	fixed_tick: proc(world: ^World, id: Actor_Id, self: ^T, dt: f32) = nil,
+) -> Actor_Type {
+	info := Actor_Type_Info{state_size = size_of(T), state_align = align_of(T)}
 	// Same ABI trick as run: only the pointer parameter type differs.
-	if create != nil do info.create = transmute(proc(^World, Entity_Id, rawptr))create
-	if tick != nil do info.tick = transmute(proc(^World, Entity_Id, rawptr, f32))tick
-	if destroy != nil do info.destroy = transmute(proc(^World, Entity_Id, rawptr))destroy
+	if create != nil do info.create = transmute(proc(^World, Actor_Id, rawptr))create
+	if tick != nil do info.tick = transmute(proc(^World, Actor_Id, rawptr, f32))tick
+	if fixed_tick != nil do info.fixed_tick = transmute(proc(^World, Actor_Id, rawptr, f32))fixed_tick
+	if destroy != nil do info.destroy = transmute(proc(^World, Actor_Id, rawptr))destroy
 	append(&world.types, info)
-	return Entity_Type(len(world.types))
+	return Actor_Type(len(world.types))
 }
 
-// Copies init into a new state block, spawns the components, then runs create.
-// The returned pointer is stable until the entity is destroyed; if create destroys
-// the entity, the pointer dangles. Components of one type replace the existing one.
-// Every entity gets a Transform (a default one when none is given).
-spawn_typed :: proc(world: ^World, type: Entity_Type, init: $T, components: ..Component) -> (Entity_Id, ^T) {
-	info := entity_type_info(world, type, T)
+// Registers a Prop type for this World. spawn, actor_add_props and hot reload accept
+// only registered types; world_create registers the builtins. added/removed may be nil.
+register_props :: proc(
+	world: ^World,
+	$T: typeid,
+	added: proc(world: ^World, id: Actor_Id, self: ^T) = nil,
+	removed: proc(world: ^World, id: Actor_Id, self: ^T) = nil,
+) {
+	info := Prop_Info{size = size_of(T), align = align_of(T)}
+	// Same ABI trick as register_type: only the pointer parameter type differs.
+	if added != nil do info.added = transmute(proc(^World, Actor_Id, rawptr))added
+	if removed != nil do info.removed = transmute(proc(^World, Actor_Id, rawptr))removed
+	world.props[typeid_of(T)] = info
+}
+
+// Copies init into a new state block, spawns the Props, then runs create.
+// Props of one type replace the earlier one; Transform is always present.
+spawn_typed :: proc(world: ^World, type: Actor_Type, init: $T, props: ..any) -> (Actor_Id, ^T) {
+	info := actor_type_info(world, type, T)
 	state, err := mem.alloc(info.state_size, info.state_align)
-	assert(err == nil, "engine: out of memory for entity state")
+	assert(err == nil, "engine: out of memory for actor state")
 	(^T)(state)^ = init
-	id := spawn(world, ..components)
+	id := spawn(world, ..props)
 	slot := &world.slots[id.index]
 	slot.type = type
 	slot.state = state
@@ -213,155 +337,175 @@ spawn_typed :: proc(world: ^World, type: Entity_Type, init: $T, components: ..Co
 	return id, (^T)(state)
 }
 
-// Components of one type replace the existing one. Every entity gets a
-// Transform (a default one when none is given).
-spawn :: proc(world: ^World, components: ..Component) -> Entity_Id {
+// Props are plain values of registered types. Props of one type replace the
+// earlier one. Every actor gets a Transform (a default one when none is given).
+spawn :: proc(world: ^World, props: ..any) -> Actor_Id {
 	index := claim_slot(world)
 	slot := &world.slots[index]
-	for component in components do set_component(slot, component)
-	if slot_component(slot, Transform) == nil do set_component(slot, Transform{})
+	id := Actor_Id{index, slot.generation}
+	// Transform is stored first: the other added hooks read the normalized transform.
+	transform: any = Transform{}
+	for prop in props do if prop.id == typeid_of(Transform) do transform = prop
+	store_prop(world, id, transform, false)
+	for prop in props do if prop.id != typeid_of(Transform) do store_prop(world, id, prop, false)
+	for block in slot.props do run_added(world, id, block.type, block.data)
 	sync_transform(slot)
-	slot_resolve(world, slot)
-	return Entity_Id{index, slot.generation}
+	return id
 }
 
 // Spawns a 3D camera at position looking at look_at; fov_y 0 => gfx.CAMERA_FOV_Y.
 // For bloom or blur, spawn a Camera literal instead.
-spawn_camera :: proc(world: ^World, position: Vec3, look_at := Vec3{}, fov_y: f32 = 0) -> Entity_Id {
+spawn_camera :: proc(world: ^World, position: Vec3, look_at := Vec3{}, fov_y: f32 = 0) -> Actor_Id {
 	return spawn(world, Camera{fov_y = fov_y, look_at = look_at}, Transform{position = position})
 }
 
-world_valid :: proc(world: ^World, id: Entity_Id) -> bool {
+world_valid :: proc(world: ^World, id: Actor_Id) -> bool {
 	if int(id.index) >= len(world.slots) do return false
 	slot := &world.slots[id.index]
 	return slot.alive && slot.generation == id.generation
 }
 
-// Pointer into the component storage: valid until the next entity_add_component or spawn.
-entity_get_component :: proc(world: ^World, id: Entity_Id, $T: typeid) -> ^T {
+// Pointer to one of the actor's Props; stable until that Prop is removed.
+actor_props :: proc(world: ^World, id: Actor_Id, $T: typeid) -> ^T {
 	if !world_valid(world, id) do return nil
 	return slot_component(&world.slots[id.index], T)
 }
 
-// First live entity whose Name equals name. Returns the zero Entity_Id and false if none.
-world_find_by_name :: proc(world: ^World, name: string) -> (Entity_Id, bool) {
+// First live actor whose Name equals name. Returns the zero Actor_Id and false if none.
+world_find_by_name :: proc(world: ^World, name: string) -> (Actor_Id, bool) {
 	for &slot, index in world.slots {
 		if !slot.alive do continue
-		if component := slot_component(&slot, Name); component != nil && component.value == name {
-			return Entity_Id{u32(index), slot.generation}, true
+		if prop := slot_component(&slot, Name); prop != nil && prop.value == name {
+			return Actor_Id{u32(index), slot.generation}, true
 		}
 	}
 	return {}, false
 }
 
-// Live entities in slot order (temp allocator).
-world_entities :: proc(world: ^World) -> []Entity_Id {
-	list := make([dynamic]Entity_Id, context.temp_allocator)
-	for &slot, index in world.slots do if slot.alive do append(&list, Entity_Id{u32(index), slot.generation})
+// Live actors in slot order (temp allocator).
+world_actors :: proc(world: ^World) -> []Actor_Id {
+	list := make([dynamic]Actor_Id, context.temp_allocator)
+	for &slot, index in world.slots do if slot.alive do append(&list, Actor_Id{u32(index), slot.generation})
 	return list[:]
 }
 
-// State of an entity spawned with spawn_typed. Nil for invalid ids.
-world_get_state :: proc(world: ^World, id: Entity_Id, $T: typeid) -> ^T {
+// State of an actor spawned with spawn_typed. Nil for invalid ids.
+world_get_state :: proc(world: ^World, id: Actor_Id, $T: typeid) -> ^T {
 	if !world_valid(world, id) do return nil
 	slot := &world.slots[id.index]
 	if _, ok := slot_type(world, slot); !ok do return nil
-	_ = entity_type_info(world, slot.type, T)
+	_ = actor_type_info(world, slot.type, T)
 	return (^T)(slot.state)
 }
 
-// First live entity of type, in slot order. Returns the zero Entity_Id and nil if none.
-world_find_state :: proc(world: ^World, type: Entity_Type, $T: typeid) -> (Entity_Id, ^T) {
-	_ = entity_type_info(world, type, T)
+// First live actor of type, in slot order. Returns the zero Actor_Id and nil if none.
+world_find_state :: proc(world: ^World, type: Actor_Type, $T: typeid) -> (Actor_Id, ^T) {
+	_ = actor_type_info(world, type, T)
 	for &slot, index in world.slots {
-		if slot.alive && slot.type == type do return Entity_Id{u32(index), slot.generation}, (^T)(slot.state)
+		if slot.alive && slot.type == type do return Actor_Id{u32(index), slot.generation}, (^T)(slot.state)
 	}
 	return {}, nil
 }
 
-// Live entities of type.
-world_count :: proc(world: ^World, type: Entity_Type) -> int {
+// Live actors of type.
+world_count :: proc(world: ^World, type: Actor_Type) -> int {
 	count := 0
 	for &slot in world.slots do if slot.alive && slot.type == type do count += 1
 	return count
 }
 
-entity_add_component :: proc(world: ^World, id: Entity_Id, component: Component) {
-	assert(world_valid(world, id), "engine: entity_add_component on invalid entity")
-	slot := &world.slots[id.index]
-	// Replacing an emitter: drop the old one; slot_resolve builds the new one.
-	if _, ok := component.(Particle_Emitter); ok do remove_emitter(world, slot)
-	set_component(slot, component)
-	sync_transform(slot)
-	slot_resolve(world, slot)
+// Adds a Prop, replacing the actor's Prop of the same type. The old Prop's removed
+// hook runs first; the new one's added hook runs after the store.
+actor_add_props :: proc(world: ^World, id: Actor_Id, prop: any) {
+	assert(world_valid(world, id), "engine: actor_add_props on invalid actor")
+	data := store_prop(world, id, prop, true)
+	run_added(world, id, prop.id, data)
+	sync_transform(&world.slots[id.index])
 }
 
-// Removes a component of type T; Transform cannot be removed. Removing Model drops its renderable.
-entity_remove_component :: proc(world: ^World, id: Entity_Id, $T: typeid) {
+// Removes the actor's Prop of type T; Transform cannot be removed. Removed hook runs first.
+actor_remove_props :: proc(world: ^World, id: Actor_Id, $T: typeid) {
 	assert(T != Transform, "engine: Transform cannot be removed")
 	if !world_valid(world, id) do return
 	slot := &world.slots[id.index]
-	for component, index in slot.components {
-		if _, ok := component.(T); ok {
-			free_component(component)
-			ordered_remove(&slot.components, index)
-			break
-		}
+	for block, index in slot.props {
+		if block.type != typeid_of(T) do continue
+		run_removed(world, id, block.type, block.data)
+		free(block.data)
+		ordered_remove(&slot.props, index)
+		return
 	}
-	if T == Model do remove_renderable(slot)
-	if T == Particle_Emitter do remove_emitter(world, slot)
-	sync_transform(slot)
-	slot_resolve(world, slot)
 }
 
-// Transform of a live entity, nil if the id is invalid. Every entity has one from spawn.
-entity_transform :: proc(world: ^World, id: Entity_Id) -> ^Transform {
-	return entity_get_component(world, id, Transform)
+// Transform of a live actor, nil if the id is invalid. Every actor has one from spawn.
+actor_transform :: proc(world: ^World, id: Actor_Id) -> ^Transform {
+	return actor_props(world, id, Transform)
 }
 
-// Replaces the entity's Transform. Zero rotation or scale mean defaults, as in spawn.
-entity_set_transform :: proc(world: ^World, id: Entity_Id, position := Vec3{}, rotation := linalg.QUATERNIONF32_IDENTITY, scale := Vec3{1, 1, 1}) {
-	entity_add_component(world, id, Transform{position = position, rotation = rotation, scale = scale})
+// Replaces the actor's Transform. Zero rotation or scale mean defaults, as in spawn.
+actor_set_transform :: proc(world: ^World, id: Actor_Id, position := Vec3{}, rotation := linalg.QUATERNIONF32_IDENTITY, scale := Vec3{1, 1, 1}) {
+	actor_add_props(world, id, Transform{position = position, rotation = rotation, scale = scale})
 }
 
-// Runs the entity's destroy proc while its components are still alive, then frees
-// the state and components. No-op for invalid ids, so a stale id can be destroyed
-// twice safely. A destroy proc must not destroy its own id.
-world_destroy_entity :: proc(world: ^World, id: Entity_Id) {
+// The actor's Particle_Emitter, nil when it has none. Mutate direction or burst through it.
+actor_emitter :: proc(world: ^World, id: Actor_Id) -> ^particles.Emitter {
+	if !world_valid(world, id) do return nil
+	handle, ok := world.slots[id.index].emitter.?
+	if !ok || world.particles == nil do return nil
+	return particles.emitter_get(world.particles, handle)
+}
+
+// Runs the destroy proc while Props are still alive, then the removed hooks and frees.
+// No-op for invalid ids, so a stale id can be destroyed twice safely.
+world_destroy_actor :: proc(world: ^World, id: Actor_Id) {
 	if !world_valid(world, id) do return
 	if info, ok := slot_type(world, &world.slots[id.index]); ok && info.destroy != nil {
 		info.destroy(world, id, world.slots[id.index].state)
-		// The destroy proc may have destroyed other entities, or this one.
+		// The destroy proc may have destroyed other actors, or this one.
 		if !world_valid(world, id) do return
 	}
-	remove_emitter(world, &world.slots[id.index])
-	destroy_slot(&world.slots[id.index])
+	destroy_slot(world, id)
 	append(&world.free, id.index)
 }
 
-// Destroys every live entity of type (their destroy procs run).
-world_destroy_type :: proc(world: ^World, type: Entity_Type) {
+// Destroys every live actor of type (their destroy procs run).
+world_destroy_type :: proc(world: ^World, type: Actor_Type) {
 	for index := 0; index < len(world.slots); index += 1 {
 		slot := world.slots[index]
-		if slot.alive && slot.type == type do world_destroy_entity(world, Entity_Id{u32(index), slot.generation})
+		if slot.alive && slot.type == type do world_destroy_actor(world, Actor_Id{u32(index), slot.generation})
 	}
 }
 
-// Frees every entity, cached asset and effect. Clears the Post passes this world
-// may have set on the renderer. Compute pipelines are freed with the Device.
+// Frees every actor, cached asset and effect. Clears the Post passes, fog, sun and
+// present mode this world may have set on the renderer. Compute pipelines are freed with the Device.
 world_destroy :: proc(world: ^World) {
 	if world.gfx_ctx != nil {
 		if batch, ok := &world.batch.?; ok do gfx.batch_destroy(world.gfx_ctx, batch)
+		if hud, ok := &world.hud.?; ok {
+			gfx.batch_destroy(world.gfx_ctx, &hud.batch)
+			gfx.font_destroy(world.gfx_ctx, &hud.font)
+		}
+		if sky, ok := &world.sky.?; ok do gfx.skybox_destroy(world.gfx_ctx, sky)
 		gfx.renderer_clear_passes(&world.gfx_ctx.renderer, .Post)
 		world.gfx_ctx.renderer.clear_color = gfx.DEFAULT_CLEAR_COLOR
+		world.gfx_ctx.renderer.fog = {}
+		world.gfx_ctx.renderer.shadow_enabled = true
+		gfx.renderer_update_light(&world.gfx_ctx.renderer, gfx.DEFAULT_LIGHT_DIRECTION)
+		if world.uncapped do gfx.set_present_mode(world.gfx_ctx, .VSYNC)
 	}
 	for index := 0; index < len(world.slots); index += 1 {
 		slot := world.slots[index]
-		if slot.alive do world_destroy_entity(world, Entity_Id{u32(index), slot.generation})
+		if slot.alive do world_destroy_actor(world, Actor_Id{u32(index), slot.generation})
 	}
+	script_unbind(world)
+	if world.scripts != nil do script_host_destroy(world.scripts)
+	if world_phys, ok := world.physics.?; ok do phys.destroy(world_phys)
 	delete(world.slots)
 	delete(world.free)
+	if len(world.sky_path) > 0 do delete(world.sky_path)
+	delete(world.texts)
 	delete(world.types)
+	delete(world.props)
 	assets_destroy(world)
 	free(world.bloom)
 	free(world.blur)
@@ -372,10 +516,11 @@ world_destroy :: proc(world: ^World) {
 	world^ = {}
 }
 
-// Ticks each registered entity once, then copies each Transform into its entity,
+// Ticks each registered actor once, then copies each Transform into its actor,
 // ticks animations, and applies the first Camera to the renderer. Ticks run in slot
 // order, so the player is ticked before enemies when it is spawned first.
 world_update :: proc(world: ^World, dt: f32) {
+	script_host_poll_reload(world)
 	world.updating = true
 	// Index loop: a tick may spawn (reallocating slots) or destroy, so re-read each step.
 	for index := 0; index < len(world.slots); index += 1 {
@@ -383,16 +528,29 @@ world_update :: proc(world: ^World, dt: f32) {
 		if !slot.alive || slot.born do continue
 		info, ok := slot_type(world, slot)
 		if !ok || info.tick == nil do continue
-		info.tick(world, Entity_Id{u32(index), slot.generation}, slot.state, dt)
+		info.tick(world, Actor_Id{u32(index), slot.generation}, slot.state, dt)
 	}
+	script_update(world, dt, .Tick)
 	world.updating = false
+	if world_phys, ok := world.physics.?; ok {
+		phys.step(world_phys, dt)
+		// Snapshot every body; Dynamic ones drive their Transform from the new pose.
+		for &slot in world.slots {
+			if body, ok := &slot.body.?; ok do phys.tracked_snapshot(body)
+			if body, ok := dynamic_body(&slot); ok {
+				transform := slot_component(&slot, Transform)
+				transform.position = body.curr.pos
+				transform.rotation = body.curr.rot
+			}
+		}
+	}
 	playbacks := make([dynamic]^gfx.Playback, 0, 0, context.temp_allocator)
 	for &slot in world.slots {
 		slot.born = false
 		if !slot.alive do continue
 		sync_transform(&slot)
 		if handle, ok := slot.emitter.?; ok {
-			// Emitter follows its entity's Transform.
+			// Emitter follows its actor's Transform.
 			if emitter := particles.emitter_get(world.particles, handle); emitter != nil do emitter.desc.position = slot_component(&slot, Transform).position
 		}
 		if playback, ok := &slot.playback.(gfx.Playback); ok do append(&playbacks, playback)
@@ -409,12 +567,42 @@ world_update :: proc(world: ^World, dt: f32) {
 		for p in tick.playbacks[first:last] do gfx.playback_tick(p, tick.dt)
 	}, 8)
 	if world.particles != nil do particles.system_update(world.particles, dt)
+	update_environment(world)
 	update_camera(world)
 	update_camera_2d(world)
+	script_gc_step(world)
 }
 
-world_render :: proc(world: ^World) {
+// Ticks each registered actor that has fixed_tick once, at the caller's fixed step.
+// Does not step physics or sync Transforms. A scene that sets fixed_tick = world_update
+// (the physics scene) must not also call world_fixed_update, or physics steps twice.
+world_fixed_update :: proc(world: ^World, dt: f32) {
+	world.updating = true
+	// Index loop: a fixed tick may spawn (reallocating slots) or destroy, so re-read each step.
+	for index := 0; index < len(world.slots); index += 1 {
+		slot := &world.slots[index]
+		if !slot.alive || slot.born do continue
+		info, ok := slot_type(world, slot)
+		if !ok || info.fixed_tick == nil do continue
+		info.fixed_tick(world, Actor_Id{u32(index), slot.generation}, slot.state, dt)
+	}
+	script_update(world, dt, .Fixed_Tick)
+	world.updating = false
+}
+
+// Writes each Dynamic body's pose, blended between its last two physics steps, into its Transform.
+world_render :: proc(world: ^World, blend := f32(1)) {
+	for &slot in world.slots {
+		body, ok := dynamic_body(&slot)
+		if !ok do continue
+		pos, rot := phys.tracked_blend(body^, blend)
+		transform := slot_component(&slot, Transform)
+		transform.position = pos
+		transform.rotation = rot
+		sync_transform(&slot)
+	}
 	if camera_2d_slot(world) != nil do world_draw_sprites(world) // before the frame: batch upload submits its own command buffer
+	world_draw_hud(world)
 	gfx.renderer_render_frame(&world.gfx_ctx.renderer, world_extract, world)
 }
 
@@ -425,6 +613,11 @@ world_extract :: proc(renderer: ^gfx.Renderer, user: rawptr) {
 	draws := make([dynamic]^gfx.Draw, 0, len(world.slots), context.temp_allocator)
 	for &slot in world.slots {
 		if slot.alive && slot.draw.mesh != nil do append(&draws, &slot.draw)
+	}
+	if sky, ok := &world.sky.?; ok {
+		draw := new(gfx.Draw, context.temp_allocator)
+		draw^ = gfx.skybox_draw(sky)
+		append(&draws, draw)
 	}
 	gfx.renderer_submit_draw_ptrs(renderer, &view, draws[:])
 }
@@ -489,6 +682,32 @@ sprite_push :: proc(batch: ^gfx.Batch, gfx_ctx: ^gfx.Device, slot: ^Slot, textur
 	gfx.batch_sprite(batch, texture, texture_size, transform.position.xy, size, src, color, origin, angle, sprite.flip_x, sprite.flip_y)
 }
 
+// Queues HUD text for this frame: position in window px, y down; color is sRGB.
+// world_render draws and clears the queue, so call it every frame the text shows.
+world_text :: proc(world: ^World, text: string, position: [2]f32, color := [4]f32{1, 1, 1, 1}) {
+	append(&world.texts, Hud_Text{text = strings.clone(text, context.temp_allocator), position = position, color = gfx.color_srgb_to_linear(color)})
+}
+
+// Draws the queued HUD text in window px. An empty batch clears last frame's draw.
+@(private = "file")
+world_draw_hud :: proc(world: ^World) {
+	gfx_ctx := world.gfx_ctx
+	hud, ok := &world.hud.?
+	if !ok {
+		if len(world.texts) == 0 do return
+		font, font_ok := gfx.font_create(gfx_ctx, HUD_FONT_PATH)
+		assert(font_ok, "engine: HUD font not found")
+		world.hud = Hud{batch = gfx.batch_create(gfx_ctx), font = font}
+		hud = &world.hud.?
+		gfx.batch_register(gfx_ctx, &hud.batch)
+	}
+	window := [2]f32{f32(gfx_ctx.window_size.x), f32(gfx_ctx.window_size.y)}
+	gfx.batch_begin(&hud.batch, gfx_ctx, gfx.Camera2D{position = window / 2})
+	for text in world.texts do gfx.batch_text(&hud.batch, &hud.font, text.text, text.position, text.color)
+	gfx.batch_end(&hud.batch, gfx_ctx)
+	clear(&world.texts)
+}
+
 @(private = "file")
 camera_2d_slot :: proc(world: ^World) -> ^Slot {
 	for &slot in world.slots do if slot.alive && slot_component(&slot, Camera_2D) != nil do return &slot
@@ -523,7 +742,7 @@ sprite_frame :: proc(anim: Sprite_Anim) -> i32 {
 	return i32(min(int(anim.last), int(anim.first) + step))
 }
 
-// Rotation about Z, for Transform.rotation of a 2D entity.
+// Rotation about Z, for Transform.rotation of a 2D actor.
 rotation_2d :: proc(radians: f32) -> linalg.Quaternionf32 {
 	return linalg.quaternion_angle_axis_f32(radians, {0, 0, 1})
 }
@@ -554,6 +773,53 @@ update_camera :: proc(world: ^World) {
 		set_effect_passes(world, camera)
 		return
 	}
+}
+
+// The first live Environment drives the renderer; nothing changes while none is live.
+@(private = "file")
+update_environment :: proc(world: ^World) {
+	for &slot in world.slots {
+		if !slot.alive do continue
+		env := slot_component(&slot, Environment)
+		if env == nil do continue
+		assert(world.gfx_ctx != nil, "engine: Environment needs a world with a Device")
+		apply_environment(world, env)
+		return
+	}
+}
+
+@(private = "file")
+apply_environment :: proc(world: ^World, env: ^Environment) {
+	gfx_ctx := world.gfx_ctx
+	if fog, ok := env.fog.?; ok {
+		rgb := gfx.color_srgb_to_linear({fog.color.x, fog.color.y, fog.color.z, 1})
+		gfx_ctx.renderer.fog = {rgb.x, rgb.y, rgb.z, fog.distance}
+	} else {
+		gfx_ctx.renderer.fog = {}
+	}
+	shadows, shadows_set := env.shadows.?
+	gfx_ctx.renderer.shadow_enabled = shadows if shadows_set else true
+	sun, sun_set := env.sun_direction.?
+	if !sun_set do sun = gfx.DEFAULT_LIGHT_DIRECTION
+	gfx.renderer_update_light(&gfx_ctx.renderer, sun)
+	if env.uncapped != world.uncapped {
+		world.uncapped = env.uncapped
+		gfx.set_present_mode(gfx_ctx, .IMMEDIATE if env.uncapped else .VSYNC)
+	}
+	update_sky(world, env.skybox)
+}
+
+// Rebuilds the skybox when its path changes; "" means no skybox.
+@(private = "file")
+update_sky :: proc(world: ^World, path: string) {
+	if path == world.sky_path do return
+	if sky, ok := &world.sky.?; ok do gfx.skybox_destroy(world.gfx_ctx, sky)
+	world.sky = nil
+	if len(world.sky_path) > 0 do delete(world.sky_path)
+	world.sky_path = ""
+	if path == "" do return
+	world.sky = gfx.skybox_create(world.gfx_ctx, path)
+	world.sky_path = strings.clone(path)
 }
 
 // Yaw and pitch of a view direction, in gfx.Camera's convention. A zero
@@ -598,15 +864,15 @@ set_effect_passes :: proc(world: ^World, camera: ^Camera) {
 }
 
 @(private = "file")
-entity_type_info :: proc(world: ^World, type: Entity_Type, $T: typeid) -> Entity_Type_Info {
-	assert(type != 0 && int(type) <= len(world.types), "engine: unknown Entity_Type")
+actor_type_info :: proc(world: ^World, type: Actor_Type, $T: typeid) -> Actor_Type_Info {
+	assert(type != 0 && int(type) <= len(world.types), "engine: unknown Actor_Type")
 	info := world.types[int(type) - 1]
 	assert(info.state_size == size_of(T), "engine: state type does not match register_type")
 	return info
 }
 
 @(private = "file")
-slot_type :: proc(world: ^World, slot: ^Slot) -> (info: Entity_Type_Info, ok: bool) {
+slot_type :: proc(world: ^World, slot: ^Slot) -> (info: Actor_Type_Info, ok: bool) {
 	if slot.type == 0 do return {}, false
 	return world.types[int(slot.type) - 1], true
 }
@@ -627,77 +893,173 @@ claim_slot :: proc(world: ^World) -> u32 {
 	return index
 }
 
-@(private = "file")
 slot_component :: proc(slot: ^Slot, $T: typeid) -> ^T {
-	for &component in slot.components {
-		if value, ok := &component.(T); ok do return value
-	}
+	for block in slot.props do if block.type == typeid_of(T) do return (^T)(block.data)
 	return nil
 }
 
+// Stores a copy of prop in the actor, replacing its Prop of the same type. With notify
+// the replaced Prop's removed hook runs first; spawn passes false (no added hook ran yet).
 @(private = "file")
-set_component :: proc(slot: ^Slot, component: Component) {
-	value := component
-	if transform, ok := &value.(Transform); ok do normalize_transform(transform)
-	// The world owns the name: clone so the caller may free its string.
-	if name, ok := &value.(Name); ok do name.value = strings.clone(name.value)
-	// A new Model needs a new renderable; the old one is dropped by slot_resolve.
-	if _, is_model := value.(Model); is_model do remove_renderable(slot)
-	kind := reflect.union_variant_typeid(value)
-	for &existing in slot.components {
-		if reflect.union_variant_typeid(existing) == kind {
-			free_component(existing)
-			existing = value
-			return
-		}
+store_prop :: proc(world: ^World, id: Actor_Id, prop: any, notify: bool) -> rawptr {
+	info, known := world.props[prop.id]
+	assert(known, "engine: props type not registered; call register_props")
+	assert(type_info_of(prop.id).size == info.size, "engine: props size does not match register_props")
+	slot := &world.slots[id.index]
+	for &block in slot.props {
+		if block.type != prop.id do continue
+		if notify do run_removed(world, id, block.type, block.data)
+		mem.copy(block.data, prop.data, info.size)
+		return block.data
 	}
-	append(&slot.components, value)
+	data, err := mem.alloc(info.size, info.align)
+	assert(err == nil, "engine: out of memory for prop")
+	mem.copy(data, prop.data, info.size)
+	append(&slot.props, Prop_Block{type = prop.id, data = data})
+	return data
 }
 
-// Frees what the world owns inside a component (the Name clone).
 @(private = "file")
-free_component :: proc(component: Component) {
-	if name, ok := component.(Name); ok do delete(name.value)
+run_added :: proc(world: ^World, id: Actor_Id, type: typeid, data: rawptr) {
+	if info := world.props[type]; info.added != nil do info.added(world, id, data)
 }
 
-// Zero fields mean "unset": a zero quaternion is not a rotation and a zero scale
-// would collapse the entity.
 @(private = "file")
-normalize_transform :: proc(transform: ^Transform) {
-	if transform.scale == {} do transform.scale = {1, 1, 1}
-	if transform.rotation == (linalg.Quaternionf32{}) do transform.rotation = linalg.QUATERNIONF32_IDENTITY
+run_removed :: proc(world: ^World, id: Actor_Id, type: typeid, data: rawptr) {
+	if info := world.props[type]; info.removed != nil do info.removed(world, id, data)
 }
+
 @(private = "file")
 sync_transform :: proc(slot: ^Slot) {
 	transform := slot_component(slot, Transform)
 	slot.draw.transform = gfx.transform_trs(transform.position, transform.rotation, transform.scale)
 }
 
-// Builds the draw for a Model and applies an Animator. Idempotent: run
-// after every change to the slot's components.
+// Builtin Prop hooks. The hook sees the stored copy, so changes to self stick.
 @(private = "file")
-slot_resolve :: proc(world: ^World, slot: ^Slot) {
-	if emitter := slot_component(slot, Particle_Emitter); emitter != nil && slot.emitter == nil {
-		assert(world.gfx_ctx != nil, "engine: Particle_Emitter needs a world with a Device")
-		// One system serves every emitter; created on the first one, like bloom/blur.
-		if world.particles == nil do world.particles = particles.system_create(&world.gfx_ctx.renderer)
-		desc := emitter^
-		desc.position = slot_component(slot, Transform).position
-		slot.emitter = particles.emitter_add(world.particles, desc)
-	}
-	if model := slot_component(slot, Model); model != nil && slot.draw.mesh == nil {
-		assert(world.gfx_ctx != nil, "engine: Model needs a world with a Device")
-		asset := asset_model(world, model.path)
-		slot.draw = gfx.draw_make(&asset.model.mesh, &asset.model.material)
-		slot.draw.cull = !asset.skinned
-		sync_transform(slot)
-		if asset.skinned {
-			playback := gfx.playback_create(&asset.model.skin)
-			slot.draw.pose = playback.pose
-			slot.playback = playback
-		}
-	}
+transform_added :: proc(world: ^World, id: Actor_Id, self: ^Transform) {
+	// Zero fields mean "unset": a zero quaternion is not a rotation, a zero scale collapses the actor.
+	if self.scale == {} do self.scale = {1, 1, 1}
+	if self.rotation == (linalg.Quaternionf32{}) do self.rotation = linalg.QUATERNIONF32_IDENTITY
+}
 
+@(private = "file")
+name_added :: proc(world: ^World, id: Actor_Id, self: ^Name) {
+	// The world owns the name: clone so the caller may free its string.
+	self.value = strings.clone(self.value)
+}
+
+@(private = "file")
+name_removed :: proc(world: ^World, id: Actor_Id, self: ^Name) {
+	delete(self.value)
+}
+
+@(private = "file")
+model_added :: proc(world: ^World, id: Actor_Id, self: ^Model) {
+	assert(world.gfx_ctx != nil, "engine: Model needs a world with a Device")
+	asset := asset_model(world, self.path)
+	slot := &world.slots[id.index]
+	slot.draw = gfx.draw_make(&asset.model.mesh, &asset.model.material)
+	slot.draw.cull = !asset.skinned
+	sync_transform(slot)
+	if asset.skinned {
+		playback := gfx.playback_create(&asset.model.skin)
+		slot.draw.pose = playback.pose
+		slot.playback = playback
+	}
+	apply_animator(slot)
+}
+
+@(private = "file")
+model_removed :: proc(world: ^World, id: Actor_Id, self: ^Model) {
+	remove_renderable(world, &world.slots[id.index])
+}
+
+@(private = "file")
+raw_draw_added :: proc(world: ^World, id: Actor_Id, self: ^Raw_Draw) {
+	assert(world.gfx_ctx != nil, "engine: Raw_Draw needs a world with a Device")
+	mesh := new(gfx.Mesh)
+	if len(self.mesh.indices) == 0 {
+		mesh^ = gfx.mesh_create_unindexed(world.gfx_ctx, self.mesh.vertices)
+	} else {
+		mesh^ = gfx.mesh_create(world.gfx_ctx, self.mesh.vertices, self.mesh.indices)
+	}
+	slot := &world.slots[id.index]
+	slot.owned_mesh = mesh
+	slot.draw = gfx.draw_make(mesh, self.material)
+	sync_transform(slot)
+}
+
+@(private = "file")
+raw_draw_removed :: proc(world: ^World, id: Actor_Id, self: ^Raw_Draw) {
+	remove_renderable(world, &world.slots[id.index])
+}
+
+@(private = "file")
+animator_added :: proc(world: ^World, id: Actor_Id, self: ^Animator) {
+	apply_animator(&world.slots[id.index])
+}
+
+@(private = "file")
+emitter_added :: proc(world: ^World, id: Actor_Id, self: ^Particle_Emitter) {
+	assert(world.gfx_ctx != nil, "engine: Particle_Emitter needs a world with a Device")
+	// One system serves every emitter; created on the first one, like bloom/blur.
+	if world.particles == nil do world.particles = particles.system_create(&world.gfx_ctx.renderer)
+	slot := &world.slots[id.index]
+	desc := self^
+	desc.position = slot_component(slot, Transform).position
+	slot.emitter = particles.emitter_add(world.particles, desc)
+}
+
+@(private = "file")
+emitter_removed :: proc(world: ^World, id: Actor_Id, self: ^Particle_Emitter) {
+	remove_emitter(world, &world.slots[id.index])
+}
+
+// Dynamic Collider's body. Static bodies return false: the scene owns their Transform.
+@(private = "file")
+dynamic_body :: proc(slot: ^Slot) -> (^phys.Tracked, bool) {
+	collider := slot_component(slot, Collider)
+	if collider == nil || collider.body != .Dynamic do return nil, false
+	if body, ok := &slot.body.?; ok do return body, true
+	return nil, false
+}
+
+@(private = "file")
+collider_added :: proc(world: ^World, id: Actor_Id, self: ^Collider) {
+	if _, ok := world.physics.?; !ok do world.physics = phys.create(world.gravity)
+	world_phys := world.physics.?
+	slot := &world.slots[id.index]
+	// shortcut: the Transform rotation is ignored, bodies start unrotated; upgrade when a scene needs rotated bodies.
+	pos := slot_component(slot, Transform).position
+	density := self.density
+	if density == 0 do density = 1
+	tracked: phys.Tracked
+	switch shape in self.shape {
+	case Box:
+		switch self.body {
+		case .Static: tracked = phys.track(phys.body_static(world_phys, pos, shape.half))
+		case .Dynamic: tracked = phys.track(phys.body_box(world_phys, pos, shape.half, density))
+		}
+	case Sphere:
+		assert(self.body == .Dynamic, "engine: static Sphere Collider is not supported; use a Box")
+		tracked = phys.track(phys.body_sphere(world_phys, pos, shape.radius, density))
+	case nil:
+		assert(false, "engine: Collider needs a shape")
+	}
+	slot.body = tracked
+}
+
+@(private = "file")
+collider_removed :: proc(world: ^World, id: Actor_Id, self: ^Collider) {
+	slot := &world.slots[id.index]
+	if tracked, ok := slot.body.?; ok do phys.body_destroy(tracked.body)
+	slot.body = nil
+}
+
+// Plays the Animator on the slot's skinned Model; no-op until the Model is built.
+@(private = "file")
+apply_animator :: proc(slot: ^Slot) {
 	animator := slot_component(slot, Animator)
 	if animator == nil || slot.draw.mesh == nil do return
 	playback, has_skin := &slot.playback.(gfx.Playback)
@@ -706,8 +1068,8 @@ slot_resolve :: proc(world: ^World, slot: ^Slot) {
 		return
 	}
 	if !gfx.playback_play(playback, animator.clip) {
-		// Rest pose until a valid clip is named.
 		log.errorf("engine: clip %q not found", animator.clip)
+		// Rest pose until a valid clip is named.
 		playback.clip = -1
 		playback.time = 0
 		gfx.clip_sample(playback.skin, -1, 0, playback.pose)
@@ -715,9 +1077,14 @@ slot_resolve :: proc(world: ^World, slot: ^Slot) {
 }
 
 @(private = "file")
-remove_renderable :: proc(slot: ^Slot) {
+remove_renderable :: proc(world: ^World, slot: ^Slot) {
 	if playback, ok := &slot.playback.(gfx.Playback); ok do gfx.playback_destroy(playback)
 	slot.playback = nil
+	if slot.owned_mesh != nil {
+		gfx.mesh_destroy(world.gfx_ctx, slot.owned_mesh)
+		free(slot.owned_mesh)
+		slot.owned_mesh = nil
+	}
 	slot.draw = {}
 }
 
@@ -727,12 +1094,16 @@ remove_emitter :: proc(world: ^World, slot: ^Slot) {
 	slot.emitter = nil
 }
 
+// Runs each Prop's removed hook (last added first), then frees Props, state and slot.
 @(private = "file")
-destroy_slot :: proc(slot: ^Slot) {
-	remove_renderable(slot)
-	for component in slot.components do free_component(component)
-	delete(slot.components)
-	slot.components = nil
+destroy_slot :: proc(world: ^World, id: Actor_Id) {
+	slot := &world.slots[id.index]
+	#reverse for block in slot.props {
+		run_removed(world, id, block.type, block.data)
+		free(block.data)
+	}
+	delete(slot.props)
+	slot.props = nil
 	if slot.state != nil do free(slot.state)
 	slot.state = nil
 	slot.type = 0

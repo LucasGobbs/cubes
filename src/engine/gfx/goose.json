@@ -11,6 +11,12 @@
       "fragment": "pixelMain"
     },
     {
+      "name": "default_textured_pulled",
+      "source": "src/engine/gfx/shaders/textured_pulled.slang",
+      "vertex": "vertexMain",
+      "fragment": "pixelMain"
+    },
+    {
       "name": "default_unlit_color",
       "source": "src/engine/gfx/shaders/unlit_color.slang",
       "vertex": "vertexMain",

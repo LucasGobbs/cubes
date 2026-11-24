@@ -1,7 +1,7 @@
 // Skinned textured pipeline with Phong shading. Vertices are linear-blend
 // skinned in mesh-local space with the instance's palette, then placed by
 // the instance transform. Per instance, both buffers are indexed by
-// SV_InstanceID + first_instance: instance_transforms[i] is the entity
+// SV_InstanceID + first_instance: instance_transforms[i] is the actor
 // transform and palettes[i * MAX_JOINTS + j] is joint j's skin matrix.
 // Fragment matches textured_instanced.slang.
 //

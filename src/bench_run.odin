@@ -25,6 +25,7 @@ Bench_Run :: struct {
 	extract_ms: [dynamic]f64,
 	shadow_ms:  [dynamic]f64,
 	flush_ms:   [dynamic]f64,
+	script_ms:  [dynamic]f64, // Lua tick + fixed + gc per frame; empty without a Lua host
 	instances:  int, // last frame
 }
 
@@ -34,6 +35,7 @@ Bench_Stat :: struct {
 
 // Called once per tick after the scene ticked, so renderer counters hold this frame's values.
 bench_record :: proc(bench: ^Bench_Run, gfx_ctx: ^gfx.Device, delta_time: f32) {
+	script_ms, has_script := engine.script_take_frame_ms() // read every frame so warmup time is dropped
 	if delta_time <= 0 do return // first frame has no previous timestamp
 	renderer := &gfx_ctx.renderer
 	bench.total += f64(delta_time)
@@ -46,6 +48,7 @@ bench_record :: proc(bench: ^Bench_Run, gfx_ctx: ^gfx.Device, delta_time: f32) {
 	append(&bench.flush_ms, time.duration_milliseconds(renderer.flush_time))
 	append(&bench.extract_ms, time.duration_milliseconds(renderer.extract_time))
 	append(&bench.shadow_ms, time.duration_milliseconds(renderer.shadow_time))
+	if has_script do append(&bench.script_ms, f64(script_ms))
 	bench.instances = renderer.instance_count
 }
 
@@ -123,6 +126,12 @@ bench_report :: proc(bench: ^Bench_Run, gfx_ctx: ^gfx.Device, scene_name: string
 	fmt.printf("  cpu flush    avg %.3f   p95 %.3f   max %.3f ms\n", flush.avg, flush.p95, flush.max)
 	fmt.printf("  cpu extract  avg %.3f   p95 %.3f   max %.3f ms\n", extract.avg, extract.p95, extract.max)
 	fmt.printf("  cpu shadow   avg %.3f   p95 %.3f   max %.3f ms\n", shadow.avg, shadow.p95, shadow.max)
+	if len(bench.script_ms) > 0 {
+		script := bench_stat(bench.script_ms[:])
+		fmt.printf("  script ms    avg %.3f   p95 %.3f   max %.3f\n", script.avg, script.p95, script.max)
+	} else {
+		fmt.printf("  script ms    n/a (no Lua host; frame ms is the total)\n")
+	}
 }
 
 // Config.after_frame: records one frame and stops the run once the duration is met.

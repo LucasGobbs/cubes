@@ -64,7 +64,7 @@ uploader_upload_buffer :: proc(uploader: ^Uploader, handle: Buffer_Handle) {
 // mem.copy(texture_transfer_mem, pixels, int(pixels_byte_size))
 
 
-uploader_upload_texture :: proc(uploader: ^Uploader, handle: Texture_Handle) {
+uploader_upload_texture :: proc(uploader: ^Uploader, handle: Texture_Handle, layer := u32(0)) {
 	destination := texture_get(uploader.gfx_ctx, handle)
 	data := destination._temporary_raw_data
 	staging := uploader_acquire_staging(uploader, u32(len(data)))
@@ -73,12 +73,15 @@ uploader_upload_texture :: proc(uploader: ^Uploader, handle: Texture_Handle) {
 	mem.copy(mapped, raw_data(data), len(data))
 	sdl.UnmapGPUTransferBuffer(uploader.gfx_ctx.gpu, staging.buffer)
 
-	sdl.UploadToGPUTexture(
-		uploader.pass,
-		{transfer_buffer = staging.buffer},
-		{texture = destination.handle, w = destination.width, h = destination.height, d = 1},
-		false,
-	)
+	assert(layer < destination.layer_count_or_depth)
+	region := sdl.GPUTextureRegion{texture = destination.handle, w = destination.width, h = destination.height, d = 1}
+	// 3D: layer selects the depth slice (z); array types: layer selects the array layer.
+	if destination.type == .D3 {
+		region.z = layer
+	} else {
+		region.layer = layer
+	}
+	sdl.UploadToGPUTexture(uploader.pass, {transfer_buffer = staging.buffer}, region, false)
 
 	if destination.mip_levels > 1 do append(&uploader.mip_targets, destination.handle)
 

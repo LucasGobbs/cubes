@@ -1,12 +1,11 @@
 // Game: a CesiumMan player steered on the XZ plane with WASD, chased by ship
 // enemies that spawn on a ring around it. All game state lives in engine.World;
-// the scene keeps only the entity types it registered and reads input in fixed_tick.
+// the scene keeps only the actor types it registered and reads input in fixed_tick.
 // Idle for 3 s and the player circles on its own, so a screenshot shows hits without
-// input. Per-entity logic lives in game_player.odin and game_enemy.odin.
+// input. Per-actor logic lives in game_player.odin and game_enemy.odin.
 package game
 
 import engine "../../engine"
-import gfx "../../engine/gfx"
 import input "../../engine/input"
 import "core:log"
 import "core:math"
@@ -17,8 +16,8 @@ GAME_SPAWN_INTERVAL :: 2 // seconds
 
 Game_State :: struct {
 	world:       engine.World,
-	player_type: engine.Entity_Type,
-	enemy_type:  engine.Entity_Type,
+	player_type: engine.Actor_Type,
+	enemy_type:  engine.Actor_Type,
 	move:        input.Axis_2D_Action,
 	spawn_timer: f32,
 	log_timer:   f32,
@@ -83,7 +82,7 @@ game_fixed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f
 	state.log_timer += delta_time
 	if state.log_timer >= 1 {
 		state.log_timer = 0
-		health := engine.entity_get_component(&state.world, player_id, engine.Health)
+		health := engine.actor_props(&state.world, player_id, engine.Health)
 		log.infof(
 			"game: health %.0f/%.0f, enemies %d",
 			health.current,
@@ -102,7 +101,7 @@ game_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 }
 
 // Turns the model's +Z toward the XZ direction (same convention as the benchmark dragons).
-game_facing :: proc(direction: gfx.Vec3) -> linalg.Quaternionf32 {
+game_facing :: proc(direction: engine.Vec3) -> linalg.Quaternionf32 {
 	return linalg.quaternion_from_euler_angles_f32(
 		0,
 		math.atan2(direction.x, direction.z),

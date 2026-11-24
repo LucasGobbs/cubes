@@ -37,7 +37,7 @@ Config :: struct {
 @(private) host_scene: Scene
 @(private) fixed_accumulator: f32
 @(private) switch_count: int
-@(private) quit_action, msaa_action: input.Button_Action
+@(private) quit_action, msaa_action, reload_action: input.Button_Action
 @(private) shift_action, pop_action: input.Button_Action // dev: Shift+number pushes, Backspace pops
 @(private) preload: ^Load_Context // preload_scene: the single in-flight/finished preload
 @(private) dropped_loads: [dynamic]^Load_Context // replaced preloads finishing in the background
@@ -72,6 +72,7 @@ host_run :: proc(config: Config, scene: Scene) {
 
 	quit_action = input.button(&ctx.input, "app.quit", .ESCAPE, "Quit")
 	msaa_action = input.button(&ctx.input, "app.msaa", .M, "Toggle MSAA")
+	reload_action = input.button(&ctx.input, "app.reload_scripts", .F5, "Reload Lua scripts")
 	shift_action = input.button(&ctx.input, "app.push_modifier", .LSHIFT, "Hold with a scene number to push it")
 	input.bind_key(&ctx.input, shift_action, .RSHIFT)
 	pop_action = input.button(&ctx.input, "app.pop", .BACKSPACE, "Pop scene")
@@ -139,6 +140,7 @@ host_tick :: proc(ctx: ^Context, delta_time: f32) {
 		on := gfx.renderer_set_msaa(renderer, !renderer.msaa_enabled)
 		log.infof("MSAA %s", on ? "4x" : (renderer.msaa_supported ? "off" : "unsupported"))
 	}
+	if input.pressed(&ctx.input, reload_action) do script_reload_all()
 	shift := input.down(&ctx.input, shift_action)
 	for index in 0 ..< switch_count {
 		if !input.pressed(&ctx.input, switch_actions[index]) do continue
@@ -286,7 +288,7 @@ run_app :: proc(
 	run := cast(^App_Run)scene.state
 	run.update(run.app, &run.world, delta_time)
 	world_update(&run.world, delta_time)
-	world_render(&run.world)
+	world_render(&run.world, ctx.blend)
 }
 
 @(private) app_destroy :: proc(scene: ^Scene, ctx: ^Context) {

@@ -1,5 +1,5 @@
 // Enemy ship: spawns on a ring around the player and chases it. Registered with
-// engine.register_type; see game_player.odin for the per-entity convention.
+// engine.register_type; see game_player.odin for the per-actor convention.
 package game
 
 import "core:log"
@@ -7,7 +7,6 @@ import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
 import engine "../../engine"
-import gfx "../../engine/gfx"
 
 ENEMY_MODEL :: "static/models/sea/ship-large.glb"
 ENEMY_SCALE :: 0.02
@@ -17,17 +16,17 @@ ENEMY_HIT_RADIUS :: 1.2
 ENEMY_HIT_DAMAGE :: 25
 
 Enemy :: struct {
-	player: engine.Entity_Type, // finds the target player
+	player: engine.Actor_Type, // finds the target player
 }
 
 // Spawns on the ring around the player, facing it.
-enemy_create :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Enemy) {
+enemy_create :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Enemy) {
 	player_id, _ := engine.world_find_state(world, self.player, Player)
-	player_position := engine.entity_get_component(world, player_id, engine.Transform).position
+	player_position := engine.actor_props(world, player_id, engine.Transform).position
 	angle := rand.float32_range(0, linalg.TAU)
-	offset := gfx.Vec3{math.cos(angle), 0, math.sin(angle)} * ENEMY_RING
-	engine.entity_add_component(world, id, engine.Model{path = ENEMY_MODEL})
-	engine.entity_set_transform(
+	offset := engine.Vec3{math.cos(angle), 0, math.sin(angle)} * ENEMY_RING
+	engine.actor_add_props(world, id, engine.Model{path = ENEMY_MODEL})
+	engine.actor_set_transform(
 		world,
 		id,
 		position = player_position + offset,
@@ -37,19 +36,19 @@ enemy_create :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Enemy) {
 }
 
 // Chases the player on the XZ plane. On contact the enemy destroys itself, which
-// frees self: nothing may touch self after world_destroy_entity.
-enemy_tick :: proc(world: ^engine.World, id: engine.Entity_Id, self: ^Enemy, dt: f32) {
+// frees self: nothing may touch self after world_destroy_actor.
+enemy_tick :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Enemy, dt: f32) {
 	player_id, _ := engine.world_find_state(world, self.player, Player)
-	target := engine.entity_get_component(world, player_id, engine.Transform).position
-	transform := engine.entity_get_component(world, id, engine.Transform)
+	target := engine.actor_props(world, player_id, engine.Transform).position
+	transform := engine.actor_props(world, id, engine.Transform)
 	to_target := target - transform.position
 	to_target.y = 0
 	transform.position += linalg.normalize0(to_target) * ENEMY_SPEED * dt
 	transform.rotation = game_facing(to_target)
 	if linalg.length(transform.position - target) >= ENEMY_HIT_RADIUS do return
 
-	engine.world_destroy_entity(world, id)
-	health := engine.entity_get_component(world, player_id, engine.Health)
+	engine.world_destroy_actor(world, id)
+	health := engine.actor_props(world, player_id, engine.Health)
 	health.current -= ENEMY_HIT_DAMAGE
 	log.infof("game: enemy destroyed, health %.0f/%.0f", health.current, health.max)
 }

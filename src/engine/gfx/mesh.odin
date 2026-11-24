@@ -1,5 +1,6 @@
 package gfx
 import "core:math"
+import "core:slice"
 import "core:math/linalg"
 import loader "loader"
 import sdl "vendor:sdl3"
@@ -44,6 +45,15 @@ Mesh_Upload :: enum u8 {
 	NO_UPLOAD,
 }
 
+// Vertex buffer usable by both attribute and vertex-pulled pipelines.
+mesh_vertex_buffer_create :: proc(gfx_ctx: ^Device, vertices: []$V) -> Buffer_Handle {
+	handle := buffer_create_usage(gfx_ctx, u32(len(vertices) * size_of(V)), {.VERTEX, .GRAPHICS_STORAGE_READ})
+	resource := buffer_get(gfx_ctx, handle)
+	resource.length = u32(len(vertices))
+	resource._temporary_raw_data = slice.to_bytes(vertices)
+	return handle
+}
+
 // Raw geometry seam: vertices/indices are user-built slices in whatever
 // layout the bound pipeline declares (packed voxel verts included).
 mesh_create :: proc(
@@ -54,7 +64,7 @@ mesh_create :: proc(
 ) -> Mesh where size_of(I) == 2 ||
 	size_of(I) == 4 {
 	mesh := Mesh {
-		vertex_buffer = buffer_create_from_bytes(gfx_ctx, vertices, .VERTEX),
+		vertex_buffer = mesh_vertex_buffer_create(gfx_ctx, vertices),
 		index_buffer = buffer_create_from_bytes(gfx_ctx, indices, .INDEX),
 		num_indices = u32(len(indices)),
 		num_vertices = u32(len(vertices)),
@@ -67,7 +77,7 @@ mesh_create :: proc(
 
 mesh_create_unindexed :: proc(gfx_ctx: ^Device, vertices: []$V, upload := Mesh_Upload.UPLOAD) -> Mesh {
 	mesh := Mesh {
-		vertex_buffer = buffer_create_from_bytes(gfx_ctx, vertices, .VERTEX),
+		vertex_buffer = mesh_vertex_buffer_create(gfx_ctx, vertices),
 		num_vertices = u32(len(vertices)),
 	}
 	mesh_set_bounds(&mesh, vertices)
@@ -152,6 +162,20 @@ mesh_draw :: proc(gfx_ctx: ^Device, mesh: ^Mesh, render_pass: ^sdl.GPURenderPass
 	}
 }
 
+// Vertex-pulled draw for textured_pulled pipelines: vertices come from the
+// storage buffer by SV_VertexID, so only the storage bind and the draw are issued.
+mesh_draw_pulled :: proc(gfx_ctx: ^Device, mesh: ^Mesh, render_pass: ^sdl.GPURenderPass) {
+	vertex_buffer := buffer_get(gfx_ctx, mesh.vertex_buffer)
+	sdl.BindGPUVertexStorageBuffers(render_pass, DEFAULT_TEXTURED_PULLED_VERTEX_VERTICES.location.slot, &vertex_buffer.handle, 1)
+	if Resource_Handle(mesh.index_buffer).generation != 0 {
+		index_buffer := buffer_get(gfx_ctx, mesh.index_buffer)
+		sdl.BindGPUIndexBuffer(render_pass, {buffer = index_buffer.handle}, mesh.index_size)
+		sdl.DrawGPUIndexedPrimitives(render_pass, mesh.num_indices, 1, 0, 0, 0)
+	} else {
+		sdl.DrawGPUPrimitives(render_pass, mesh.num_vertices, 1, 0, 0)
+	}
+}
+
 mesh_draw_instanced :: proc(
 	gfx_ctx: ^Device,
 	mesh: ^Mesh,
@@ -180,6 +204,14 @@ mesh_draw_instanced :: proc(
 	} else {
 		sdl.DrawGPUPrimitives(render_pass, mesh.num_vertices, instances, 0, first_instance)
 	}
+}
+// Indexed draw of one GPUIndexedIndirectDrawCommand at byte `offset` in `buffer`.
+mesh_draw_indirect :: proc(gfx_ctx: ^Device, mesh: ^Mesh, render_pass: ^sdl.GPURenderPass, buffer: ^sdl.GPUBuffer, offset: u32) {
+	vertex_buffer := buffer_get(gfx_ctx, mesh.vertex_buffer)
+	sdl.BindGPUVertexBuffers(render_pass, 0, &(sdl.GPUBufferBinding{buffer = vertex_buffer.handle}), 1)
+	index_buffer := buffer_get(gfx_ctx, mesh.index_buffer)
+	sdl.BindGPUIndexBuffer(render_pass, {buffer = index_buffer.handle}, mesh.index_size)
+	sdl.DrawGPUIndexedPrimitivesIndirect(render_pass, buffer, offset, 1)
 }
 
 mesh_destroy :: proc(gfx_ctx: ^Device, mesh: ^Mesh) {

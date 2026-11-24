@@ -1,11 +1,11 @@
 // Scene definitions: a JSON file describes a scene's name, camera and the
-// entities spawned at load. Example (src/scenes/postfx/scene.json):
+// actors spawned at load. Example (src/scenes/postfx/scene.json):
 //   { "name": "Postfx",
 //     "camera": { "position": [0,1,1.9], "look_at": [0,0.8,0], "bloom": {"threshold":0.5,"intensity":1.5,"radius":12} },
-//     "entities": [ { "name": "hero", "model": "static/models/rigged_cesiumman.glb", "clip": "clip_0" } ] }
-// Omitted fields are zero, which the World reads as defaults (scale 1, identity rotation).
+//     "actors": [ { "name": "hero", "model": "static/models/rigged_cesiumman.glb", "clip": "clip_0" } ] }
+// Omitted fields are zero, which the World reads as defaults (scale 1, idactor rotation).
 // rotation is Euler degrees (x, y, z). Strings live in the Scene_File arena, which
-// must outlive the entities (Model.path is borrowed).
+// must outlive the actors (Model.path is borrowed).
 package engine
 
 import "core:encoding/json"
@@ -16,7 +16,7 @@ import "core:mem/virtual"
 import "core:os"
 import "particles"
 
-// Name of the camera entity in the World. The file's camera is keyed by it.
+// Name of the camera actor in the World. The file's camera is keyed by it.
 CAMERA_NAME :: "__camera"
 
 Bloom_Def :: struct {
@@ -40,7 +40,7 @@ Health_Def :: struct {
 	current, max: f32,
 }
 
-Entity_Def :: struct {
+Actor_Def :: struct {
 	name:           string `json:"name,omitempty"`,
 	model:          string `json:"model,omitempty"`,
 	clip:           string `json:"clip,omitempty"`,
@@ -75,7 +75,7 @@ Scene_Def :: struct {
 	name:        string `json:"name,omitempty"`,
 	assets:      Assets_Def `json:"assets,omitempty"`,
 	camera:      Maybe(Camera_Def) `json:"camera,omitempty"`,
-	entities:    []Entity_Def `json:"entities,omitempty"`,
+	actors:    []Actor_Def `json:"actors,omitempty"`,
 	clear_color: Maybe([3]f32) `json:"clear_color,omitempty"`, // sRGB background; the renderer default when omitted
 }
 
@@ -104,19 +104,19 @@ scene_file_destroy :: proc(file: ^Scene_File) {
 	file^ = {}
 }
 
-// Key an entity is matched by: its name, or "#<index>" when it has none.
-entity_key :: proc(entity: Entity_Def, index: int) -> string {
-	if entity.name != "" do return entity.name
+// Key an actor is matched by: its name, or "#<index>" when it has none.
+actor_key :: proc(actor: Actor_Def, index: int) -> string {
+	if actor.name != "" do return actor.name
 	return fmt.tprintf("#%d", index)
 }
 
-// Applies the definition to an (usually empty) world and returns the entity ids
+// Applies the definition to an (usually empty) world and returns the actor ids
 // in definition order (camera excluded). A duplicate name gets the id of the
-// first entity with that name. The slice uses the temp allocator.
-world_spawn_scene :: proc(world: ^World, def: ^Scene_Def) -> []Entity_Id {
+// first actor with that name. The slice uses the temp allocator.
+world_spawn_scene :: proc(world: ^World, def: ^Scene_Def) -> []Actor_Id {
 	world_apply_scene(world, def)
-	ids := make([]Entity_Id, len(def.entities), context.temp_allocator)
-	for entity, index in def.entities do ids[index], _ = world_find_by_name(world, entity_key(entity, index))
+	ids := make([]Actor_Id, len(def.actors), context.temp_allocator)
+	for actor, index in def.actors do ids[index], _ = world_find_by_name(world, actor_key(actor, index))
 	return ids
 }
 
@@ -133,38 +133,46 @@ def_transform :: proc(position, rotation, scale: [3]f32) -> Transform {
 	return transform
 }
 
-// Components of one definition entity, Name first.
+// Boxes a Prop on the temp allocator so its any outlives the building proc.
 @(private)
-entity_components :: proc(entity: Entity_Def, key: string) -> []Component {
-	list := make([dynamic]Component, context.temp_allocator)
-	append(&list, Name{key}, def_transform(entity.position, entity.rotation, entity.scale))
-	if entity.model != "" do append(&list, Model{path = entity.model})
-	if entity.clip != "" do append(&list, Animator{clip = entity.clip})
-	if entity.sprite != "" {
-		append(&list, Sprite{texture = entity.sprite, grid = entity.grid, frame = entity.frame, color = entity.color, layer = entity.layer, flip_x = entity.flip_x, flip_y = entity.flip_y})
-		if anim, has := entity.anim.?; has do append(&list, Sprite_Anim{first = anim.first, last = anim.last, fps = anim.fps, loop = anim.loop})
+prop_box :: proc(value: $T) -> any {
+	box := new(T, context.temp_allocator)
+	box^ = value
+	return any{data = box, id = typeid_of(T)}
+}
+
+// Props of one definition actor, Name first.
+@(private)
+actor_props_list :: proc(actor: Actor_Def, key: string) -> []any {
+	list := make([dynamic]any, context.temp_allocator)
+	append(&list, prop_box(Name{key}), prop_box(def_transform(actor.position, actor.rotation, actor.scale)))
+	if actor.model != "" do append(&list, prop_box(Model{path = actor.model}))
+	if actor.clip != "" do append(&list, prop_box(Animator{clip = actor.clip}))
+	if actor.sprite != "" {
+		append(&list, prop_box(Sprite{texture = actor.sprite, grid = actor.grid, frame = actor.frame, color = actor.color, layer = actor.layer, flip_x = actor.flip_x, flip_y = actor.flip_y}))
+		if anim, has := actor.anim.?; has do append(&list, prop_box(Sprite_Anim{first = anim.first, last = anim.last, fps = anim.fps, loop = anim.loop}))
 	}
-	if health, has := entity.health.?; has do append(&list, Health{current = health.current, max = health.max})
-	if emitter, has := entity.particles.?; has {
+	if health, has := actor.health.?; has do append(&list, prop_box(Health{current = health.current, max = health.max}))
+	if emitter, has := actor.particles.?; has {
 		emitter.position = {} // World overrides from Transform
-		append(&list, Particle_Emitter(emitter))
+		append(&list, prop_box(Particle_Emitter(emitter)))
 	}
 	return list[:]
 }
 
-// Components of the camera entity, Name first; mode picks Camera_2D or Camera.
+// Props of the camera actor, Name first; mode picks Camera_2D or Camera.
 @(private)
-camera_components :: proc(camera: Camera_Def) -> []Component {
-	list := make([dynamic]Component, context.temp_allocator)
-	append(&list, Name{CAMERA_NAME}, def_transform(camera.position, {}, {}))
+camera_components :: proc(camera: Camera_Def) -> []any {
+	list := make([dynamic]any, context.temp_allocator)
+	append(&list, prop_box(Name{CAMERA_NAME}), prop_box(def_transform(camera.position, {}, {})))
 	if camera.mode == "2d" {
-		append(&list, Camera_2D{zoom = camera.zoom, viewport = camera.viewport, integer_scale = camera.integer_scale})
+		append(&list, prop_box(Camera_2D{zoom = camera.zoom, viewport = camera.viewport, integer_scale = camera.integer_scale}))
 		return list[:]
 	}
 	if camera.mode != "" && camera.mode != "3d" do log.errorf("scene: unknown camera mode %q", camera.mode)
 	c := Camera{fov_y = camera.fov_y, blur = camera.blur}
 	if look_at, has := camera.look_at.?; has do c.look_at = Vec3(look_at)
 	if bloom, has := camera.bloom.?; has do c.bloom = Bloom{bloom.threshold, bloom.intensity, bloom.radius}
-	append(&list, c)
+	append(&list, prop_box(c))
 	return list[:]
 }
