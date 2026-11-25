@@ -18,7 +18,7 @@ test_beacons_deterministic_inside_city_and_cover_skyscrapers :: proc(t: ^testing
 		for q := 0; q < len(a.vertices); q += 4 {
 			x, y, z := a.vertices[q].position.x, a.vertices[q].position.y, a.vertices[q].position.z
 			testing.expectf(t, a.vertices[q].position == b.vertices[q].position, "seed %d: light %d differs between runs", seed, q / 4)
-			testing.expectf(t, x >= 0 && x < CITY_SIZE && z >= 0 && z < CITY_SIZE, "seed %d: light %d outside city at (%v,%v)", seed, q / 4, x, z)
+			testing.expectf(t, x >= 0 && x < CITY_W && z >= 0 && z < CITY_D, "seed %d: light %d outside city at (%v,%v)", seed, q / 4, x, z)
 			testing.expectf(t, y > 0, "seed %d: light %d below ground at y=%v", seed, q / 4, y)
 		}
 

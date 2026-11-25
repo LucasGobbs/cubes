@@ -12,7 +12,7 @@ test_plan_plots_disjoint_inside_city_off_roads :: proc(t: ^testing.T) {
 		defer delete(road)
 		for r in p.roads {
 			for z in r.z0 ..< r.z1 {
-				for x in r.x0 ..< r.x1 do road[z * CITY_SIZE + x] = true
+				for x in r.x0 ..< r.x1 do road[z * CITY_W + x] = true
 			}
 		}
 
@@ -21,7 +21,7 @@ test_plan_plots_disjoint_inside_city_off_roads :: proc(t: ^testing.T) {
 		for plot in p.buildings {
 			testing.expectf(
 				t,
-				plot.x >= 0 && plot.z >= 0 && plot.x + plot.w <= CITY_SIZE && plot.z + plot.d <= CITY_SIZE,
+				plot.x >= 0 && plot.z >= 0 && plot.x + plot.w <= CITY_W && plot.z + plot.d <= CITY_D,
 				"seed %d: plot out of city at (%d,%d) %dx%d",
 				seed,
 				plot.x,
@@ -29,10 +29,10 @@ test_plan_plots_disjoint_inside_city_off_roads :: proc(t: ^testing.T) {
 				plot.w,
 				plot.d,
 			)
-			if plot.x < 0 || plot.z < 0 || plot.x + plot.w > CITY_SIZE || plot.z + plot.d > CITY_SIZE do continue
+			if plot.x < 0 || plot.z < 0 || plot.x + plot.w > CITY_W || plot.z + plot.d > CITY_D do continue
 			for z in plot.z ..< plot.z + plot.d {
 				for x in plot.x ..< plot.x + plot.w {
-					i := z * CITY_SIZE + x
+					i := z * CITY_W + x
 					testing.expectf(t, occupied[i] == 0, "seed %d: plots overlap at (%d,%d)", seed, x, z)
 					testing.expectf(t, !road[i], "seed %d: plot on road at (%d,%d)", seed, x, z)
 					occupied[i] = 1

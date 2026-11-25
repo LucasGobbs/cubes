@@ -1,21 +1,33 @@
-// City layout on the 2048 x 2048 plot grid (1 plot = 1 unit). Streets are claimed cells, not geometry: the city
+// City layout on the 3072 x 2048 plot grid (1 plot = 1 unit). Streets are claimed cells, not geometry: the city
 // mesh draws them only in the dev view. Same seed, same plan.
 package city
 
 import "core:math"
+import "core:slice"
 
-CITY_SIZE :: 2048 // shaders/city_ground_gen.slang and city_cars.slang repeat this: keep equal
-CITY_CENTRE :: CITY_SIZE / 2
-CITY_CELLS :: CITY_SIZE * CITY_SIZE
+CITY_W :: 3072 // x; shaders/city_ground_gen.slang and city_cars.slang repeat the sizes: keep equal
+CITY_D :: 2048 // z
+CITY_CENTRE_X :: CITY_W / 2
+CITY_CENTRE_Z :: CITY_D / 2
+CITY_CELLS :: CITY_W * CITY_D
 AVENUE_WIDTH :: 10
 STREET_BLOCK_MIN :: 24
 STREET_BLOCK_MAX :: 56
+DOUBLE_BLOCK_CHANCE :: 0.2 // a double block: 56..112 with no street between two blocks
+DOUBLE_BLOCK_MAX :: 112
+PLAZA_BLOCK_CHANCE :: 0.06
+PLAZA_BLOCK_MIN :: 100
+PLAZA_BLOCK_MAX :: 140
 STREET_LANES_MIN :: 2 // road widths are even: 4, 6 or 8 units
 STREET_LANES_MAX :: 4
+BIG_BLOCK_AREA :: 4000 // above a normal block's 56 x 56: gets one large plot or a park
+PARK_CHANCE :: 0.02 // share of big blocks left dark and empty
+ZONE_EDGE :: 256 // skyscrapers and mediums stay this far from the city edge
 
 CLAIM_FREE :: u8(0)
 CLAIM_ROAD :: u8(1)
 CLAIM_BUILDING :: u8(2)
+CLAIM_PARK :: u8(3) // empty park: not road, not built, dark ground
 
 PLACE_TRIES :: 200
 SMALL_MARGIN :: 2
@@ -28,7 +40,7 @@ DENSITY_CELL_FINE :: 40
 DENSITY_CENTRE_RADIUS :: 1280 // the centre falloff reaches zero at this distance
 OUTLIER_CHANCE :: 0.05 // share of buildings that are 1.6x taller than their roll (capped at the tier maximum)
 OUTLIER_SCALE :: 1.6
-WAREHOUSE_EDGE :: 0.6 * CITY_CENTRE // small plots beyond this distance from the centre may be warehouses
+WAREHOUSE_EDGE :: 0.6 * CITY_CENTRE_Z // small plots beyond this distance from the centre may be warehouses
 
 Building_Kind :: enum u8 {
 	Cube,
@@ -55,14 +67,12 @@ Tier_Rules :: struct {
 	stories_min:   int,
 	stories_max:   int,
 	margin:        i32,
-	zone_min:      i32, // min corners are drawn in [zone_min, zone_max)
-	zone_max:      i32,
 }
 
 // Skyscrapers may be placed anywhere in the zone, weighted by downtown density (they cluster on the peaks).
 tier_rules := [Tier]Tier_Rules {
-	.Skyscraper = {count = 120, footprint_min = 18, footprint_max = 24, stories_min = 55, stories_max = 110, margin = 4, zone_min = 256, zone_max = 1792},
-	.Medium     = {count = 200, footprint_min = 10, footprint_max = 16, stories_min = 20, stories_max = 60, margin = 3, zone_min = 256, zone_max = 1792},
+	.Skyscraper = {count = 180, footprint_min = 18, footprint_max = 24, stories_min = 55, stories_max = 110, margin = 4},
+	.Medium     = {count = 300, footprint_min = 10, footprint_max = 16, stories_min = 20, stories_max = 60, margin = 3},
 	.Small      = {footprint_min = SMALL_FOOTPRINT_MIN, footprint_max = SMALL_FOOTPRINT_MAX, stories_min = 3, stories_max = 40, margin = SMALL_MARGIN},
 }
 
@@ -98,7 +108,10 @@ plan_build :: proc(seed: u32) -> Plan {
 		claimed = make([]u8, CITY_CELLS),
 	}
 	rng := rng_seed(seed)
-	plan_streets(&p, &rng)
+	blocks: [dynamic]Road_Rect
+	defer delete(blocks)
+	plan_streets(&p, &rng, &blocks)
+	plan_big_blocks(&p, &rng, seed, blocks[:])
 	for tier in Tier.Skyscraper ..= Tier.Medium {
 		for _ in 0 ..< tier_rules[tier].count do plan_place_tier(&p, &rng, seed, tier)
 	}
@@ -106,21 +119,30 @@ plan_build :: proc(seed: u32) -> Plan {
 	return p
 }
 
+// Block length along one axis: mostly normal, sometimes a double block (no street between two blocks), rarely a plaza.
+plan_block_length :: proc(rng: ^Rng) -> i32 {
+	roll := rng_f32(rng)
+	if roll < PLAZA_BLOCK_CHANCE do return i32(rng_int(rng, PLAZA_BLOCK_MIN, PLAZA_BLOCK_MAX))
+	if roll < PLAZA_BLOCK_CHANCE + DOUBLE_BLOCK_CHANCE do return i32(rng_int(rng, STREET_BLOCK_MAX, DOUBLE_BLOCK_MAX))
+	return i32(rng_int(rng, STREET_BLOCK_MIN, STREET_BLOCK_MAX))
+}
+
 // Centre avenue, then blocks and streets out to both edges. Intervals are [lo, hi) along one axis.
-plan_axis_streets :: proc(rng: ^Rng, out: ^[dynamic][2]i32) {
+plan_axis_streets :: proc(rng: ^Rng, length: i32, out: ^[dynamic][2]i32) {
 	half := i32(AVENUE_WIDTH / 2)
-	append(out, [2]i32{CITY_CENTRE - half, CITY_CENTRE + half})
-	pos := i32(CITY_CENTRE + half)
+	centre := length / 2
+	append(out, [2]i32{centre - half, centre + half})
+	pos := centre + half
 	for {
-		pos += i32(rng_int(rng, STREET_BLOCK_MIN, STREET_BLOCK_MAX))
-		if pos >= CITY_SIZE do break
-		end := min(pos + i32(2 * rng_int(rng, STREET_LANES_MIN, STREET_LANES_MAX)), CITY_SIZE)
+		pos += plan_block_length(rng)
+		if pos >= length do break
+		end := min(pos + i32(2 * rng_int(rng, STREET_LANES_MIN, STREET_LANES_MAX)), length)
 		append(out, [2]i32{pos, end})
 		pos = end
 	}
-	pos = CITY_CENTRE - half
+	pos = centre - half
 	for {
-		pos -= i32(rng_int(rng, STREET_BLOCK_MIN, STREET_BLOCK_MAX))
+		pos -= plan_block_length(rng)
 		if pos <= 0 do break
 		start := max(pos - i32(2 * rng_int(rng, STREET_LANES_MIN, STREET_LANES_MAX)), 0)
 		append(out, [2]i32{start, pos})
@@ -128,31 +150,72 @@ plan_axis_streets :: proc(rng: ^Rng, out: ^[dynamic][2]i32) {
 	}
 }
 
-plan_streets :: proc(p: ^Plan, rng: ^Rng) {
+// Blocks along one axis: the intervals of [0, length) that no street covers.
+plan_axis_gaps :: proc(streets: [][2]i32, length: i32, out: ^[dynamic][2]i32) {
+	slice.sort_by(streets, proc(a, b: [2]i32) -> bool { return a[0] < b[0] })
+	pos := i32(0)
+	for s in streets {
+		if s[0] > pos do append(out, [2]i32{pos, s[0]})
+		pos = s[1]
+	}
+	if pos < length do append(out, [2]i32{pos, length})
+}
+
+// Roads run edge to edge: x streets span the depth, z streets the width. Blocks are the cells between them.
+plan_streets :: proc(p: ^Plan, rng: ^Rng, blocks: ^[dynamic]Road_Rect) {
 	xs, zs: [dynamic][2]i32
 	defer delete(xs)
 	defer delete(zs)
-	plan_axis_streets(rng, &xs)
-	plan_axis_streets(rng, &zs)
-	for s in xs do append(&p.roads, Road_Rect{x0 = s[0], z0 = 0, x1 = s[1], z1 = CITY_SIZE})
-	for s in zs do append(&p.roads, Road_Rect{x0 = 0, z0 = s[0], x1 = CITY_SIZE, z1 = s[1]})
+	plan_axis_streets(rng, CITY_W, &xs)
+	plan_axis_streets(rng, CITY_D, &zs)
+	for s in xs do append(&p.roads, Road_Rect{x0 = s[0], z0 = 0, x1 = s[1], z1 = CITY_D})
+	for s in zs do append(&p.roads, Road_Rect{x0 = 0, z0 = s[0], x1 = CITY_W, z1 = s[1]})
 	for r in p.roads {
 		for z in r.z0 ..< r.z1 {
-			for x in r.x0 ..< r.x1 do p.claimed[z * CITY_SIZE + x] = CLAIM_ROAD
+			for x in r.x0 ..< r.x1 do p.claimed[z * CITY_W + x] = CLAIM_ROAD
 		}
+	}
+	xgaps, zgaps: [dynamic][2]i32
+	defer delete(xgaps)
+	defer delete(zgaps)
+	plan_axis_gaps(xs[:], CITY_W, &xgaps)
+	plan_axis_gaps(zs[:], CITY_D, &zgaps)
+	for xg in xgaps do for zg in zgaps do append(blocks, Road_Rect{x0 = xg[0], z0 = zg[0], x1 = xg[1], z1 = zg[1]})
+}
+
+// Big blocks (double blocks, plazas) get one large plot, or stay dark as a park. Runs before the tiers so the plot finds free cells.
+plan_big_blocks :: proc(p: ^Plan, rng: ^Rng, seed: u32, blocks: []Road_Rect) {
+	for b in blocks {
+		w, d := b.x1 - b.x0, b.z1 - b.z0
+		if w * d <= BIG_BLOCK_AREA do continue
+		if rng_f32(rng) < PARK_CHANCE {
+			for z in b.z0 ..< b.z1 do for x in b.x0 ..< b.x1 do p.claimed[z * CITY_W + x] = CLAIM_PARK
+			continue
+		}
+		tier := Tier.Skyscraper if rng_f32(rng) < 0.5 else Tier.Medium
+		m := tier_rules[tier].margin
+		if w - 2 * m < w * 3 / 5 || d - 2 * m < d * 3 / 5 do continue
+		pw := i32(rng_int(rng, int(w * 3 / 5), int(w - 2 * m)))
+		pd := i32(rng_int(rng, int(d * 3 / 5), int(d - 2 * m)))
+		x := b.x0 + m + i32(rng_int(rng, 0, int(w - 2 * m - pw)))
+		z := b.z0 + m + i32(rng_int(rng, 0, int(d - 2 * m - pd)))
+		if !plan_try_place(p, x, z, pw, pd, m) do continue
+		plot := Plot{tier = tier, x = x, z = z, w = pw, d = pd}
+		plan_finish_plot(rng, &plot, plan_density(seed, f32(x) + f32(pw) / 2, f32(z) + f32(pd) / 2))
+		append(&p.buildings, plot)
 	}
 }
 
 // Claims the footprint if every cell is free and inside the city. The margin claims only free cells, so
 // later plots keep the gap and never reach into roads.
 plan_try_place :: proc(p: ^Plan, x, z, w, d, margin: i32) -> bool {
-	if x < 0 || z < 0 || x + w > CITY_SIZE || z + d > CITY_SIZE do return false
+	if x < 0 || z < 0 || x + w > CITY_W || z + d > CITY_D do return false
 	for zz in z ..< z + d {
-		for xx in x ..< x + w do if p.claimed[zz * CITY_SIZE + xx] != CLAIM_FREE do return false
+		for xx in x ..< x + w do if p.claimed[zz * CITY_W + xx] != CLAIM_FREE do return false
 	}
-	for zz in max(z - margin, 0) ..< min(z + d + margin, CITY_SIZE) {
-		for xx in max(x - margin, 0) ..< min(x + w + margin, CITY_SIZE) {
-			i := zz * CITY_SIZE + xx
+	for zz in max(z - margin, 0) ..< min(z + d + margin, CITY_D) {
+		for xx in max(x - margin, 0) ..< min(x + w + margin, CITY_W) {
+			i := zz * CITY_W + xx
 			if p.claimed[i] == CLAIM_FREE do p.claimed[i] = CLAIM_BUILDING
 		}
 	}
@@ -165,8 +228,8 @@ plan_place_tier :: proc(p: ^Plan, rng: ^Rng, seed: u32, tier: Tier) {
 	for _ in 0 ..< PLACE_TRIES {
 		w := i32(rng_int(rng, int(rules.footprint_min), int(rules.footprint_max)))
 		d := i32(rng_int(rng, int(rules.footprint_min), int(rules.footprint_max)))
-		x := i32(rng_int(rng, int(rules.zone_min), int(rules.zone_max - w)))
-		z := i32(rng_int(rng, int(rules.zone_min), int(rules.zone_max - d)))
+		x := i32(rng_int(rng, ZONE_EDGE, CITY_W - ZONE_EDGE - int(w)))
+		z := i32(rng_int(rng, ZONE_EDGE, CITY_D - ZONE_EDGE - int(d)))
 		density := plan_density(seed, f32(x) + f32(w) / 2, f32(z) + f32(d) / 2)
 		if tier == .Skyscraper && rng_f32(rng) > density * density do continue
 		if !plan_try_place(p, x, z, w, d, rules.margin) do continue
@@ -190,8 +253,8 @@ plan_fill_small :: proc(p: ^Plan, rng: ^Rng, seed: u32) {
 	rules := tier_rules[Tier.Small]
 	for cell in order {
 		if p.claimed[cell] != CLAIM_FREE do continue
-		x := cell % CITY_SIZE
-		z := cell / CITY_SIZE
+		x := cell % CITY_W
+		z := cell / CITY_W
 		w := i32(rng_int(rng, int(rules.footprint_min), int(rules.footprint_max)))
 		d := i32(rng_int(rng, int(rules.footprint_min), int(rules.footprint_max)))
 		if !plan_try_place(p, x, z, w, d, rules.margin) do continue
@@ -246,8 +309,8 @@ plan_kind :: proc(rng: ^Rng, tier: Tier, edge: bool) -> Building_Kind {
 
 // Distance from the city centre, in plot units.
 plan_centre_distance :: proc(x, z: f32) -> f32 {
-	dx := x - CITY_CENTRE
-	dz := z - CITY_CENTRE
+	dx := x - CITY_CENTRE_X
+	dz := z - CITY_CENTRE_Z
 	return math.sqrt(dx * dx + dz * dz)
 }
 

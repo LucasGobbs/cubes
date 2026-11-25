@@ -28,11 +28,11 @@ test_cars_on_streets_and_deterministic :: proc(t: ^testing.T) {
 			for k in 0 ..< 4 do c += a.vertices[4 * q + k].position
 			c /= 4
 			x, z := int(c.x), int(c.z)
-			if x < 0 || x >= CITY_SIZE || z < 0 || z >= CITY_SIZE {
+			if x < 0 || x >= CITY_W || z < 0 || z >= CITY_D {
 				testing.expectf(t, false, "seed %d: lamp %d outside city at (%v,%v)", seed, q, c.x, c.z)
 				continue
 			}
-			testing.expectf(t, p.claimed[z * CITY_SIZE + x] == CLAIM_ROAD, "seed %d: lamp %d off street at (%d,%d)", seed, q, x, z)
+			testing.expectf(t, p.claimed[z * CITY_W + x] == CLAIM_ROAD, "seed %d: lamp %d off street at (%d,%d)", seed, q, x, z)
 		}
 	}
 }

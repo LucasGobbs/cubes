@@ -9,14 +9,14 @@
 //   3 curtain  fully glazed grid with 1 px dark lines; each floor (row) has its own brightness, 0.45..1.0.
 //
 // Tile-wide masks, applied to every window in the tile:
-//   gain       dim 0.3 (25% of tiles), normal 0.6..0.9, bright 1.0 (25%). Neon ignores it.
+//   gain       dim 0.5 (25% of tiles), normal 0.75..1.0, bright 1.0..1.2 (25%). Neon ignores it.
 //   stairwell  (25% of tiles) one column every 5..9 windows is always lit (a stair core).
 //   neon band  (1 tile in 6) the bottom 3 window rows (y < 3) glow magenta or violet on 80% of windows.
 //
 // Per window, from the hash (deterministic):
 //   room       the room holding it is lit with probability lit_ratio; lit windows are off with 8% chance, dark
 //              windows on with 3%.
-//   brightness lit: 0.55..1.0; dark: 0..5% spill (dark windows read near black).
+//   brightness lit: 0.7..1.0; dark: 0..5% spill (dark windows read near black).
 //   office     2% of lit windows are white (flat 1.0), not lamp-tinted.
 //   half lit   10% of lit windows: a diagonal split, pixels with x + y <= k lit, the rest in spill.
 //   TV         8% of lit windows: flat TV blue.
@@ -183,7 +183,7 @@ TileParams tile_params(uint tile_index) {
 
     float gain_r = next_rand(s);
     float gain_mid = next_rand(s);
-    t.gain = gain_r < 0.25 ? 0.3 : (gain_r > 0.75 ? 1.0 : lerp(0.6, 0.9, gain_mid));
+    t.gain = gain_r < 0.25 ? 0.5 : (gain_r > 0.75 ? lerp(1.0, 1.2, gain_mid) : lerp(0.75, 1.0, gain_mid));
 
     float stair_r = next_rand(s);
     float stair_period_r = next_rand(s);
@@ -240,7 +240,7 @@ void computeMain(uint2 tid : SV_DispatchThreadID)
     uint s = h;
     float flip = next_rand(s);
     bool lit = room_lit(t, window.x, window.y) ? flip >= 0.08 : flip < 0.03;
-    float bright = lerp(0.55, 1.0, next_rand(s));
+    float bright = lerp(0.7, 1.0, next_rand(s));
     float tint = next_rand(s);
     float spill = next_rand(s) * 0.05;
     float tv_r = next_rand(s);

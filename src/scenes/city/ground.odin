@@ -1,4 +1,4 @@
-// Street ground: a compute pass paints the road plan into a 2048x2048 texture (1 texel = 1 unit) under the whole city.
+// Street ground: a compute pass paints the road plan into a CITY_W x CITY_D texture (1 texel = 1 unit) under the whole city.
 // The plan reaches the GPU as one bit per cell in a read-only storage buffer. The night view draws one quad with it.
 package city
 
@@ -41,7 +41,7 @@ ground_pack_roads :: proc(claimed: []u8) -> []u32 {
 ground_texture_create :: proc(gfx_ctx: ^gfx.Device) -> Ground_Texture {
 	return {
 		pipeline = gfx.compute_pipeline_create(gfx_ctx, shader_parameters.city_ground_gen_compute()),
-		texture = gfx.texture_create_storage(gfx_ctx, CITY_SIZE, CITY_SIZE),
+		texture = gfx.texture_create_storage(gfx_ctx, CITY_W, CITY_D),
 		mask = gfx.buffer_create(gfx_ctx, u32(GROUND_MASK_WORDS * size_of(u32)), .COMPUTE_STORAGE_READ),
 	}
 }
@@ -72,7 +72,7 @@ ground_texture_generate :: proc(gfx_ctx: ^gfx.Device, ground: ^Ground_Texture) {
 		{ground.texture},
 		nil,
 		{},
-		{CITY_SIZE / shader_parameters.CITY_GROUND_GEN_COMPUTE_THREAD_COUNT.x, CITY_SIZE / shader_parameters.CITY_GROUND_GEN_COMPUTE_THREAD_COUNT.y, 1},
+		{CITY_W / shader_parameters.CITY_GROUND_GEN_COMPUTE_THREAD_COUNT.x, CITY_D / shader_parameters.CITY_GROUND_GEN_COMPUTE_THREAD_COUNT.y, 1},
 		nil,
 		{ground.mask},
 	)
@@ -106,12 +106,13 @@ ground_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, par
 	gfx.draw_push_uniform(draw_context, shader_parameters.CITY_GROUND_VERTEX_UNIFORM_BLOCK, &uniforms)
 }
 
-// The city plus GROUND_MARGIN on every side as one quad; uv = world / CITY_SIZE, so the texture covers 0..1.
+// The city plus GROUND_MARGIN on every side as one quad; uv = world / city size, so the texture covers 0..1.
 ground_build_mesh :: proc() -> Mesh_Builder {
 	b: Mesh_Builder
-	s := f32(CITY_SIZE)
-	lo, hi := -f32(GROUND_MARGIN), s + f32(GROUND_MARGIN)
-	builder_quad(&b, {lo, GROUND_Y, lo}, {lo, GROUND_Y, hi}, {hi, GROUND_Y, hi}, {hi, GROUND_Y, lo}, {lo / s, lo / s}, {hi / s, hi / s}, {1, 1, 1, 1})
+	sx, sz := f32(CITY_W), f32(CITY_D)
+	lo_x, hi_x := -f32(GROUND_MARGIN), sx + f32(GROUND_MARGIN)
+	lo_z, hi_z := -f32(GROUND_MARGIN), sz + f32(GROUND_MARGIN)
+	builder_quad(&b, {lo_x, GROUND_Y, lo_z}, {lo_x, GROUND_Y, hi_z}, {hi_x, GROUND_Y, hi_z}, {hi_x, GROUND_Y, lo_z}, {lo_x / sx, lo_z / sz}, {hi_x / sx, hi_z / sz}, {1, 1, 1, 1})
 	return b
 }
 

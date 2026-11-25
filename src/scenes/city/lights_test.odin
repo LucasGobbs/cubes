@@ -20,16 +20,16 @@ test_lamps_on_street_cells_not_intersections :: proc(t: ^testing.T) {
 			x, z := int(pos.x), int(pos.z)
 			testing.expectf(
 				t,
-				x >= 0 && x < CITY_SIZE && z >= 0 && z < CITY_SIZE,
+				x >= 0 && x < CITY_W && z >= 0 && z < CITY_D,
 				"seed %d: lamp out of city at (%v,%v)",
 				seed,
 				pos.x,
 				pos.z,
 			)
-			if x < 0 || x >= CITY_SIZE || z < 0 || z >= CITY_SIZE do continue
+			if x < 0 || x >= CITY_W || z < 0 || z >= CITY_D do continue
 			testing.expectf(
 				t,
-				p.claimed[z * CITY_SIZE + x] == CLAIM_ROAD,
+				p.claimed[z * CITY_W + x] == CLAIM_ROAD,
 				"seed %d: lamp off street at (%d,%d)",
 				seed,
 				x,

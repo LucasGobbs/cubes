@@ -4,7 +4,8 @@
 //
 // SDL_GPU compute binding order: read-only storage buffers -> read-write storage textures.
 
-static const uint CITY_SIZE = 2048; // = CITY_SIZE in plan.odin: keep equal
+static const uint CITY_W = 3072; // = CITY_W in plan.odin: keep equal (x)
+static const uint CITY_D = 2048; // = CITY_D in plan.odin: keep equal (z)
 static const float PI = 3.14159265;
 static const float LAMP_SPACING = 8.0; // units between lamps along each kerb
 static const float INV_U32 = 1.0 / 4294967296.0;
@@ -23,8 +24,8 @@ uint pcg(uint v) {
 
 // Off-city cells count as not road.
 bool is_road(int2 p) {
-    if (p.x < 0 || p.y < 0 || p.x >= int(CITY_SIZE) || p.y >= int(CITY_SIZE)) return false;
-    uint i = uint(p.y) * CITY_SIZE + uint(p.x);
+    if (p.x < 0 || p.y < 0 || p.x >= int(CITY_W) || p.y >= int(CITY_D)) return false;
+    uint i = uint(p.y) * CITY_W + uint(p.x);
     return ((road_bits[i >> 5] >> (i & 31u)) & 1u) != 0u;
 }
 

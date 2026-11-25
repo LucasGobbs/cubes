@@ -1,4 +1,4 @@
-// City step 13 (size): 2048-unit city, auto-orbit camera for recording, F1 stats. Keys: R re-roll city, G dev view (streets), B bloom, F distance fog, O auto-orbit, WASD/mouse fly, F1 stats, P log stats, Q/E scene.
+// City step 15 (layout): 3072x2048 city, auto-orbit camera for recording, F1 stats. Keys: R re-roll city, G dev view (streets), B bloom, F distance fog, O auto-orbit, WASD/mouse fly, F1 stats, P log stats, Q/E scene.
 package city
 
 import engine "../../engine"
@@ -8,7 +8,7 @@ import shader_parameters "../../shader_parameters"
 
 CITY_CLEAR_COLOR :: [4]f32{0.1, 0.45, 0.1, 1}
 CITY_NIGHT_COLOR :: [4]f32{0.002, 0.002, 0.003, 1}
-CITY_CAMERA_SPEED :: 600 // units/s: crossing the 2048-unit city takes ~3.5 s
+CITY_CAMERA_SPEED :: 900 // units/s: crossing the 3072-unit city takes ~3.5 s
 CITY_SEED_START :: 1 // fixed start so a run is repeatable; R steps the seed
 CITY_DEV_START :: false // night view on start; G toggles the dev view (streets)
 CITY_FOG :: [4]f32{0.0015, 0.0018, 0.003, 3200} // linear rgb haze = the sky's lower band (city_sky.slang BELOW); fully fogged beyond the view distance
@@ -70,7 +70,7 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state := new(City_State)
 	demo.state = state
 	state.world = engine.world_create(&ctx.gfx)
-	engine.camera_fly(ctx, {1024, 420, 2500}, {1024, 60, 1024}, CITY_CAMERA_SPEED)
+	engine.camera_fly(ctx, {1536, 420, 2500}, {1536, 60, 1024}, CITY_CAMERA_SPEED)
 	orbit_set(&state.orbit, ctx, CITY_ORBIT_START)
 
 	state.window = window_texture_create(&ctx.gfx)
