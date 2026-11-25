@@ -107,8 +107,10 @@ test-engine-optimized: default-shaders luajit
 build: shaders luajit
 	$(ODIN) build $(SRC) -out:$(BIN) $(RELEASE_FLAGS) $(EDITOR_DEFINE)
 
+# SCREEN = monitor number for the window (2 = second screen; falls back to the primary when there is only one).
+SCREEN ?= 2
 run: shaders luajit
-	$(ODIN) run $(SRC) $(EDITOR_DEFINE) -- $(ARGS)
+	$(ODIN) run $(SRC) $(EDITOR_DEFINE) -- --display $(SCREEN) $(ARGS)
 
 run-optimized: shaders luajit
 	$(ODIN) run $(SRC) $(RELEASE_FLAGS) $(EDITOR_DEFINE) -- $(ARGS)

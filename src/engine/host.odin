@@ -20,6 +20,7 @@ Config :: struct {
 	height:      int,
 	fullscreen:  bool,
 	resizable:   bool, // window can be resized; host follows WINDOW_PIXEL_SIZE_CHANGED
+	display:     int, // 1-based monitor number for the window; 0 = primary, past the last monitor = primary
 	cursor:      bool, // free system cursor: no relative mouse mode, no grab
 	scenes:      []Scene_Entry, // grouped by Scene_Entry.group; groups in order of first appearance
 	start:       string,
@@ -69,7 +70,7 @@ host_run :: proc(config: Config, scene: Scene) {
 
 	ctx: Context
 	// Fullscreen skips the compositor (~2 ms floor, 16 ms spikes); --WINDOWED opts out.
-	created := context_create(&ctx, config.title, config.width, config.height, config.fullscreen, config.resizable, config.cursor)
+	created := context_create(&ctx, config.title, config.width, config.height, config.fullscreen, config.resizable, config.cursor, config.display)
 	assert(created)
 	jobs.init(&ctx.jobs)
 	ctx.gfx.renderer.jobs = &ctx.jobs

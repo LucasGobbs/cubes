@@ -48,16 +48,26 @@ create :: proc(
 	fullscreen: bool = false, // sized from the desktop mode; window_size is read once, here
 	resizable: bool = false, // host reacts to WINDOW_PIXEL_SIZE_CHANGED when set
 	cursor: bool = false, // true = free system cursor (no relative mouse mode, no grab)
+	display: int = 0, // 1-based monitor number; 0 or a number past the last monitor = primary
 ) -> bool {
 	ok := sdl.Init({.VIDEO}); assert(ok)
 	flags := sdl.WindowFlags{.ALWAYS_ON_TOP, .MOUSE_GRABBED}
 	if resizable do flags += {.RESIZABLE}
 	w, h := c.int(width), c.int(height)
+	target := sdl.GetPrimaryDisplay()
+	display_count: c.int
+	if display > 0 {
+		displays := sdl.GetDisplays(&display_count)
+		if displays != nil {
+			if display <= int(display_count) do target = displays[display - 1]
+			else do log.warnf("display %d requested but only %d found: using the primary", display, display_count)
+			sdl.free(displays)
+		}
+	}
 	if fullscreen {
-		mode := sdl.GetDesktopDisplayMode(sdl.GetPrimaryDisplay())
+		mode := sdl.GetDesktopDisplayMode(target)
 		assert(mode != nil)
 		w, h = mode.w, mode.h
-		flags += {.FULLSCREEN}
 	}
 	window := sdl.CreateWindow(
 		strings.clone_to_cstring(title, context.temp_allocator),
@@ -65,6 +75,16 @@ create :: proc(
 		h,
 		flags,
 	); assert(window != nil)
+	if target != sdl.GetPrimaryDisplay() {
+		// Windows open on the primary display; move before fullscreen so the mode applies to the target display.
+		bounds: sdl.Rect
+		ok = sdl.GetDisplayBounds(target, &bounds); assert(ok)
+		ok = sdl.SetWindowPosition(window, bounds.x + (bounds.w - w) / 2, bounds.y + (bounds.h - h) / 2); assert(ok)
+	}
+	if fullscreen {
+		ok = sdl.SetWindowFullscreen(window, true); assert(ok)
+		_ = sdl.SyncWindow(window)
+	}
 	gpu := sdl.CreateGPUDevice({.MSL, .SPIRV}, true, nil); assert(gpu != nil)
 	ok = sdl.ClaimWindowForGPUDevice(gpu, window); assert(ok)
 	// SDR_LINEAR gives an *_SRGB swapchain: shaders output linear color and the

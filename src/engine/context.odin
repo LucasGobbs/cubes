@@ -25,8 +25,9 @@ context_create :: proc(
 	title: string,
 	width, height: int,
 	fullscreen, resizable, cursor: bool,
+	display := 0,
 ) -> bool {
-	if !gfx.create(&ctx.gfx, title, width, height, fullscreen, resizable, cursor) do return false
+	if !gfx.create(&ctx.gfx, title, width, height, fullscreen, resizable, cursor, display) do return false
 	ctx.input = input.system_create(input_sdl.create())
 	ctx.running = true
 	return true

@@ -2,6 +2,7 @@
 // `./main skinned` or `make run ARGS=skinned`. Defaults to "benchmark".
 // Number keys 1-9 switch scene at runtime (order of SCENES); M toggles MSAA.
 // `./main benchmark --bench 10` runs 10 seconds without input, prints stats, exits.
+// `--display N` opens the window on monitor N (1-based; primary if there is no such monitor).
 // `--record ex,ey,ez,tx,ty,tz` arcs a camera around a target for 10 s then quits (src/record.odin).
 // Fullscreen at desktop size by default (skips the compositor); `--WINDOWED` opts out.
 package main
@@ -21,6 +22,7 @@ main :: proc() {
 
 	name := "benchmark"
 	windowed := false
+	display := 0
 	for i := 1; i < len(os.args); i += 1 {
 		if os.args[i] == "--bench" {
 			if i + 1 >= len(os.args) {
@@ -50,6 +52,15 @@ main :: proc() {
 			record.on = true
 			record.eye, record.target = {parts[0], parts[1], parts[2]}, {parts[3], parts[4], parts[5]}
 			i += 1
+		} else if os.args[i] == "--display" {
+			n, ok := 0, false
+			if i + 1 < len(os.args) do n, ok = strconv.parse_int(os.args[i + 1])
+			if !ok || n < 1 {
+				log.errorf("--display needs a monitor number (1 = first)")
+				os.exit(1)
+			}
+			display = n
+			i += 1
 		} else if os.args[i] == "--WINDOWED" {
 			windowed = true
 		} else if os.args[i] == "--indirect" {
@@ -64,6 +75,7 @@ main :: proc() {
 			width = 1280,
 			height = 720,
 			fullscreen = !windowed,
+			display = display,
 			scenes = SCENES[:],
 			start = name,
 			after_frame = frame_hook,
