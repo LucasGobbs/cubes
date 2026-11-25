@@ -74,6 +74,16 @@ Actor_Type_Info :: struct {
 	contact:                 proc(world: ^World, id: Actor_Id, state: rawptr, other: Actor_Id),
 }
 
+// Embedded at offset 0 of a world_add_actor struct; hooks get the same pointer as the user struct.
+Actor :: struct {
+	world:      ^World,
+	id:         Actor_Id,
+	tick:       proc(self: ^Actor, dt: f32),
+	fixed_tick: proc(self: ^Actor, dt: f32),
+	destroy:    proc(self: ^Actor),
+	contact:    proc(self: ^Actor, other: Actor_Id),
+}
+
 Transform :: struct {
 	position: Vec3,
 	rotation: linalg.Quaternionf32,
@@ -220,33 +230,35 @@ Prop_Info :: struct {
 Prop_Block :: struct {
 	type: typeid,
 	data: rawptr,
+	embedded: bool, // data lives inside the actor's world_add_actor block; not freed alone
 }
 
 World :: struct {
-	gfx_ctx:   ^gfx.Device, // nil is fine for worlds that only hold Transforms (tests)
-	jobs:      ^jobs.Pool, // borrowed from the renderer; nil = serial
-	props:     map[typeid]Prop_Info, // registered Prop types; see register_props
-	slots:     [dynamic]Slot,
-	free:      [dynamic]u32,
-	types:     [dynamic]Actor_Type_Info,
-	assets:    Assets,
-	updating:  bool, // true while world_update ticks; spawns then wait one frame
-	time:      f32, // scene clock in seconds: world_update adds dt; world_fixed_update does not
-	bloom:     ^gfx.Bloom,
-	blur:      ^gfx.Blur,
-	tonemap:   ^gfx.Tonemap, // lazy like bloom: created on the first Environment with a grade
-	particles: ^particles.System, // lazy like bloom/blur: created on the first Particle_Emitter
-	batch:     Maybe(gfx.Batch),
-	camera_2d: gfx.Camera2D,
-	gravity:   Vec3, // read when the physics world is created on the first Collider
-	physics:   Maybe(phys.World), // lazy like particles: created on the first Collider
+	gfx_ctx:        ^gfx.Device, // nil is fine for worlds that only hold Transforms (tests)
+	jobs:           ^jobs.Pool, // borrowed from the renderer; nil = serial
+	props:          map[typeid]Prop_Info, // registered Prop types; see register_props
+	slots:          [dynamic]Slot,
+	free:           [dynamic]u32,
+	types:          [dynamic]Actor_Type_Info,
+	assets:         Assets,
+	updating:       bool, // true while world_update ticks; spawns then wait one frame
+	time:           f32, // scene clock in seconds: world_update adds dt; world_fixed_update does not
+	bloom:          ^gfx.Bloom,
+	blur:           ^gfx.Blur,
+	tonemap:        ^gfx.Tonemap, // lazy like bloom: created on the first Environment with a grade
+	particles:      ^particles.System, // lazy like bloom/blur: created on the first Particle_Emitter
+	batch:          Maybe(gfx.Batch),
+	camera_2d:      gfx.Camera2D,
+	gravity:        Vec3, // read when the physics world is created on the first Collider
+	physics:        Maybe(phys.World), // lazy like particles: created on the first Collider
 	contact_actors: map[phys.Body]Actor_Id, // body -> actor owning its Collider; lazy like physics, freed in world_destroy
-	texts:     [dynamic]Hud_Text, // queued by world_text; world_render draws and clears them
-	hud:       Maybe(Hud), // lazy like batch: created on the first world_text
-	sky:       Maybe(gfx.Skybox), // lazy: follows Environment.skybox
-	sky_path:  string, // owned copy of the path sky was built from
-	uncapped:  bool, // IMMEDIATE present mode, applied by Environment
-	scripts:   ^Script_Host, // lazy like particles: created on the first Script
+	embedded_props: map[typeid][]Embedded_Prop, // world_add_actor: per-type embedded Prop layout; lazy, freed in world_destroy
+	texts:          [dynamic]Hud_Text, // queued by world_text; world_render draws and clears them
+	hud:            Maybe(Hud), // lazy like batch: created on the first world_text
+	sky:            Maybe(gfx.Skybox), // lazy: follows Environment.skybox
+	sky_path:       string, // owned copy of the path sky was built from
+	uncapped:       bool, // IMMEDIATE present mode, applied by Environment
+	scripts:        ^Script_Host, // lazy like particles: created on the first Script
 }
 
 // Font and batch of world_text; created on the first text.
@@ -273,6 +285,7 @@ Slot :: struct {
 	owned_mesh: ^gfx.Mesh, // Raw_Draw's mesh; freed when the Prop is removed
 	playback:   Maybe(gfx.Playback), // skinned Models only
 	type:       Actor_Type, // 0 when the actor has no registered type
+	type_id:    typeid, // T of a world_add_actor actor; nil for spawn and spawn_typed
 	state:      rawptr,
 	emitter:    Maybe(particles.Emitter_Handle), // this actor's emitter; nil when none
 	body:       Maybe(phys.Tracked), // this actor's Collider body; nil when none
@@ -280,7 +293,13 @@ Slot :: struct {
 
 // Use world_create; a zero World has no Prop registry or asset cache.
 world_create :: proc(gfx_ctx: ^gfx.Device, gravity := Vec3{0, -10, 0}) -> World {
-	world := World{gfx_ctx = gfx_ctx, jobs = gfx_ctx.renderer.jobs if gfx_ctx != nil else nil, props = make(map[typeid]Prop_Info), assets = {models = make(map[string]^Model_Asset)}, gravity = gravity}
+	world := World {
+		gfx_ctx = gfx_ctx,
+		jobs = gfx_ctx.renderer.jobs if gfx_ctx != nil else nil,
+		props = make(map[typeid]Prop_Info),
+		assets = {models = make(map[string]^Model_Asset)},
+		gravity = gravity,
+	}
 	register_props(&world, Transform, transform_added)
 	register_props(&world, Name, name_added, name_removed)
 	register_props(&world, Model, model_added, model_removed)
@@ -310,13 +329,16 @@ register_type :: proc(
 	fixed_tick: proc(world: ^World, id: Actor_Id, self: ^T, dt: f32) = nil,
 	contact: proc(world: ^World, id: Actor_Id, self: ^T, other: Actor_Id) = nil,
 ) -> Actor_Type {
-	info := Actor_Type_Info{state_size = size_of(T), state_align = align_of(T)}
+	info := Actor_Type_Info {
+		state_size  = size_of(T),
+		state_align = align_of(T),
+	}
 	// Same ABI trick as run: only the pointer parameter type differs.
-	if create != nil do info.create = transmute(proc(^World, Actor_Id, rawptr))create
-	if tick != nil do info.tick = transmute(proc(^World, Actor_Id, rawptr, f32))tick
-	if fixed_tick != nil do info.fixed_tick = transmute(proc(^World, Actor_Id, rawptr, f32))fixed_tick
-	if contact != nil do info.contact = transmute(proc(^World, Actor_Id, rawptr, Actor_Id))contact
-	if destroy != nil do info.destroy = transmute(proc(^World, Actor_Id, rawptr))destroy
+	if create != nil do info.create = transmute(proc(_: ^World, _: Actor_Id, _: rawptr))create
+	if tick != nil do info.tick = transmute(proc(_: ^World, _: Actor_Id, _: rawptr, _: f32))tick
+	if fixed_tick != nil do info.fixed_tick = transmute(proc(_: ^World, _: Actor_Id, _: rawptr, _: f32))fixed_tick
+	if contact != nil do info.contact = transmute(proc(_: ^World, _: Actor_Id, _: rawptr, _: Actor_Id))contact
+	if destroy != nil do info.destroy = transmute(proc(_: ^World, _: Actor_Id, _: rawptr))destroy
 	append(&world.types, info)
 	return Actor_Type(len(world.types))
 }
@@ -329,10 +351,13 @@ register_props :: proc(
 	added: proc(world: ^World, id: Actor_Id, self: ^T) = nil,
 	removed: proc(world: ^World, id: Actor_Id, self: ^T) = nil,
 ) {
-	info := Prop_Info{size = size_of(T), align = align_of(T)}
+	info := Prop_Info {
+		size  = size_of(T),
+		align = align_of(T),
+	}
 	// Same ABI trick as register_type: only the pointer parameter type differs.
-	if added != nil do info.added = transmute(proc(^World, Actor_Id, rawptr))added
-	if removed != nil do info.removed = transmute(proc(^World, Actor_Id, rawptr))removed
+	if added != nil do info.added = transmute(proc(_: ^World, _: Actor_Id, _: rawptr))added
+	if removed != nil do info.removed = transmute(proc(_: ^World, _: Actor_Id, _: rawptr))removed
 	world.props[typeid_of(T)] = info
 }
 
@@ -376,7 +401,12 @@ spawn :: proc(world: ^World, props: ..any) -> Actor_Id {
 
 // Spawns a 3D camera at position looking at look_at; fov_y 0 => gfx.CAMERA_FOV_Y.
 // For bloom or blur, spawn a Camera literal instead.
-spawn_camera :: proc(world: ^World, position: Vec3, look_at := Vec3{}, fov_y: f32 = 0) -> Actor_Id {
+spawn_camera :: proc(
+	world: ^World,
+	position: Vec3,
+	look_at := Vec3{},
+	fov_y: f32 = 0,
+) -> Actor_Id {
 	return spawn(world, Camera{fov_y = fov_y, look_at = look_at}, Transform{position = position})
 }
 
@@ -452,7 +482,8 @@ actor_remove_props :: proc(world: ^World, id: Actor_Id, $T: typeid) {
 	for block, index in slot.props {
 		if block.type != typeid_of(T) do continue
 		run_removed(world, id, block.type, block.data)
-		free(block.data)
+		// Embedded Props live inside the actor's block; their memory goes with it.
+		if !block.embedded do free(block.data)
 		ordered_remove(&slot.props, index)
 		return
 	}
@@ -464,7 +495,13 @@ actor_transform :: proc(world: ^World, id: Actor_Id) -> ^Transform {
 }
 
 // Replaces the actor's Transform. Zero rotation or scale mean defaults, as in spawn.
-actor_set_transform :: proc(world: ^World, id: Actor_Id, position := Vec3{}, rotation := linalg.QUATERNIONF32_IDENTITY, scale := Vec3{1, 1, 1}) {
+actor_set_transform :: proc(
+	world: ^World,
+	id: Actor_Id,
+	position := Vec3{},
+	rotation := linalg.QUATERNIONF32_IDENTITY,
+	scale := Vec3{1, 1, 1},
+) {
 	actor_add_props(world, id, Transform{position = position, rotation = rotation, scale = scale})
 }
 
@@ -480,6 +517,11 @@ actor_emitter :: proc(world: ^World, id: Actor_Id) -> ^particles.Emitter {
 // No-op for invalid ids, so a stale id can be destroyed twice safely.
 world_destroy_actor :: proc(world: ^World, id: Actor_Id) {
 	if !world_valid(world, id) do return
+	if actor := actor_of(&world.slots[id.index]); actor != nil {
+		if actor.destroy != nil do actor.destroy(actor)
+		// The destroy proc may have destroyed other actors, or this one.
+		if !world_valid(world, id) do return
+	}
 	if info, ok := slot_type(world, &world.slots[id.index]); ok && info.destroy != nil {
 		info.destroy(world, id, world.slots[id.index].state)
 		// The destroy proc may have destroyed other actors, or this one.
@@ -527,6 +569,8 @@ world_destroy :: proc(world: ^World) {
 	if len(world.sky_path) > 0 do delete(world.sky_path)
 	delete(world.texts)
 	delete(world.types)
+	for _, layout in world.embedded_props do delete(layout)
+	if world.embedded_props != nil do delete(world.embedded_props)
 	delete(world.props)
 	assets_destroy(world)
 	free(world.bloom)
@@ -550,6 +594,10 @@ world_update :: proc(world: ^World, dt: f32) {
 	for index := 0; index < len(world.slots); index += 1 {
 		slot := &world.slots[index]
 		if !slot.alive || slot.born do continue
+		if actor := actor_of(slot); actor != nil {
+			if actor.tick != nil do actor.tick(actor, dt)
+			continue
+		}
 		info, ok := slot_type(world, slot)
 		if !ok || info.tick == nil do continue
 		info.tick(world, Actor_Id{u32(index), slot.generation}, slot.state, dt)
@@ -590,9 +638,9 @@ world_update :: proc(world: ^World, dt: f32) {
 	}
 	tick := Tick{playbacks[:], dt}
 	jobs.parallel_for(world.jobs, len(playbacks), &tick, proc(data: rawptr, first, last: int) {
-		tick := (^Tick)(data)
-		for p in tick.playbacks[first:last] do gfx.playback_tick(p, tick.dt)
-	}, 8)
+			tick := (^Tick)(data)
+			for p in tick.playbacks[first:last] do gfx.playback_tick(p, tick.dt)
+		}, 8)
 	if world.particles != nil do particles.system_update(world.particles, dt)
 	update_environment(world)
 	update_camera(world)
@@ -609,6 +657,10 @@ world_fixed_update :: proc(world: ^World, dt: f32) {
 	for index := 0; index < len(world.slots); index += 1 {
 		slot := &world.slots[index]
 		if !slot.alive || slot.born do continue
+		if actor := actor_of(slot); actor != nil {
+			if actor.fixed_tick != nil do actor.fixed_tick(actor, dt)
+			continue
+		}
 		info, ok := slot_type(world, slot)
 		if !ok || info.fixed_tick == nil do continue
 		info.fixed_tick(world, Actor_Id{u32(index), slot.generation}, slot.state, dt)
@@ -673,21 +725,34 @@ world_draw_sprites :: proc(world: ^World) {
 		sprite := slot_component(&slot, Sprite)
 		if sprite == nil do continue
 		transform := slot_component(&slot, Transform)
-		append(&queue, Sprite_Draw{slot = &slot, layer = sprite.layer, depth = transform.position.z, texture = asset_texture(world, sprite.texture)})
+		append(
+			&queue,
+			Sprite_Draw {
+				slot = &slot,
+				layer = sprite.layer,
+				depth = transform.position.z,
+				texture = asset_texture(world, sprite.texture),
+			},
+		)
 	}
 	// Painter's order: layer, then depth. Texture breaks ties so runs stay long.
 	slice.stable_sort_by(queue[:], proc(a, b: Sprite_Draw) -> bool {
-		if a.layer != b.layer do return a.layer < b.layer
-		if a.depth != b.depth do return a.depth < b.depth
-		return a.texture.index < b.texture.index
-	})
+			if a.layer != b.layer do return a.layer < b.layer
+			if a.depth != b.depth do return a.depth < b.depth
+			return a.texture.index < b.texture.index
+		})
 	gfx.batch_begin(batch, gfx_ctx, world.camera_2d)
 	for draw in queue do sprite_push(batch, gfx_ctx, draw.slot, draw.texture)
 	gfx.batch_end(batch, gfx_ctx)
 }
 
 @(private = "file")
-sprite_push :: proc(batch: ^gfx.Batch, gfx_ctx: ^gfx.Device, slot: ^Slot, texture: gfx.Texture_Handle) {
+sprite_push :: proc(
+	batch: ^gfx.Batch,
+	gfx_ctx: ^gfx.Device,
+	slot: ^Slot,
+	texture: gfx.Texture_Handle,
+) {
 	sprite := slot_component(slot, Sprite)
 	transform := slot_component(slot, Transform)
 	tex := gfx.texture_get(gfx_ctx, texture)
@@ -698,7 +763,12 @@ sprite_push :: proc(batch: ^gfx.Batch, gfx_ctx: ^gfx.Device, slot: ^Slot, textur
 		cols, rows := max(sprite.grid.x, 1), max(sprite.grid.y, 1)
 		cell = {texture_size.x / f32(cols), texture_size.y / f32(rows)}
 		index := clamp(sprite.frame, 0, cols * rows - 1)
-		src = {x = f32(index % cols) * cell.x, y = f32(index / cols) * cell.y, w = cell.x, h = cell.y}
+		src = {
+			x = f32(index % cols) * cell.x,
+			y = f32(index / cols) * cell.y,
+			w = cell.x,
+			h = cell.y,
+		}
 	}
 	origin, has_origin := sprite.origin.?
 	if !has_origin do origin = {0.5, 0.5}
@@ -706,13 +776,32 @@ sprite_push :: proc(batch: ^gfx.Batch, gfx_ctx: ^gfx.Device, slot: ^Slot, textur
 	if color == {} do color = {1, 1, 1, 1}
 	angle := 2 * math.atan2(transform.rotation.z, transform.rotation.w)
 	size := [2]f32{cell.x * transform.scale.x, cell.y * transform.scale.y}
-	gfx.batch_sprite(batch, texture, texture_size, transform.position.xy, size, src, color, origin, angle, sprite.flip_x, sprite.flip_y)
+	gfx.batch_sprite(
+		batch,
+		texture,
+		texture_size,
+		transform.position.xy,
+		size,
+		src,
+		color,
+		origin,
+		angle,
+		sprite.flip_x,
+		sprite.flip_y,
+	)
 }
 
 // Queues HUD text for this frame: position in window px, y down; color is sRGB.
 // world_render draws and clears the queue, so call it every frame the text shows.
 world_text :: proc(world: ^World, text: string, position: [2]f32, color := [4]f32{1, 1, 1, 1}) {
-	append(&world.texts, Hud_Text{text = strings.clone(text, context.temp_allocator), position = position, color = gfx.color_srgb_to_linear(color)})
+	append(
+		&world.texts,
+		Hud_Text {
+			text = strings.clone(text, context.temp_allocator),
+			position = position,
+			color = gfx.color_srgb_to_linear(color),
+		},
+	)
 }
 
 // Draws the queued HUD text in window px. An empty batch clears last frame's draw.
@@ -724,7 +813,10 @@ world_draw_hud :: proc(world: ^World) {
 		if len(world.texts) == 0 do return
 		font, font_ok := gfx.font_create(gfx_ctx, HUD_FONT_PATH)
 		assert(font_ok, "engine: HUD font not found")
-		world.hud = Hud{batch = gfx.batch_create(gfx_ctx), font = font}
+		world.hud = Hud {
+			batch = gfx.batch_create(gfx_ctx),
+			font  = font,
+		}
 		hud = &world.hud.?
 		gfx.batch_register(gfx_ctx, &hud.batch)
 	}
@@ -747,7 +839,12 @@ update_camera_2d :: proc(world: ^World) {
 	if slot == nil do return
 	camera := slot_component(slot, Camera_2D)
 	transform := slot_component(slot, Transform)
-	world.camera_2d = gfx.Camera2D{position = transform.position.xy, zoom = camera.zoom, viewport = camera.viewport, integer_scale = camera.integer_scale}
+	world.camera_2d = gfx.Camera2D {
+		position      = transform.position.xy,
+		zoom          = camera.zoom,
+		viewport      = camera.viewport,
+		integer_scale = camera.integer_scale,
+	}
 }
 
 @(private = "file")
@@ -796,7 +893,11 @@ update_camera :: proc(world: ^World) {
 		}
 		gfx.camera_rotate(cam, 0, 0) // rebuilds direction, right and up from yaw/pitch
 		fov := camera.fov_y if camera.fov_y > 0 else gfx.CAMERA_FOV_Y
-		gfx.camera_set_projection(cam, gfx.Perspective{fov_y = fov, near = gfx.CAMERA_NEAR}, gfx.aspect_ratio(world.gfx_ctx))
+		gfx.camera_set_projection(
+			cam,
+			gfx.Perspective{fov_y = fov, near = gfx.CAMERA_NEAR},
+			gfx.aspect_ratio(world.gfx_ctx),
+		)
 		set_effect_passes(world, camera)
 		return
 	}
@@ -830,7 +931,11 @@ apply_environment :: proc(world: ^World, env: ^Environment) {
 			world.tonemap^ = gfx.tonemap_create(gfx_ctx)
 		}
 		gfx.tonemap_set(world.tonemap, grade.exposure, grade.contrast, grade.saturation)
-		gfx.renderer_set_passes(&gfx_ctx.renderer, .Final, []gfx.Render_Pass{gfx.tonemap_pass(world.tonemap)})
+		gfx.renderer_set_passes(
+			&gfx_ctx.renderer,
+			.Final,
+			[]gfx.Render_Pass{gfx.tonemap_pass(world.tonemap)},
+		)
 	} else {
 		gfx.renderer_clear_passes(&gfx_ctx.renderer, .Final)
 	}
@@ -915,7 +1020,6 @@ slot_type :: proc(world: ^World, slot: ^Slot) -> (info: Actor_Type_Info, ok: boo
 }
 
 // Reuses a freed index when there is one. The generation was bumped on destroy.
-@(private = "file")
 claim_slot :: proc(world: ^World) -> u32 {
 	index: u32
 	if len(world.free) > 0 {
@@ -937,11 +1041,13 @@ slot_component :: proc(slot: ^Slot, $T: typeid) -> ^T {
 
 // Stores a copy of prop in the actor, replacing its Prop of the same type. With notify
 // the replaced Prop's removed hook runs first; spawn passes false (no added hook ran yet).
-@(private = "file")
 store_prop :: proc(world: ^World, id: Actor_Id, prop: any, notify: bool) -> rawptr {
 	info, known := world.props[prop.id]
 	assert(known, "engine: props type not registered; call register_props")
-	assert(type_info_of(prop.id).size == info.size, "engine: props size does not match register_props")
+	assert(
+		type_info_of(prop.id).size == info.size,
+		"engine: props size does not match register_props",
+	)
 	slot := &world.slots[id.index]
 	for &block in slot.props {
 		if block.type != prop.id do continue
@@ -956,7 +1062,6 @@ store_prop :: proc(world: ^World, id: Actor_Id, prop: any, notify: bool) -> rawp
 	return data
 }
 
-@(private = "file")
 run_added :: proc(world: ^World, id: Actor_Id, type: typeid, data: rawptr) {
 	if info := world.props[type]; info.added != nil do info.added(world, id, data)
 }
@@ -966,10 +1071,13 @@ run_removed :: proc(world: ^World, id: Actor_Id, type: typeid, data: rawptr) {
 	if info := world.props[type]; info.removed != nil do info.removed(world, id, data)
 }
 
-@(private = "file")
 sync_transform :: proc(slot: ^Slot) {
 	transform := slot_component(slot, Transform)
-	slot.draw.transform = gfx.transform_trs(transform.position, transform.rotation, transform.scale)
+	slot.draw.transform = gfx.transform_trs(
+		transform.position,
+		transform.rotation,
+		transform.scale,
+	)
 }
 
 // Builtin Prop hooks. The hook sees the stored copy, so changes to self stick.
@@ -1075,8 +1183,10 @@ collider_added :: proc(world: ^World, id: Actor_Id, self: ^Collider) {
 	switch shape in self.shape {
 	case Box:
 		switch self.body {
-		case .Static: tracked = phys.track(phys.body_static(world_phys, pos, shape.half))
-		case .Dynamic: tracked = phys.track(phys.body_box(world_phys, pos, shape.half, density))
+		case .Static:
+			tracked = phys.track(phys.body_static(world_phys, pos, shape.half))
+		case .Dynamic:
+			tracked = phys.track(phys.body_box(world_phys, pos, shape.half, density))
 		}
 	case Sphere:
 		assert(self.body == .Dynamic, "engine: static Sphere Collider is not supported; use a Box")
@@ -1114,6 +1224,7 @@ dispatch_contacts :: proc(world: ^World, pairs: []phys.Contact_Pair) {
 contact_notify :: proc(world: ^World, id, other: Actor_Id) {
 	if !world_valid(world, id) || !world_valid(world, other) do return
 	slot := &world.slots[id.index]
+	if actor := actor_of(slot); actor != nil && actor.contact != nil do actor.contact(actor, other)
 	if info, ok := slot_type(world, slot); ok && info.contact != nil do info.contact(world, id, slot.state, other)
 	if !world_valid(world, id) || !world_valid(world, other) do return
 	script_contact(world, id, other)
@@ -1162,7 +1273,7 @@ destroy_slot :: proc(world: ^World, id: Actor_Id) {
 	slot := &world.slots[id.index]
 	#reverse for block in slot.props {
 		run_removed(world, id, block.type, block.data)
-		free(block.data)
+		if !block.embedded do free(block.data) // embedded: freed with the actor block
 	}
 	delete(slot.props)
 	slot.props = nil
