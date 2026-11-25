@@ -2,7 +2,7 @@
 // (no city-sized emitter). New drops spawn in a sphere centred on the camera each frame; drops already in flight keep
 // their world position and fall out of view behind a moving camera. A small dense layer carries the nearby rain and a
 // big sparse layer (radius 260) fills the distance, so the camera cannot easily outrun the rain. Drops are
-// velocity-aligned streaks (Emitter_Desc.stretch), additive and faint blue-white.
+// velocity-aligned streaks (Emitter_Desc.stretch), additive and very faint blue-white (a subtle effect, not a downpour).
 package city
 
 import engine "../../engine"
@@ -23,8 +23,8 @@ Rain_Layer :: struct {
 
 // rate = capacity / mean lifetime keeps each ring full without overwriting live drops.
 RAIN_LAYERS := [2]Rain_Layer {
-	{capacity = 32768, radius = 90, lift = 25, lifetime = {1.4, 1.8}, stretch = 0.035, alpha = 0.26},
-	{capacity = 49152, radius = 260, lift = 90, lifetime = {3.0, 4.0}, stretch = 0.14, alpha = 0.1},
+	{capacity = 6144, radius = 90, lift = 25, lifetime = {1.4, 1.8}, stretch = 0.03, alpha = 0.1},
+	{capacity = 9216, radius = 260, lift = 90, lifetime = {3.0, 4.0}, stretch = 0.12, alpha = 0.05},
 }
 
 rain_spawn :: proc(state: ^City_State) {
