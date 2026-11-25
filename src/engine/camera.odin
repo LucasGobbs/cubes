@@ -1,5 +1,6 @@
 package engine
 
+import "core:log"
 import "gfx"
 import "input"
 
@@ -11,8 +12,30 @@ ORBIT_MAX_DISTANCE :: 1000
 
 // Host-driven camera, updated every frame before Scene.tick. nil = scene drives the camera itself.
 Camera_Fly :: struct {
-	fly:  gfx.Fly_Camera,
-	look: bool, // mouse look on; see camera_mouse_look
+	fly:       gfx.Fly_Camera,
+	look:      bool, // mouse look on; see camera_mouse_look
+	path_keys: Camera_Path_Controls,
+	recorded:  [dynamic]gfx.Camera_Key, // poses recorded with J; K saves them, L plays them
+	playing:   bool,
+	play_time: f32, // simulated seconds into playback
+}
+
+// Camera path keys: J records the pose, K saves the recorded path to camera.path.json (working directory),
+// L plays it from the first key and hands control back at the end. P is taken by the stats dump.
+Camera_Path_Controls :: struct {
+	record, save, play: input.Button_Action,
+}
+
+CAMERA_PATH_FILE :: "camera.path.json"
+CAMERA_PATH_KEY_GAP :: 2.0 // s between recorded keys
+CAMERA_PATH_LOOK_DISTANCE :: 100 // recorded target lies this far along the view direction
+
+camera_path_controls_create :: proc(inp: ^input.System) -> Camera_Path_Controls {
+	return {
+		record = input.button(inp, "camera.path_record", .J, "Record camera path key"),
+		save = input.button(inp, "camera.path_save", .K, "Save camera path to camera.path.json"),
+		play = input.button(inp, "camera.path_play", .L, "Play recorded camera path"),
+	}
 }
 
 Camera_Orbit :: struct {
@@ -48,7 +71,9 @@ camera_fly :: proc(
 	} else {
 		gfx.renderer_resize_targets(&ctx.gfx.renderer, u32(ctx.gfx.window_size.x), u32(ctx.gfx.window_size.y))
 	}
-	fly := Camera_Fly{fly = gfx.fly_camera_create(), look = true}
+	// shortcut: recorded keys leak when the host clears ctx.camera on scene switch (no hook); a few poses, fix: free in a scene-destroy hook
+	if old, ok := ctx.camera.(Camera_Fly); ok do delete(old.recorded)
+	fly := Camera_Fly{fly = gfx.fly_camera_create(), look = true, path_keys = camera_path_controls_create(&ctx.input)}
 	if speed > 0 do fly.fly.speed = speed
 	ctx.camera = fly
 	camera_ensure_keys(ctx)
@@ -94,10 +119,42 @@ camera_position :: proc(ctx: ^Context) -> Vec3 {
 	return ctx.gfx.renderer.camera.position
 }
 
+// J/K/L for the fly camera. Returns true while the recorded path drives the camera (fly input is then ignored).
+@(private) camera_path_update :: proc(ctx: ^Context, fly: ^Camera_Fly, dt: f32) -> bool {
+	if input.pressed(&ctx.input, fly.path_keys.record) && !fly.playing {
+		cam := gfx.camera(&ctx.gfx)
+		t: f32
+		if n := len(fly.recorded); n > 0 do t = fly.recorded[n - 1].time + CAMERA_PATH_KEY_GAP
+		append(&fly.recorded, gfx.Camera_Key{time = t, position = cam.position, target = cam.position + cam.direction * CAMERA_PATH_LOOK_DISTANCE})
+		log.infof("camera path: %d keys recorded (J records, K saves, L plays)", len(fly.recorded))
+	}
+	if input.pressed(&ctx.input, fly.path_keys.save) {
+		if len(fly.recorded) == 0 do log.warnf("camera path: no keys to save (J records a pose)")
+		else if camera_path_save(CAMERA_PATH_FILE, gfx.Camera_Path{keys = fly.recorded[:], ease = true}) do log.infof("camera path: %d keys saved to %s", len(fly.recorded), CAMERA_PATH_FILE)
+	}
+	if input.pressed(&ctx.input, fly.path_keys.play) && len(fly.recorded) > 0 {
+		fly.playing = true
+		fly.play_time = 0
+	}
+	if !fly.playing do return false
+	duration := fly.recorded[len(fly.recorded) - 1].time
+	fly.play_time += dt
+	position, target := gfx.camera_path_sample(gfx.Camera_Path{keys = fly.recorded[:], ease = true}, min(fly.play_time, duration))
+	gfx.camera_look_at_pose(gfx.camera(&ctx.gfx), position, target)
+	if fly.play_time >= duration {
+		fly.playing = false
+		fly.fly.velocity = {}
+		fly.fly.look_velocity = {}
+		log.infof("camera path: playback done")
+	}
+	return true
+}
+
 @(private) camera_update :: proc(ctx: ^Context, dt: f32) {
 	switch &c in ctx.camera {
 	case nil:
 	case Camera_Fly:
+		if camera_path_update(ctx, &c, dt) do return
 		keys, _ := ctx.camera_keys.?
 		fly := fly_controls_read(&ctx.input, &keys, c.look)
 		gfx.fly_camera_update(gfx.camera(&ctx.gfx), &c.fly, fly, dt)

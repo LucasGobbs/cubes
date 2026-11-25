@@ -1,6 +1,6 @@
 // Offline video, `./main <scene> --render-video out.mp4 [--fps N] [--seconds S] [--video-size WxH]`: every frame
 // advances the clock by exactly 1/fps, its readback (gfx.readback_frame, taken before the overlays) is piped as
-// raw RGBA into ffmpeg, and the run ends after fps*seconds frames. Overlays are not in the video.
+// raw RGBA into ffmpeg after the warm-up frames, and the run ends after fps*seconds frames. Overlays are not in the video.
 package main
 
 import "core:fmt"
@@ -19,9 +19,14 @@ Video_Run :: struct {
 	total:   int, // frames to write = fps * seconds
 	frames:  int,
 	pipe:    ^posix.FILE, // ffmpeg stdin; nil when not rendering
+	warmup:   int, // frames before the first written one (VIDEO_WARMUP)
+	rendered: int, // frames rendered so far, warm-up included
 }
 
-video: Video_Run = {fps = 60, seconds = 10, w = 1280, h = 720}
+// Frames simulated and rendered but not written: on frame 0 the scene's atlas and sky are not ready yet.
+VIDEO_WARMUP :: 3
+
+video: Video_Run = {fps = 60, seconds = 10, w = 1280, h = 720, warmup = VIDEO_WARMUP}
 
 // Starts ffmpeg reading raw RGBA frames on stdin. The path goes in single quotes: names with ' are not supported.
 video_begin :: proc() {
@@ -44,10 +49,12 @@ video_after_frame :: proc(ctx: ^engine.Context) {
 	if video.pipe == nil do return
 	pixels, w, h := gfx.readback_frame(&ctx.gfx, &ctx.gfx.renderer)
 	if pixels == nil {
-		log.errorf("video: frame %d was not rendered", video.frames)
+		log.errorf("video: frame %d was not rendered", video.rendered)
 		os.exit(1)
 	}
 	assert(int(w) == video.w && int(h) == video.h)
+	video.rendered += 1
+	if video.rendered <= video.warmup do return
 	posix.fwrite(raw_data(pixels), 1, uint(len(pixels)), video.pipe)
 	video.frames += 1
 	if video.frames == video.total do engine.request_quit(ctx)

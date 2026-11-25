@@ -41,6 +41,8 @@ repo root (the `make` targets do this) or from inside `dist/`.
 
 - `1`-`9`, `0`: switch to a scene group with a fade; `Q`/`E`: previous/next scene in the current group. Scenes are grouped by the `group` field in `SCENES` (`src/scene.odin`); a group opens on the scene it showed last. Scene names show at the top, the group and position at the top right.
 - `F1`: stats panel; `P` logs it. `M`: toggle MSAA. `Esc`: quit.
+- `F12`: save the frame as a PNG (no overlays) in `shots/`, named `<scene>-<time>.png`.
+- Fly camera path: `J` records the current pose as a key (2 s apart), `K` saves the keys to `camera.path.json` in the working directory, `L` plays them back (fly input is off until it ends). `./main <scene> --record camera.path.json` replays the file for capture.
 
 ## Scene files and transitions
 

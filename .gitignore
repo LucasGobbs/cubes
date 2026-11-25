@@ -24,3 +24,5 @@ src/engine/gfx/generated/
 # local only, not for GitHub
 /city-clips/
 /city-series.md
+# F12 screenshots (engine screenshot.odin)
+/shots/

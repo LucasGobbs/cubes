@@ -3,8 +3,10 @@
 // Number keys 1-9 switch scene at runtime (order of SCENES); M toggles MSAA.
 // `./main benchmark --bench 10` runs 10 seconds without input, prints stats, exits.
 // `--display N` opens the window on monitor N (1-based; primary if there is no such monitor).
-// `--record ex,ey,ez,tx,ty,tz` arcs a camera around a target for 10 s then quits (src/record.odin).
+// `--record ex,ey,ez,tx,ty,tz` arcs a camera around a target for 10 s then quits; `--record path.json` follows a keyframed
+// camera path (made with J/K in the fly camera) (src/record.odin).
 // `--render-video out.mp4 [--fps N] [--seconds S] [--video-size WxH]` renders offline at fixed 1/fps steps into an mp4 (src/video.odin).
+// With `--record path.json` and `--render-video`, the length follows the path unless --seconds is given.
 // Fullscreen at desktop size by default (skips the compositor); `--WINDOWED` opts out.
 package main
 
@@ -24,6 +26,7 @@ main :: proc() {
 	name := "benchmark"
 	windowed := false
 	display := 0
+	seconds_given := false
 	for i := 1; i < len(os.args); i += 1 {
 		if os.args[i] == "--bench" {
 			if i + 1 >= len(os.args) {
@@ -38,20 +41,11 @@ main :: proc() {
 			bench.seconds = seconds
 			i += 1
 		} else if os.args[i] == "--record" {
-			parts: [6]f32
-			ok := i + 1 < len(os.args)
-			if ok {
-				fields := strings.split(os.args[i + 1], ",", context.temp_allocator)
-				ok = len(fields) == 6 || (len(fields) == 7 && fields[6] == "fly")
-				record.fly = len(fields) == 7
-				for f, k in fields[:min(len(fields), 6)] do if ok && k < 6 do parts[k], ok = strconv.parse_f32(f)
-			}
-			if !ok {
-				log.errorf("--record needs ex,ey,ez,tx,ty,tz (camera position and look-at target)")
+			if i + 1 >= len(os.args) || !record_set_from_arg(os.args[i + 1]) {
+				log.errorf("--record needs ex,ey,ez,tx,ty,tz (camera position and look-at target) or a path.json file")
 				os.exit(1)
 			}
 			record.on = true
-			record.eye, record.target = {parts[0], parts[1], parts[2]}, {parts[3], parts[4], parts[5]}
 			i += 1
 		} else if os.args[i] == "--display" {
 			n, ok := 0, false
@@ -88,6 +82,7 @@ main :: proc() {
 				os.exit(1)
 			}
 			video.seconds = s
+			seconds_given = true
 			i += 1
 		} else if os.args[i] == "--video-size" {
 			w, h, ok := 0, 0, false
@@ -114,6 +109,8 @@ main :: proc() {
 		}
 	}
 
+	// A path video lasts settle + path + tail, the same timeline record_after_frame runs on.
+	if record.use_path && video.path != "" && !seconds_given do video.seconds = RECORD_SETTLE + record_seconds() + RECORD_TAIL
 	video.total = int(f64(video.fps) * video.seconds)
 	fixed_dt := f32(0)
 	if video.path != "" {

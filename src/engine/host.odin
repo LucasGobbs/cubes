@@ -41,6 +41,8 @@ Config :: struct {
 @(private) fixed_accumulator: f32
 @(private) quit_action, msaa_action, reload_action: input.Button_Action
 @(private) shift_action, pop_action: input.Button_Action // dev: Shift+number pushes, Backspace pops
+@(private) screenshot_action: input.Button_Action // F12: saves the next frame to shots/
+@(private) screenshot_pending: bool // a requested frame is rendered; saved at the next tick
 @(private) preload: ^Load_Context // preload_scene: the single in-flight/finished preload
 @(private) dropped_loads: [dynamic]^Load_Context // replaced preloads finishing in the background
 @(private) group_actions: [MAX_GROUP_KEYS]input.Button_Action
@@ -82,6 +84,7 @@ host_run :: proc(config: Config, scene: Scene) {
 	quit_action = input.button(&ctx.input, "app.quit", .ESCAPE, "Quit")
 	msaa_action = input.button(&ctx.input, "app.msaa", .M, "Toggle MSAA")
 	reload_action = input.button(&ctx.input, "app.reload_scripts", .F5, "Reload Lua scripts")
+	screenshot_action = input.button(&ctx.input, "app.screenshot", .F12, "Save screenshot")
 	shift_action = input.button(&ctx.input, "app.push_modifier", .LSHIFT, "Hold with a scene number to push it")
 	input.bind_key(&ctx.input, shift_action, .RSHIFT)
 	pop_action = input.button(&ctx.input, "app.pop", .BACKSPACE, "Pop scene")
@@ -149,6 +152,20 @@ host_resize :: proc(ctx: ^Context) {
 
 host_tick :: proc(ctx: ^Context, delta_time: f32) {
 	scene := &host_scene
+	renderer := &ctx.gfx.renderer
+	if screenshot_pending {
+		// The requested frame was rendered last tick; its pixels are ready now.
+		if pixels, w, h := gfx.readback_frame(&ctx.gfx, renderer); pixels != nil {
+			screenshot_pending = false
+			screenshot_save(pixels, w, h, host_config.scenes[current_scene].name)
+			gfx.readback_release(renderer)
+		}
+	}
+	// --render-video owns the readback (every frame), so F12 does nothing there.
+	if input.pressed(&ctx.input, screenshot_action) && !host_config.readback {
+		gfx.readback_request(renderer)
+		screenshot_pending = true
+	}
 	if input.pressed(&ctx.input, quit_action) {
 		request_quit(ctx)
 		return
