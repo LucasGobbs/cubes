@@ -117,12 +117,20 @@ Environment :: struct {
 	shadows:       Maybe(bool),
 	sun_direction: Maybe(Vec3),
 	uncapped:      bool,
+	grade:         Maybe(Grade), // nil = no tonemap pass; exposure, contrast and saturation of the final image
 }
 
 // color is sRGB. Fog starts at 60% of distance and is full at distance.
 Fog :: struct {
 	color:    [3]f32,
 	distance: f32,
+}
+
+// exposure in EV stops (2^EV); contrast and saturation: 1 = unchanged.
+Grade :: struct {
+	exposure:   f32,
+	contrast:   f32,
+	saturation: f32,
 }
 
 // A textured quad drawn by the World's 2D batch at its Transform (position.xy in
@@ -226,6 +234,7 @@ World :: struct {
 	time:      f32, // scene clock in seconds: world_update adds dt; world_fixed_update does not
 	bloom:     ^gfx.Bloom,
 	blur:      ^gfx.Blur,
+	tonemap:   ^gfx.Tonemap, // lazy like bloom: created on the first Environment with a grade
 	particles: ^particles.System, // lazy like bloom/blur: created on the first Particle_Emitter
 	batch:     Maybe(gfx.Batch),
 	camera_2d: gfx.Camera2D,
@@ -499,6 +508,7 @@ world_destroy :: proc(world: ^World) {
 		}
 		if sky, ok := &world.sky.?; ok do gfx.skybox_destroy(world.gfx_ctx, sky)
 		gfx.renderer_clear_passes(&world.gfx_ctx.renderer, .Post)
+		gfx.renderer_clear_passes(&world.gfx_ctx.renderer, .Final)
 		world.gfx_ctx.renderer.clear_color = gfx.DEFAULT_CLEAR_COLOR
 		world.gfx_ctx.renderer.fog = {}
 		world.gfx_ctx.renderer.shadow_enabled = true
@@ -521,6 +531,7 @@ world_destroy :: proc(world: ^World) {
 	assets_destroy(world)
 	free(world.bloom)
 	free(world.blur)
+	free(world.tonemap)
 	if world.particles != nil {
 		particles.system_destroy(world.particles)
 		world.particles = nil
@@ -812,6 +823,16 @@ apply_environment :: proc(world: ^World, env: ^Environment) {
 		gfx_ctx.renderer.fog = {rgb.x, rgb.y, rgb.z, fog.distance}
 	} else {
 		gfx_ctx.renderer.fog = {}
+	}
+	if grade, ok := env.grade.?; ok {
+		if world.tonemap == nil {
+			world.tonemap = new(gfx.Tonemap)
+			world.tonemap^ = gfx.tonemap_create(gfx_ctx)
+		}
+		gfx.tonemap_set(world.tonemap, grade.exposure, grade.contrast, grade.saturation)
+		gfx.renderer_set_passes(&gfx_ctx.renderer, .Final, []gfx.Render_Pass{gfx.tonemap_pass(world.tonemap)})
+	} else {
+		gfx.renderer_clear_passes(&gfx_ctx.renderer, .Final)
 	}
 	shadows, shadows_set := env.shadows.?
 	gfx_ctx.renderer.shadow_enabled = shadows if shadows_set else true

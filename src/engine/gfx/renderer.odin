@@ -110,6 +110,8 @@ Renderer :: struct {
 	pool:            Texture_Pool,
 	post_sampler:    Sampler_Handle,
 	post_format:     sdl.GPUTextureFormat,
+	// Frame capture for offline rendering (readback.odin).
+	readback:        Readback,
 	// Scene hooks run in registration order around the scene pass (see Scene_Hook).
 	scene_hooks:     [dynamic]Scene_Hook,
 	// Sun shadow map: depth-only pass before the scene pass (renderer_draw_shadow).
@@ -306,6 +308,7 @@ renderer_set_msaa :: proc(renderer: ^Renderer, enabled: bool) -> bool {
 
 renderer_destroy :: proc(renderer: ^Renderer) {
 	assert(renderer.pass == nil)
+	readback_destroy(renderer)
 	buffer_destroy(renderer.gfx_ctx, renderer.instance_buffer)
 	buffer_destroy(renderer.gfx_ctx, renderer.indirect_buffer)
 	buffer_destroy(renderer.gfx_ctx, renderer.skinned_buffer)
@@ -577,6 +580,7 @@ renderer_render_frame :: proc(renderer: ^Renderer, extract: Extract_Proc, user: 
 		renderer_present(renderer, final)
 	}
 	renderer_end_frame(renderer)
+	readback_finish(renderer)
 	free_all(context.temp_allocator)
 }
 

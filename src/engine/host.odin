@@ -32,6 +32,8 @@ Config :: struct {
 	loading_screen: proc(ctx: ^Context, progress: f32, user: rawptr),
 	fixed_hz:          f32, // Scene.fixed_tick rate; 0 = 30
 	max_fixed_updates: int, // steps per frame cap; 0 = 5
+	fixed_dt:          f32,  // > 0: every frame advances the clock by this many seconds (offline video); 0 = wall clock
+	readback:          bool, // keep each frame's pixels for gfx.readback_frame
 }
 
 @(private) host_config: Config
@@ -74,6 +76,8 @@ host_run :: proc(config: Config, scene: Scene) {
 	assert(created)
 	jobs.init(&ctx.jobs)
 	ctx.gfx.renderer.jobs = &ctx.jobs
+	ctx.clock.fixed_dt = config.fixed_dt
+	ctx.gfx.renderer.readback.enabled = config.readback
 
 	quit_action = input.button(&ctx.input, "app.quit", .ESCAPE, "Quit")
 	msaa_action = input.button(&ctx.input, "app.msaa", .M, "Toggle MSAA")

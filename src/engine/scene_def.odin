@@ -83,6 +83,13 @@ Fog_Def :: struct {
 	distance: f32 `json:"distance,omitempty"`,
 }
 
+// contrast and saturation default to 1 when absent (a zero default would flatten the image).
+Grade_Def :: struct {
+	exposure:   f32 `json:"exposure,omitempty"`,
+	contrast:   Maybe(f32) `json:"contrast,omitempty"`,
+	saturation: Maybe(f32) `json:"saturation,omitempty"`,
+}
+
 // skybox: equirectangular path, loaded by update_sky while this Environment drives the renderer (not in assets).
 Environment_Def :: struct {
 	skybox:        string `json:"skybox,omitempty"`,
@@ -90,6 +97,7 @@ Environment_Def :: struct {
 	shadows:       Maybe(bool) `json:"shadows,omitempty"`,
 	sun_direction: Maybe([3]f32) `json:"sun_direction,omitempty"`,
 	uncapped:      bool `json:"uncapped,omitempty"`,
+	grade:         Maybe(Grade_Def) `json:"grade,omitempty"`,
 }
 
 // Everything the scene needs resident; assets_load loads it in one go.
@@ -272,6 +280,9 @@ collider_from_def :: proc(def: Collider_Def) -> Collider {
 @(private)
 environment_from_def :: proc(def: Environment_Def) -> Environment {
 	env := Environment{skybox = def.skybox, shadows = def.shadows, sun_direction = def.sun_direction, uncapped = def.uncapped}
+	if grade, has := def.grade.?; has {
+		env.grade = Grade{exposure = grade.exposure, contrast = grade.contrast.? or_else 1, saturation = grade.saturation.? or_else 1}
+	}
 	if fog, has := def.fog.?; has {
 		env.fog = Fog{fog.color, fog.distance}
 	}

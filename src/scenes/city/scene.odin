@@ -1,4 +1,4 @@
-// City step 15 (layout): 3072x2048 city, auto-orbit camera for recording, F1 stats. Keys: R re-roll city, G dev view (streets), B bloom, F distance fog, O auto-orbit, WASD/mouse fly, F1 stats, P log stats, Q/E scene.
+// City step 15 (layout): 3072x2048 city, auto-orbit camera for recording, F1 stats. Keys: R re-roll city, G dev view (streets), B bloom, F distance fog, [ ] exposure, O auto-orbit, WASD/mouse fly, F1 stats, P log stats, Q/E scene.
 package city
 
 import engine "../../engine"
@@ -11,7 +11,9 @@ CITY_NIGHT_COLOR :: [4]f32{0.002, 0.002, 0.003, 1}
 CITY_CAMERA_SPEED :: 300 // units/s (LShift x12, Z x0.1): crossing the 3072-unit city takes ~10 s
 CITY_SEED_START :: 1 // fixed start so a run is repeatable; R steps the seed
 CITY_DEV_START :: false // night view on start; G toggles the dev view (streets)
-CITY_FOG :: [4]f32{0.0015, 0.0018, 0.003, 3200} // linear rgb haze = the sky's lower band (city_sky.slang BELOW); fully fogged beyond the view distance
+// sRGB of linear (0.0015, 0.0018, 0.003): the sky's lower band (city_sky.slang BELOW). Environment.fog takes sRGB. Fully fogged beyond the view distance.
+CITY_FOG :: engine.Fog{color = {0.01938, 0.023256, 0.03876}, distance = 3200}
+CITY_GRADE :: engine.Grade{exposure = 1, contrast = 1, saturation = 1} // ACES tonemap; +1 EV matches the pre-tonemap look; [ and ] step 0.25 EV
 
 City_State :: struct {
 	world:        engine.World,
@@ -37,6 +39,7 @@ City_State :: struct {
 	cars:         engine.Actor_Id, // the cars' Raw_Draw; only alive in the night view
 	beacons:      engine.Actor_Id, // the aviation beacons and roof lights' Raw_Draw; only alive in the night view
 	rain:         [2]engine.Actor_Id, // near and far GPU particle emitters that follow the camera (rain.odin)
+	env:          engine.Actor_Id, // the Environment: night fog and the tonemap grade
 	rain_on:      bool,
 	toggle_rain:  input.Button_Action,
 	road_material: gfx.Material, // unlit blue
@@ -54,6 +57,8 @@ City_State :: struct {
 	toggle_dev:   input.Button_Action,
 	toggle_bloom: input.Button_Action,
 	toggle_fog:   input.Button_Action,
+	exposure_down: input.Button_Action,
+	exposure_up:  input.Button_Action,
 	bloom_on:     bool,
 	fog_on:       bool,
 	orbit:        City_Orbit,
@@ -73,6 +78,7 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state := new(City_State)
 	demo.state = state
 	state.world = engine.world_create(&ctx.gfx)
+	state.env = engine.spawn(&state.world, engine.Environment{grade = CITY_GRADE})
 	engine.camera_fly(ctx, {1536, 420, 2500}, {1536, 60, 1024}, CITY_CAMERA_SPEED)
 	orbit_set(&state.orbit, ctx, CITY_ORBIT_START)
 
@@ -136,6 +142,8 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.toggle_fog = input.button(&ctx.input, "city.fog", .F, "Toggle distance fog")
 	state.toggle_rain = input.button(&ctx.input, "city.rain", .T, "Toggle rain")
 	state.toggle_orbit = input.button(&ctx.input, "city.orbit", .O, "Toggle auto-orbit camera")
+	state.exposure_down = input.button(&ctx.input, "city.exposure_down", .LEFTBRACKET, "Exposure down 0.25 EV")
+	state.exposure_up = input.button(&ctx.input, "city.exposure_up", .RIGHTBRACKET, "Exposure up 0.25 EV")
 	gfx.renderer_add_scene_hook(&ctx.gfx.renderer, gfx.Scene_Hook{name = "city_windows", before = city_before, user = state})
 	return true
 }
@@ -171,6 +179,8 @@ city_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 		state.fog_on = !state.fog_on
 		city_apply_effects(state, &ctx.gfx.renderer)
 	}
+	if input.pressed(&ctx.input, state.exposure_down) do city_set_exposure(state, -0.25)
+	if input.pressed(&ctx.input, state.exposure_up) do city_set_exposure(state, 0.25)
 	if input.pressed(&ctx.input, state.toggle_orbit) do orbit_set(&state.orbit, ctx, !state.orbit.on)
 	orbit_update(&state.orbit, ctx, delta_time)
 	if input.pressed(&ctx.input, state.toggle_rain) do rain_set(state, !state.rain_on)

@@ -80,6 +80,11 @@
       "compute": "computeMain"
     },
     {
+      "name": "default_postfx_tonemap",
+      "source": "src/engine/gfx/shaders/postfx_tonemap.slang",
+      "compute": "computeMain"
+    },
+    {
       "name": "default_particle_sim",
       "source": "src/engine/gfx/shaders/particle_sim.slang",
       "compute": "computeMain"

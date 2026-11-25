@@ -78,4 +78,5 @@ record_after_frame :: proc(ctx: ^engine.Context, dt: f32) {
 frame_hook :: proc(ctx: ^engine.Context, scene_name: string, dt: f32, user: rawptr) {
 	bench_after_frame(ctx, scene_name, dt, user)
 	record_after_frame(ctx, dt)
+	video_after_frame(ctx)
 }

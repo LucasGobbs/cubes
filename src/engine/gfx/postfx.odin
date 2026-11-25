@@ -1,5 +1,6 @@
 package gfx
 
+import "core:math"
 import "core:mem"
 
 // Post-process effects. They live here, not in gfx, because `default`
@@ -118,4 +119,41 @@ bloom_run :: proc(ctx: ^Pass_Ctx, user: rawptr) {
 		mem.ptr_to_bytes(&comp),
 	)
 	ctx.color = out
+}
+
+// ACES filmic tonemap with exposure, contrast and saturation (postfx_tonemap.slang). Input HDR linear, output display linear.
+Tonemap_Uniforms :: struct {
+	exposure_scale: f32, // 2^EV
+	contrast:       f32,
+	saturation:     f32,
+	pad:            f32,
+}
+#assert(size_of(Tonemap_Uniforms) == DEFAULT_POSTFX_TONEMAP_COMPUTE_UNIFORM_BLOCK_SIZE)
+
+Tonemap :: struct {
+	pipeline: Compute_Pipeline_Handle,
+	params:   Tonemap_Uniforms,
+}
+
+tonemap_create :: proc(gfx_ctx: ^Device) -> Tonemap {
+	return Tonemap {
+		pipeline = compute_pipeline_create(gfx_ctx, default_postfx_tonemap_compute()),
+		params = {exposure_scale = 1, contrast = 1, saturation = 1},
+	}
+}
+
+tonemap_pass :: proc(tonemap: ^Tonemap) -> Render_Pass {
+	return Render_Pass{name = "tonemap", run = tonemap_run, user = tonemap}
+}
+
+tonemap_run :: proc(ctx: ^Pass_Ctx, user: rawptr) {
+	tonemap := (^Tonemap)(user)
+	out := pass_acquire(ctx)
+	pass_compute(ctx, tonemap.pipeline, []Texture_Handle{ctx.color}, out, mem.ptr_to_bytes(&tonemap.params))
+	ctx.color = out
+}
+
+// Grade in artist units: exposure in EV stops.
+tonemap_set :: proc(tonemap: ^Tonemap, exposure_ev, contrast, saturation: f32) {
+	tonemap.params = {exposure_scale = math.pow(2, exposure_ev), contrast = contrast, saturation = saturation}
 }

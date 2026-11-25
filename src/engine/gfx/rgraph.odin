@@ -10,6 +10,7 @@ import sdl "vendor:sdl3"
 Pass_Slot :: enum u8 {
 	After_Scene, // ctx.color = scene_color (COLOR_TARGET | SAMPLER); overlay passes allowed
 	Post,        // effect chain
+	Final,       // tonemap / grade: HDR chain output to display-referred color, after every Post effect
 	After_Post,  // ctx.color = chain output (transient, COLOR_TARGET)
 }
 
@@ -59,7 +60,10 @@ renderer_run_post :: proc(renderer: ^Renderer) -> Texture_Handle {
 	assert(renderer.pass == nil)
 	total := 0
 	for slot in Pass_Slot do total += len(renderer.passes[slot])
-	if total == 0 do return renderer.scene_color
+	if total == 0 {
+		readback_capture(renderer, renderer.scene_color)
+		return renderer.scene_color
+	}
 
 	pool_begin_frame(renderer)
 	scene := texture_get(renderer.gfx_ctx, renderer.scene_color)
@@ -71,6 +75,8 @@ renderer_run_post :: proc(renderer: ^Renderer) -> Texture_Handle {
 		height   = scene.height,
 	}
 	for slot in Pass_Slot {
+		// Capture before the After_Post overlays draw into the color: video and readback exclude HUD, stats and title.
+		if slot == .After_Post do readback_capture(renderer, ctx.color)
 		for pass in renderer.passes[slot] do pass.run(&ctx, pass.user)
 	}
 	return ctx.color

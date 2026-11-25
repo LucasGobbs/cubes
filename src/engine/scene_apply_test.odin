@@ -94,7 +94,7 @@ p8_load :: proc(t: ^testing.T, name, text: string, file: ^Scene_File) -> Scene_F
 P8_PROPS_JSON :: `{"name": "p8", "actors": [
 	{"name": "ball", "position": [0, 3, 0], "collider": {"shape": "sphere", "radius": 0.5, "density": 2}},
 	{"name": "floor", "collider": {"shape": "box", "half": [10, 0.5, 10], "body": "static"}},
-	{"name": "env", "environment": {"fog": {"color": [0.5, 0.5, 0.6], "distance": 300}, "shadows": false, "sun_direction": [0, -1, 0], "uncapped": true}}
+	{"name": "env", "environment": {"fog": {"color": [0.5, 0.5, 0.6], "distance": 300}, "shadows": false, "sun_direction": [0, -1, 0], "uncapped": true, "grade": {"exposure": 0.5, "contrast": 1.1}}}
 ]}`
 
 P8_BALL_JSON :: `{"name": "p8", "actors": [{"name": "ball", "collider": {"shape": "sphere", "radius": 0.5, "density": 2}}]}`
@@ -142,6 +142,11 @@ p8_props_from_json :: proc(t: ^testing.T) {
 		sun, has_sun := env.sun_direction.?
 		testing.expect(t, has_sun && sun == [3]f32{0, -1, 0})
 		testing.expect(t, env.uncapped)
+		grade, has_grade := env.grade.?
+		testing.expect(t, has_grade)
+		testing.expect_value(t, grade.exposure, f32(0.5))
+		testing.expect_value(t, grade.contrast, f32(1.1))
+		testing.expect_value(t, grade.saturation, f32(1)) // omitted in JSON: default 1
 	} else {
 		testing.expect(t, false, "env has no Environment")
 	}

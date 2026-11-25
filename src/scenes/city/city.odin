@@ -150,14 +150,26 @@ city_set_dev :: proc(state: ^City_State, renderer: ^gfx.Renderer, dev: bool) {
 }
 
 // Fog and bloom are night-only: the dev view is an unlit, flat overlay. Both follow their toggles.
+// Fog lives on the Environment: apply_environment rewrites renderer.fog from it every world_update.
 city_apply_effects :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 	night := !state.dev
-	renderer.fog = CITY_FOG if night && state.fog_on else {}
+	env := engine.actor_props(&state.world, state.env, engine.Environment)
+	env.fog = nil
+	if night && state.fog_on do env.fog = CITY_FOG
 	if night && state.bloom_on {
 		gfx.renderer_set_passes(renderer, .Post, []gfx.Render_Pass{city_bloom_pass(&state.bloom)})
 	} else {
 		gfx.renderer_clear_passes(renderer, .Post)
 	}
+}
+
+// Dev keys [ and ]: step the grade's exposure in EV and log it.
+city_set_exposure :: proc(state: ^City_State, ev: f32) {
+	env := engine.actor_props(&state.world, state.env, engine.Environment)
+	grade := env.grade.?
+	grade.exposure += ev
+	env.grade = grade
+	log.infof("city: exposure %.2f EV", grade.exposure)
 }
 
 // Re-plans and re-spawns the city for state.seed, keeping the dev overlay in step.

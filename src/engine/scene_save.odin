@@ -100,6 +100,7 @@ collider_to_def :: proc(collider: Collider) -> Collider_Def {
 environment_to_def :: proc(env: Environment) -> Environment_Def {
 	def := Environment_Def{skybox = env.skybox, shadows = env.shadows, sun_direction = env.sun_direction, uncapped = env.uncapped}
 	if fog, has := env.fog.?; has do def.fog = Fog_Def{fog.color, fog.distance}
+	if grade, has := env.grade.?; has do def.grade = Grade_Def{exposure = grade.exposure, contrast = grade.contrast, saturation = grade.saturation}
 	return def
 }
 
