@@ -7,6 +7,16 @@ Convenções (as mesmas do `plan.md`): toda tarefa termina com `make test-engine
 para bug plausível de consumidor; uma tarefa = um commit; nada de shim, migrar todos os chamadores. Medidas de desempenho só em máquina
 ociosa (`uptime` load < 2).
 
+## Status
+
+Onda 1 entregue (commits `f652d11`, `9a647e5`): A1, D1, D2, D3. Detalhes e desvios:
+
+- **A1** feito: `Environment.grade`, slot `.Final`, city usa +1 EV; teclas `[` `]`. Não removi a curva noturna de `city.slang`.
+- **D1** feito: `--render-video` (300 frames exatos, 1080p ok). Janela = tamanho do vídeo (o render size separado foi adiado: `camera_fly` redimensiona os targets para a janela). Frames de transição não são escritos.
+- **D2** feito: teclas **J** (gravar key), **K** (salvar `camera.path.json`), **L** (tocar); `P` já era o dump de stats. `--record path.json`. Não testado com tecla real.
+- **D3** feito: F12 salva `shots/<cena>-<data>.png`. Não testado com tecla real.
+- **Bug aberto (causa raiz não achada):** as primeiras 3 capturas após criar os buffers de readback voltam zeradas. O D1 mascara com 3 frames de aquecimento e o D3 captura 4 frames e guarda o último (`READBACK_ONE_SHOT_FRAMES`). Provável latência de frames em voo ou do blit para textura nova; investigar antes de depender do readback em outro lugar.
+
 ## Fatos verificados (2026-11-25, não suposições)
 
 - Tonemap, exposição e color grading: **não existem**. `grep -w tonemap|exposure|reinhard|ACES` em `src/` e `shaders/` volta vazio. Só há bloom e blur em `src/engine/gfx/postfx.odin`.
