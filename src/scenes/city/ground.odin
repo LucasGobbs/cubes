@@ -8,7 +8,7 @@ import shader_parameters "../../shader_parameters"
 import sdl "vendor:sdl3"
 
 GROUND_Y :: -0.02 // just under the buildings' floor and the streets' ROAD_HEIGHT; the quad is never seen from below
-GROUND_MARGIN :: 12000 // the quad reaches this far past the city on every side; uv outside 0..1 is dark outskirts
+GROUND_MARGIN :: 60000 // the quad reaches this far past the city on every side (far beyond the sky dome); uv outside 0..1 is dark outskirts
 GROUND_MASK_WORDS :: CITY_CELLS / 32
 // Trilinear + 8x aniso: lanes (1 texel) fade to an average at a distance instead of shimmering.
 GROUND_SAMPLER :: sdl.GPUSamplerCreateInfo {

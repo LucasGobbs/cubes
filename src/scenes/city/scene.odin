@@ -8,7 +8,7 @@ import shader_parameters "../../shader_parameters"
 
 CITY_CLEAR_COLOR :: [4]f32{0.1, 0.45, 0.1, 1}
 CITY_NIGHT_COLOR :: [4]f32{0.002, 0.002, 0.003, 1}
-CITY_CAMERA_SPEED :: 900 // units/s: crossing the 3072-unit city takes ~3.5 s
+CITY_CAMERA_SPEED :: 300 // units/s (LShift x12, Z x0.1): crossing the 3072-unit city takes ~10 s
 CITY_SEED_START :: 1 // fixed start so a run is repeatable; R steps the seed
 CITY_DEV_START :: false // night view on start; G toggles the dev view (streets)
 CITY_FOG :: [4]f32{0.0015, 0.0018, 0.003, 3200} // linear rgb haze = the sky's lower band (city_sky.slang BELOW); fully fogged beyond the view distance
