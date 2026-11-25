@@ -39,8 +39,9 @@ main :: proc() {
 			ok := i + 1 < len(os.args)
 			if ok {
 				fields := strings.split(os.args[i + 1], ",", context.temp_allocator)
-				ok = len(fields) == 6
-				for f, k in fields do if ok && k < 6 do parts[k], ok = strconv.parse_f32(f)
+				ok = len(fields) == 6 || (len(fields) == 7 && fields[6] == "fly")
+				record.fly = len(fields) == 7
+				for f, k in fields[:min(len(fields), 6)] do if ok && k < 6 do parts[k], ok = strconv.parse_f32(f)
 			}
 			if !ok {
 				log.errorf("--record needs ex,ey,ez,tx,ty,tz (camera position and look-at target)")

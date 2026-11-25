@@ -1,5 +1,5 @@
-// Recording mode, `./main <scene> --WINDOWED --record ex,ey,ez,tx,ty,tz`: after a short settle time the camera is
-// placed at eye e looking at target t and arcs around t for RECORD_SECONDS with eased motion (smooth fly camera
+// Recording mode, `./main <scene> --WINDOWED --record ex,ey,ez,tx,ty,tz[,fly]`: after a short settle time the camera is
+// placed at eye e looking at target t and arcs around t for RECORD_SECONDS with eased motion (with the 7th field `fly` it travels in a straight line from e through t instead) (smooth fly camera
 // on), then the run quits. Meant for screen capture (scripts/record.sh); the pose is given per recording because
 // every step of the series frames its content differently. Prints RECORD_START/RECORD_END with unix timestamps
 // so the capture can be trimmed.
@@ -20,6 +20,7 @@ RECORD_DOLLY :: 0.25 // fraction of the pivot distance travelled toward it
 
 Record_Run :: struct {
 	on:             bool,
+	fly:            bool, // false = arc around target; true = straight travelling from eye through target
 	eye, target:    gfx.Vec3, // start pose; the arc is around target
 	total:          f64,
 	started, ended: bool,
@@ -49,14 +50,23 @@ record_after_frame :: proc(ctx: ^engine.Context, dt: f32) {
 		fmt.printfln("RECORD_START %.3f", unix_seconds())
 	}
 	u := smootherstep(clamp(f32((record.total - RECORD_SETTLE) / RECORD_SECONDS), 0, 1))
-	// Rotate the start offset about the vertical axis through the pivot and move it toward the pivot.
-	angle := RECORD_ARC * u
-	c, s := math.cos(angle), math.sin(angle)
-	o := record.start_offset
-	offset := gfx.Vec3{o.x * c - o.z * s, o.y, o.x * s + o.z * c} * (1 - RECORD_DOLLY * u)
-	camera.position = record.target + offset
-	look := linalg.normalize(record.target - camera.position)
-	gfx.camera_set_angles(camera, math.atan2(look.z, look.x), math.asin(look.y))
+	if record.fly {
+		// Travelling: the camera flies in a straight line from eye to target (eased), looking along that line at a
+		// point as far beyond the target as the target is from the eye, so the view direction stays steady.
+		path := record.target - record.eye
+		camera.position = record.eye + path * u
+		look := linalg.normalize(record.target + path - camera.position)
+		gfx.camera_set_angles(camera, math.atan2(look.z, look.x), math.asin(look.y))
+	} else {
+		// Rotate the start offset about the vertical axis through the target and move it toward the target.
+		angle := RECORD_ARC * u
+		c, s := math.cos(angle), math.sin(angle)
+		o := record.start_offset
+		offset := gfx.Vec3{o.x * c - o.z * s, o.y, o.x * s + o.z * c} * (1 - RECORD_DOLLY * u)
+		camera.position = record.target + offset
+		look := linalg.normalize(record.target - camera.position)
+		gfx.camera_set_angles(camera, math.atan2(look.z, look.x), math.asin(look.y))
+	}
 	if !record.ended && record.total >= RECORD_SETTLE + RECORD_SECONDS {
 		record.ended = true
 		fmt.printfln("RECORD_END %.3f", unix_seconds())
