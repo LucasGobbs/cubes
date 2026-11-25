@@ -36,7 +36,7 @@ City_State :: struct {
 	lamps:        engine.Actor_Id, // the streetlights' Raw_Draw; only alive in the night view
 	cars:         engine.Actor_Id, // the cars' Raw_Draw; only alive in the night view
 	beacons:      engine.Actor_Id, // the aviation beacons and roof lights' Raw_Draw; only alive in the night view
-	rain:         engine.Actor_Id, // GPU particle emitter that follows the camera (rain.odin)
+	rain:         [2]engine.Actor_Id, // near and far GPU particle emitters that follow the camera (rain.odin)
 	rain_on:      bool,
 	toggle_rain:  input.Button_Action,
 	road_material: gfx.Material, // unlit blue
