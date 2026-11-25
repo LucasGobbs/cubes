@@ -36,6 +36,9 @@ City_State :: struct {
 	lamps:        engine.Actor_Id, // the streetlights' Raw_Draw; only alive in the night view
 	cars:         engine.Actor_Id, // the cars' Raw_Draw; only alive in the night view
 	beacons:      engine.Actor_Id, // the aviation beacons and roof lights' Raw_Draw; only alive in the night view
+	rain:         engine.Actor_Id, // GPU particle emitter that follows the camera (rain.odin)
+	rain_on:      bool,
+	toggle_rain:  input.Button_Action,
 	road_material: gfx.Material, // unlit blue
 	lamp_material: gfx.Material, // streetlight billboards, HDR, additive
 	lamp_pipeline: gfx.Pipeline_Handle,
@@ -117,6 +120,8 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.beacon_material = gfx.material_make(state.beacon_pipeline)
 	state.bloom_on = true
 	state.fog_on = true
+	rain_spawn(state)
+	state.rain_on = true
 
 	state.seed = CITY_SEED_START
 	state.regenerate = true
@@ -129,6 +134,7 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.toggle_dev = input.button(&ctx.input, "city.dev", .G, "Toggle dev view (streets)")
 	state.toggle_bloom = input.button(&ctx.input, "city.bloom", .B, "Toggle bloom")
 	state.toggle_fog = input.button(&ctx.input, "city.fog", .F, "Toggle distance fog")
+	state.toggle_rain = input.button(&ctx.input, "city.rain", .T, "Toggle rain")
 	state.toggle_orbit = input.button(&ctx.input, "city.orbit", .O, "Toggle auto-orbit camera")
 	gfx.renderer_add_scene_hook(&ctx.gfx.renderer, gfx.Scene_Hook{name = "city_windows", before = city_before, user = state})
 	return true
@@ -167,6 +173,8 @@ city_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	}
 	if input.pressed(&ctx.input, state.toggle_orbit) do orbit_set(&state.orbit, ctx, !state.orbit.on)
 	orbit_update(&state.orbit, ctx, delta_time)
+	if input.pressed(&ctx.input, state.toggle_rain) do rain_set(state, !state.rain_on)
+	rain_follow_camera(state, ctx)
 	state.time += delta_time
 	engine.world_update(&state.world, delta_time)
 	engine.world_render(&state.world, ctx.blend)

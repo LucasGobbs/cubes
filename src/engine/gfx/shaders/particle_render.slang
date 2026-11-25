@@ -21,6 +21,8 @@ struct RenderParams {
     float4 color_end;
     float fade_in;
     float3 _pad;
+    // xyz = camera position, w = streak stretch (seconds of travel drawn as length; 0 = round billboard).
+    float4 stretch_cam;
 };
 
 [[vk::binding(0, 0)]]
@@ -62,7 +64,22 @@ VertexOutput vertexMain(uint vid : SV_VertexID) {
 
     float t = p.age / p.lifetime;
     float size = lerp(params.size_start, params.size_end, t);
-    float3 world = p.position + (params.cam_right * corner.x + params.cam_up * corner.y) * size * 0.5;
+    float3 world;
+    float stretch = params.stretch_cam.w;
+    float speed = length(p.velocity);
+    if (stretch > 0.0 && speed > 1e-4) {
+        // Streak: a quad along the velocity, its width turned toward the camera. The width never drops below
+        // about one pixel (distance * 0.0025 at 70 deg fov) so thin streaks fade instead of flickering.
+        float3 axis = p.velocity / speed;
+        float3 to_cam = params.stretch_cam.xyz - p.position;
+        float dist = length(to_cam);
+        float3 side = cross(axis, to_cam);
+        side = length(side) > 1e-5 ? normalize(side) : params.cam_right;
+        float width = max(size, dist * 0.002);
+        world = p.position + axis * (corner.y * speed * stretch * 0.5) + side * (corner.x * width * 0.5);
+    } else {
+        world = p.position + (params.cam_right * corner.x + params.cam_up * corner.y) * size * 0.5;
+    }
 
     float4 color = lerp(p.color, params.color_end, t);
     if (params.fade_in > 0.0) {

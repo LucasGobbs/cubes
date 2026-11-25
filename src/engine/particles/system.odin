@@ -188,6 +188,7 @@ particles_draw :: proc(renderer: ^gfx.Renderer, user: rawptr) {
 		p.size_end = e.desc.size[1]
 		p.color_end = e.desc.color_end
 		p.fade_in = e.desc.fade_in
+		p.stretch_cam = {renderer.camera.position.x, renderer.camera.position.y, renderer.camera.position.z, e.desc.stretch}
 		goose_sdl.push_uniform(gfx_ctx.command_buffer, gfx.DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK, &block)
 
 		buffer := gfx.buffer_get(gfx_ctx, e.buffer)

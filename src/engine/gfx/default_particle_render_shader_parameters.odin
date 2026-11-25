@@ -27,6 +27,7 @@ DefaultParticleRenderVertexRenderParams :: struct #max_field_align(16) {
 	_padding_4: [12]u8,
 	_pad: [3]f32,
 	_padding_5: [4]u8,
+	stretch_cam: [4]f32,
 }
 
 #assert(offset_of(DefaultParticleRenderVertexRenderParams, view_projection) == 0)
@@ -37,20 +38,21 @@ DefaultParticleRenderVertexRenderParams :: struct #max_field_align(16) {
 #assert(offset_of(DefaultParticleRenderVertexRenderParams, color_end) == 128)
 #assert(offset_of(DefaultParticleRenderVertexRenderParams, fade_in) == 144)
 #assert(offset_of(DefaultParticleRenderVertexRenderParams, _pad) == 160)
-#assert(size_of(DefaultParticleRenderVertexRenderParams) == 176)
+#assert(offset_of(DefaultParticleRenderVertexRenderParams, stretch_cam) == 176)
+#assert(size_of(DefaultParticleRenderVertexRenderParams) == 192)
 
 DefaultParticleRenderVertexUniformBlock :: struct #max_field_align(16) {
 	params: DefaultParticleRenderVertexRenderParams,
 }
 
 #assert(offset_of(DefaultParticleRenderVertexUniformBlock, params) == 0)
-#assert(size_of(DefaultParticleRenderVertexUniformBlock) == 176)
+#assert(size_of(DefaultParticleRenderVertexUniformBlock) == 192)
 
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SIZE :: 176
+DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SIZE :: 192
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SPACE, binding = DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_BINDING, slot = DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SLOT, count = DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -66,7 +68,7 @@ DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORMS := []goose.UniformRef {
 DEFAULT_PARTICLE_RENDER_VERTEX_PARTICLES :: goose.Binding {name = "particles", stage = .Vertex, kind = .StorageBuffer, access = .ReadOnly, location = {space = 0, binding = 1, slot = 0, count = 1}}
 
 DEFAULT_PARTICLE_RENDER_VERTEX_BINDINGS := [2]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 176},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 192},
 	{name = "particles", stage = .Vertex, kind = .StorageBuffer, access = .ReadOnly, location = {space = 0, binding = 1, slot = 0, count = 1}},
 }
 
@@ -143,6 +145,7 @@ DefaultParticleRenderVertexRenderParams :: struct #max_field_align(16) {
 	color_end: [4]f32,
 	fade_in: f32,
 	_pad: [3]f32,
+	stretch_cam: [4]f32,
 }
 
 #assert(offset_of(DefaultParticleRenderVertexRenderParams, view_projection) == 0)
@@ -153,20 +156,21 @@ DefaultParticleRenderVertexRenderParams :: struct #max_field_align(16) {
 #assert(offset_of(DefaultParticleRenderVertexRenderParams, color_end) == 96)
 #assert(offset_of(DefaultParticleRenderVertexRenderParams, fade_in) == 112)
 #assert(offset_of(DefaultParticleRenderVertexRenderParams, _pad) == 116)
-#assert(size_of(DefaultParticleRenderVertexRenderParams) == 128)
+#assert(offset_of(DefaultParticleRenderVertexRenderParams, stretch_cam) == 128)
+#assert(size_of(DefaultParticleRenderVertexRenderParams) == 144)
 
 DefaultParticleRenderVertexUniformBlock :: struct #max_field_align(16) {
 	params: DefaultParticleRenderVertexRenderParams,
 }
 
 #assert(offset_of(DefaultParticleRenderVertexUniformBlock, params) == 0)
-#assert(size_of(DefaultParticleRenderVertexUniformBlock) == 128)
+#assert(size_of(DefaultParticleRenderVertexUniformBlock) == 144)
 
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SIZE :: 128
+DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SIZE :: 144
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SPACE, binding = DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_BINDING, slot = DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SLOT, count = DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -182,7 +186,7 @@ DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORMS := []goose.UniformRef {
 DEFAULT_PARTICLE_RENDER_VERTEX_PARTICLES :: goose.Binding {name = "particles", stage = .Vertex, kind = .StorageBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}}
 
 DEFAULT_PARTICLE_RENDER_VERTEX_BINDINGS := [2]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 128},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 144},
 	{name = "particles", stage = .Vertex, kind = .StorageBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}},
 }
 
@@ -261,6 +265,7 @@ DefaultParticleRenderVertexRenderParams :: struct #max_field_align(16) {
 	_padding_0: [12]u8,
 	_pad: [3]f32,
 	_padding_1: [4]u8,
+	stretch_cam: [4]f32,
 }
 
 #assert(offset_of(DefaultParticleRenderVertexRenderParams, view_projection) == 0)
@@ -271,20 +276,21 @@ DefaultParticleRenderVertexRenderParams :: struct #max_field_align(16) {
 #assert(offset_of(DefaultParticleRenderVertexRenderParams, color_end) == 96)
 #assert(offset_of(DefaultParticleRenderVertexRenderParams, fade_in) == 112)
 #assert(offset_of(DefaultParticleRenderVertexRenderParams, _pad) == 128)
-#assert(size_of(DefaultParticleRenderVertexRenderParams) == 144)
+#assert(offset_of(DefaultParticleRenderVertexRenderParams, stretch_cam) == 144)
+#assert(size_of(DefaultParticleRenderVertexRenderParams) == 160)
 
 DefaultParticleRenderVertexUniformBlock :: struct #max_field_align(16) {
 	params: DefaultParticleRenderVertexRenderParams,
 }
 
 #assert(offset_of(DefaultParticleRenderVertexUniformBlock, params) == 0)
-#assert(size_of(DefaultParticleRenderVertexUniformBlock) == 144)
+#assert(size_of(DefaultParticleRenderVertexUniformBlock) == 160)
 
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SIZE :: 144
+DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SIZE :: 160
 DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SPACE, binding = DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_BINDING, slot = DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_SLOT, count = DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -300,7 +306,7 @@ DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORMS := []goose.UniformRef {
 DEFAULT_PARTICLE_RENDER_VERTEX_PARTICLES :: goose.Binding {name = "particles", stage = .Vertex, kind = .StorageBuffer, access = .ReadOnly, location = {space = 0, binding = 1, slot = 0, count = 1}}
 
 DEFAULT_PARTICLE_RENDER_VERTEX_BINDINGS := [2]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 144},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 160},
 	{name = "particles", stage = .Vertex, kind = .StorageBuffer, access = .ReadOnly, location = {space = 0, binding = 1, slot = 0, count = 1}},
 }
 

@@ -43,6 +43,7 @@ Emitter_Desc :: struct {
 	color_start: [4]f32, // zero = white {1,1,1,1}
 	color_end:   [4]f32, // zero = fade to transparent (intended)
 	fade_in:     f32,
+	stretch:     f32, // 0 = round billboard; > 0 = streak along the velocity, this many seconds of travel long (rain)
 }
 
 Emitter :: struct {

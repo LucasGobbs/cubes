@@ -131,3 +131,19 @@ zero_desc_gets_visible_defaults :: proc(t: ^testing.T) {
 	testing.expect_value(t, e.cpu[0].color, [4]f32{1, 1, 1, 1})
 	testing.expect_value(t, e.cpu[0].lifetime, f32(1))
 }
+
+@(test)
+cpu_spawns_follow_the_emitter_position :: proc(t: ^testing.T) {
+	e: Emitter
+	emitter_init(&e, Emitter_Desc{mode = .CPU, capacity = 8, position = {0, 0, 0}, lifetime = {10, 10}})
+	defer emitter_destroy(&e)
+
+	emitter_burst(&e, 1)
+	emitter_step(&e, 0.01)
+	testing.expect_value(t, e.cpu[0].position, Vec3{0, 0, 0})
+
+	e.desc.position = {100, 5, -40} // a camera-following emitter is moved every frame
+	emitter_burst(&e, 1)
+	emitter_step(&e, 0.01)
+	testing.expect_value(t, e.cpu[1].position, Vec3{100, 5, -40})
+}
