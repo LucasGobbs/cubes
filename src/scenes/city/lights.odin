@@ -8,7 +8,7 @@ import gfx "../../engine/gfx"
 import shader_parameters "../../shader_parameters"
 import "core:log"
 
-LAMP_SPACING :: 8 // units between posts along a street
+LAMP_SPACING :: 14 // units between posts along a street
 LAMP_JITTER :: 1 // +- units along the street, from the seed
 LAMP_KERB :: 0.5 // unit cell centre inside the road edge
 LAMP_HEIGHT :: 4

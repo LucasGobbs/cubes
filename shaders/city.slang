@@ -58,11 +58,11 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     float3 lit = pow(texel.rgb, 2.2) * input.color.rgb;
     // Night grade: half-strength S-curve in linear light, only on dark values (luma < ~0.35); it sinks roofs and
     // dim spill toward black. Lit windows (luma above ~0.5) are untouched and then emissive: the boost grows them
-    // up to 2.2x so the bloom threshold catches them.
+    // up to 3.2x so the bloom threshold catches them.
     float luma = dot(lit, float3(0.2126, 0.7152, 0.0722));
     float dark = 1.0 - smoothstep(0.1, 0.35, luma);
     lit = lerp(lit, lit * lit * (3.0 - 2.0 * lit), 0.5 * dark);
-    lit *= 1.0 + 1.2 * smoothstep(0.1, 0.5, luma);
+    lit *= 1.0 + 2.2 * smoothstep(0.08, 0.45, luma);
 
     // Same ramp as sea.slang: clear at 60% of the view distance, fully fogged at 100%.
     float dist = length(input.to_camera);

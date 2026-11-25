@@ -10,8 +10,8 @@ import "core:log"
 
 CAR_SPEED_MIN :: 4 // units/s, one speed per lane
 CAR_SPEED_MAX :: 9
-CAR_GAP_MIN :: 12 // units between cars in a lane
-CAR_GAP_MAX :: 44
+CAR_GAP_MIN :: 28 // units between cars in a lane
+CAR_GAP_MAX :: 100
 CAR_LAMP_OFFSET :: 0.3 // lamps sit 0.6 apart across the lane, centred on it
 CAR_LAMP_HEIGHT :: 0.35
 CAR_VERTICES :: 8 // two lamp quads

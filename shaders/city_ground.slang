@@ -51,5 +51,8 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     // Same ramp as city.slang: clear at 60% of the view distance, fully fogged at 100%.
     float dist = length(input.to_camera);
     float t = input.fog.a > 0.0 ? saturate((dist - 0.6 * input.fog.a) / (0.4 * input.fog.a)) : 0.0;
+    // Past the sky dome (radius 3500 in sky.odin) the ground is dropped, not drawn over it: the fogged ground reaches
+    // black at the view distance and the sky shows below the horizon instead of a flat dark band.
+    if (input.fog.a > 0.0 && dist > 1.03 * input.fog.a) discard;
     return float4(lerp(lit, input.fog.rgb, t), 1.0);
 }
