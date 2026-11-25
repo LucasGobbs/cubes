@@ -175,33 +175,8 @@ world_get_find_count_by_struct_type :: proc(t: ^testing.T) {
 	testing.expect(t, world_get(&world, p.id, Probe_Ticker) == nil)
 	testing.expect(t, world_get(&world, ticker.id, Probe_Actor) == nil)
 	testing.expect(t, world_find(&world, Probe_Actor) == p)
-	testing.expect_value(t, world_count_of(&world, Probe_Ticker), 1)
-	testing.expect_value(t, world_count_of(&world, Probe_Actor), 1)
-}
-
-@(test)
-struct_actors_coexist_with_typed_actors :: proc(t: ^testing.T) {
-	world := world_create(nil)
-	defer world_destroy(&world)
-
-	counter := register_type(&world, Fixed_Counter, nil, fixed_counter_tick, nil, fixed_counter_fixed_tick)
-	old_id, old_state := spawn_typed(&world, counter, Fixed_Counter{})
-	probe := world_add_actor(
-		&world,
-		Probe_Ticker{actor = actor_hooks(Probe_Ticker, tick = probe_tick, fixed_tick = probe_fixed_tick)},
-	)
-
-	world_update(&world, 0.25)
-	world_fixed_update(&world, 0.25)
-	testing.expect_value(t, old_state.ticks, 1)
-	testing.expect_value(t, old_state.fixed_ticks, 1)
-	testing.expect_value(t, probe.ticks, 1)
-	testing.expect_value(t, probe.fixed_ticks, 1)
-
-	testing.expect(t, world_get_state(&world, old_id, Fixed_Counter) == old_state)
-	testing.expect(t, world_get(&world, old_id, Probe_Ticker) == nil)
-	testing.expect_value(t, world_count(&world, counter), 1)
-	testing.expect_value(t, world_count_of(&world, Probe_Ticker), 1)
+	testing.expect_value(t, world_count(&world, Probe_Ticker), 1)
+	testing.expect_value(t, world_count(&world, Probe_Actor), 1)
 }
 
 @(test)

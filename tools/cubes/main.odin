@@ -98,14 +98,14 @@ actor_command :: proc(name: string, opts: Options) {
 	plan: Plan
 	code := render(ACTOR_CODE, "SCENE", opts.scene, "TYPE", type_name, "ACTOR", name)
 	append(&plan.creates, File_Edit{path = actor_path, content = code})
-	new_scene, wired := scene_add_actor(scene_src, opts.scene, name, type_name)
+	new_scene, wired := scene_add_actor(scene_src, opts.scene, name)
 	if wired {
 		append(&plan.edits, File_Edit{path = scene_path, content = new_scene, original = scene_src})
 	}
 	execute(&plan, opts.dry_run)
 	if !wired {
-		fmt.printfln("%s: structure not recognised, paste these two lines into create before `return true`:", scene_path)
-		for line in actor_wiring(name, type_name) do fmt.println(line)
+		fmt.printfln("%s: structure not recognised, paste this line into create before `return true`:", scene_path)
+		fmt.println(actor_wiring(name))
 	}
 }
 

@@ -48,10 +48,10 @@ registry_add_scene :: proc(src, name: string, data: bool) -> (out, err: string) 
 	return strings.join(lines, "\n", context.temp_allocator), ""
 }
 
-// Wires an actor into a scene file: register_type and spawn_typed go before the
-// `// cubes:actors` marker. Scene files without the marker get it inside create, before
-// `return true`. ok=false: the structure is not recognised; src is returned unchanged.
-scene_add_actor :: proc(src, scene, actor, type_name: string) -> (out: string, ok: bool) {
+// Wires an actor into a scene file: its spawn line goes before the `// cubes:actors` marker.
+// Scene files without the marker get it inside create, before `return true`.
+// ok=false: the structure is not recognised; src is returned unchanged.
+scene_add_actor :: proc(src, scene, actor: string) -> (out: string, ok: bool) {
 	lines := strings.split(src, "\n", context.temp_allocator)
 	marker := find_trimmed(lines, MARK_ACTORS, 0, len(lines))
 	if marker < 0 {
@@ -62,16 +62,13 @@ scene_add_actor :: proc(src, scene, actor, type_name: string) -> (out: string, o
 		lines = splice(lines, ret, {join("\t", MARK_ACTORS)})
 		marker = ret
 	}
-	wiring := actor_wiring(actor, type_name)
-	lines = splice(lines, marker, wiring[:])
+	lines = splice(lines, marker, {actor_wiring(actor)})
 	return strings.join(lines, "\n", context.temp_allocator), true
 }
 
-// The two lines that register and spawn an actor, indented for a create body.
-actor_wiring :: proc(actor, type_name: string) -> [2]string {
-	register := join("\t", actor, "_type := engine.register_type(&state.world, ", type_name, ", ", actor, "_create, ", actor, "_tick, ", actor, "_destroy)")
-	spawn := join("\tengine.spawn_typed(&state.world, ", actor, "_type, ", type_name, "{})")
-	return {register, spawn}
+// The line that spawns an actor, indented for a create body.
+actor_wiring :: proc(actor: string) -> string {
+	return join("\t", actor, "_spawn(&state.world)")
 }
 
 // Trimmed exact match in lines[from:to]; -1 when absent.

@@ -8,15 +8,18 @@ import "core:testing"
 import luajit "luajit"
 
 Contact_Probe :: struct {
-	hits:  int,
-	other: Actor_Id,
-	kill:  bool, // destroy the other actor from inside the hook
+	using actor: Actor,
+	transform:   Transform,
+	collider:    Collider,
+	hits:        int,
+	other:       Actor_Id,
+	kill:        bool, // destroy the other actor from inside the hook
 }
 
-contact_probe_contact :: proc(world: ^World, id: Actor_Id, self: ^Contact_Probe, other: Actor_Id) {
+contact_probe_contact :: proc(self: ^Contact_Probe, other: Actor_Id) {
 	self.hits += 1
 	self.other = other
-	if self.kill do world_destroy_actor(world, other)
+	if self.kill do world_destroy_actor(self.world, other)
 }
 
 @(private = "file")
@@ -40,10 +43,17 @@ contact_hook_fires_once_per_side :: proc(t: ^testing.T) {
 	// No Device: physics runs without rendering.
 	world := world_create(nil)
 	defer world_destroy(&world)
-	probe_type := register_type(&world, Contact_Probe, nil, nil, nil, nil, contact_probe_contact)
-
-	ground_id, ground := spawn_typed(&world, probe_type, Contact_Probe{}, Transform{position = {0, -0.5, 0}}, Collider{shape = Box{{10, 0.5, 10}}, body = .Static})
-	ball_id, ball := spawn_typed(&world, probe_type, Contact_Probe{}, Transform{position = {0, 3, 0}}, Collider{shape = Sphere{0.5}, body = .Dynamic})
+	ground := world_add_actor(&world, Contact_Probe{
+		actor     = actor_hooks(Contact_Probe, contact = contact_probe_contact),
+		transform = Transform{position = {0, -0.5, 0}},
+		collider  = Collider{shape = Box{{10, 0.5, 10}}, body = .Static},
+	})
+	ball := world_add_actor(&world, Contact_Probe{
+		actor     = actor_hooks(Contact_Probe, contact = contact_probe_contact),
+		transform = Transform{position = {0, 3, 0}},
+		collider  = Collider{shape = Sphere{0.5}, body = .Dynamic},
+	})
+	ground_id, ball_id := ground.id, ball.id
 	for _ in 0 ..< 120 do world_update(&world, 1.0 / 60.0)
 
 	testing.expect_value(t, ball.hits, 1)
@@ -56,10 +66,18 @@ contact_hook_fires_once_per_side :: proc(t: ^testing.T) {
 contact_hook_destroying_other_is_safe :: proc(t: ^testing.T) {
 	world := world_create(nil)
 	defer world_destroy(&world)
-	probe_type := register_type(&world, Contact_Probe, nil, nil, nil, nil, contact_probe_contact)
-
-	ground_id, _ := spawn_typed(&world, probe_type, Contact_Probe{}, Transform{position = {0, -0.5, 0}}, Collider{shape = Box{{10, 0.5, 10}}, body = .Static})
-	ball_id, ball := spawn_typed(&world, probe_type, Contact_Probe{kill = true}, Transform{position = {0, 3, 0}}, Collider{shape = Sphere{0.5}, body = .Dynamic})
+	ground := world_add_actor(&world, Contact_Probe{
+		actor     = actor_hooks(Contact_Probe, contact = contact_probe_contact),
+		transform = Transform{position = {0, -0.5, 0}},
+		collider  = Collider{shape = Box{{10, 0.5, 10}}, body = .Static},
+	})
+	ball := world_add_actor(&world, Contact_Probe{
+		actor     = actor_hooks(Contact_Probe, contact = contact_probe_contact),
+		kill      = true,
+		transform = Transform{position = {0, 3, 0}},
+		collider  = Collider{shape = Sphere{0.5}, body = .Dynamic},
+	})
+	ground_id, ball_id := ground.id, ball.id
 	for _ in 0 ..< 120 do world_update(&world, 1.0 / 60.0)
 
 	testing.expect(t, world_valid(&world, ball_id), "killer survives its own hook")

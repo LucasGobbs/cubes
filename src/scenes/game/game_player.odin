@@ -1,6 +1,5 @@
-// Per-actor convention: a state struct registered with engine.register_type, plus
-// create/tick procs. Props (Transform, Model, Health, ...) live in engine.World,
-// never in the struct. Scenes only orchestrate.
+// Per-actor convention: a struct with `using actor: engine.Actor` first, its Props as
+// fields, built by a spawn proc through engine.world_add_actor. Hooks take self only.
 // Player is a CesiumMan steered on the XZ plane; enemy chases it. See game_enemy.odin.
 package game
 
@@ -17,24 +16,30 @@ PLAYER_AUTOPILOT_IDLE :: 3 // seconds without input before the player circles
 PLAYER_AUTOPILOT_TURN :: 0.8 // rad/s of the circle's heading
 
 Player :: struct {
-	enemy:    engine.Actor_Type, // destroyed on respawn
-	wish_dir: engine.Vec3, // zero means no input; the scene's fixed_tick writes it each step
-	idle:     f32, // seconds since last input
-	heading:  f32, // heading of the autopilot circle
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	using model:     engine.Model, // before animator: the Animator needs the skinned Model
+	animator:        engine.Animator,
+	health:          engine.Health,
+	wish_dir:        engine.Vec3, // zero means no input; the scene's fixed_tick writes it each step
+	idle:            f32, // seconds since last input
+	heading:         f32, // heading of the autopilot circle
 }
 
-
-player_create :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Player) {
-	engine.actor_add_props(world, id, engine.Model{path = PLAYER_MODEL})
-	engine.actor_add_props(world, id, engine.Animator{clip = PLAYER_CLIP})
-	engine.actor_add_props(world, id, engine.Health{current = PLAYER_HEALTH, max = PLAYER_HEALTH})
+player_spawn :: proc(world: ^engine.World) {
+	engine.world_add_actor(
+		world,
+		Player {
+			actor = engine.actor_hooks(Player, tick = player_tick),
+			transform = engine.transform_create(),
+			model = engine.model_create(path = PLAYER_MODEL),
+			animator = engine.Animator{clip = PLAYER_CLIP},
+			health = engine.Health{current = PLAYER_HEALTH, max = PLAYER_HEALTH},
+		},
+	)
 }
 
-player_register_type :: proc(world: ^engine.World) -> engine.Actor_Type {
-	return engine.register_type(world, Player, player_create, player_tick, nil)
-}
-
-player_tick :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Player, dt: f32) {
+player_tick :: proc(self: ^Player, dt: f32) {
 	move := self.wish_dir
 	if move == {} {
 		self.idle += dt
@@ -47,17 +52,14 @@ player_tick :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Player, dt
 	}
 	if move != {} {
 		direction := linalg.normalize(move)
-		transform := engine.actor_props(world, id, engine.Transform)
-		transform.position += direction * PLAYER_SPEED * dt
-		transform.rotation = game_facing(direction)
+		self.position += direction * PLAYER_SPEED * dt
+		self.rotation = game_facing(direction)
 	}
 
-	health := engine.actor_props(world, id, engine.Health)
-	if health.current > 0 do return
+	if self.health.current > 0 do return
 	log.infof("game: player down, respawning at origin")
-	engine.world_destroy_type(world, self.enemy)
-	transform := engine.actor_props(world, id, engine.Transform)
-	transform.position = {}
-	transform.rotation = linalg.QUATERNIONF32_IDENTITY
-	health.current = health.max
+	enemy_destroy_all(self.world)
+	self.position = {}
+	self.rotation = linalg.QUATERNIONF32_IDENTITY
+	self.health.current = self.health.max
 }

@@ -161,7 +161,7 @@ and `engine.find` / `engine.spawn_model` are also available. `a:set_scale`, `a:a
 - `CUBES_JIT_V=1` dumps LuaJIT's trace log (`jit.v`) to stderr at host creation.
 - `make luajit` builds the vendored LuaJIT 2.1 static lib (`third_party/luajit`); `test-engine` depends on it.
 - Scenes: `scriptdemo` (grid driven by `src/scenes/scriptdemo/spinner.lua`, per-actor ticks), `scriptdemo_batch`
-  (`src/scenes/scriptdemo/spinner_batch.lua`, one Lua call per frame), `scriptdemo_odin` (Odin `register_type` baseline, no Lua),
+  (`src/scenes/scriptdemo/spinner_batch.lua`, one Lua call per frame), `scriptdemo_odin` (Odin `world_add_actor` baseline, no Lua),
   `scriptdemo_balls` (`src/scenes/scriptdemo/balls.lua`: dynamic spheres on a static ground, `on_contact` grows them).
 - `CUBES_SCRIPT_N=<count>` sets the actor count (default 100). `CUBES_SCRIPT_NOMODEL=1` spawns without models
   so a bench measures script cost only, e.g. `make run ARGS="scriptdemo --bench 5"`.
@@ -172,18 +172,19 @@ and `engine.find` / `engine.spawn_model` are also available. `a:set_scale`, `a:a
 ```
 make new-scene NAME=my_scene            # code scene: src/scenes/my_scene/scene.odin
 make new-scene NAME=my_data DATA=1      # data-only scene: scene.json, no import
-make new-actor NAME=bot SCENE=my_scene  # actor file + register/spawn wiring in the scene
+make new-actor NAME=bot SCENE=my_scene  # actor file (struct embedding engine.Actor) + spawn line in the scene
 ```
 
 Add `DRY=1` to print the plan without writing. Names are `[a-z][a-z0-9_]*`; existing files are never
-overwritten. Registry edits in `src/scene.odin` go between the `// cubes:imports`, `// cubes:scenes`
+overwritten. The scene gets one line, `<name>_spawn(&state.world)`, between the `// cubes:actors` marker and
+`return true`; registry edits in `src/scene.odin` go between the `// cubes:imports`, `// cubes:scenes`
 and `// cubes:actors` markers: keep them. The tool is `tools/cubes/` (run from the repo root).
 
 ## Layout
 
 - `src/` - app (`main.odin`, scene registry `scene.odin`), `scenekit/` (shared scene type and helpers), `scenes/<name>/scene.odin` (one folder per scene).
 - `src/gbbfx/` - renderer, render passes/postfx (`rgraph.odin`), loader (glTF), and default shaders in `defaults/`.
-- `src/engine/` - `World` of actors x Props, with a per-type create/tick/destroy registry (`register_type`) and `engine.run`. See `examples/hello_engine` and the `game` scene (`src/scenes/game/game_player.odin`, `game_enemy.odin`).
+- `src/engine/` - `World` of actors x Props: an actor is a struct with `using actor: engine.Actor` first, Props as fields, and `engine.world_add_actor`. `engine.run` drives the loop. See `examples/hello_engine` and the `game` scene (`src/scenes/game/game_player.odin`, `game_enemy.odin`).
 - `src/glove/` - input system.
 - `static/` - models, textures, fonts, skybox.
 - `third_party/goose/` - shader build tool and Slang.

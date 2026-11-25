@@ -40,23 +40,26 @@ script_test_string :: proc(world: ^World, name: cstring) -> string {
 // Odin-side probe: records how many Lua ticks had run when its tick fired.
 @(private = "file")
 Order_Probe :: struct {
-	seen: f64,
+	using actor: Actor,
+	script:      Script,
+	seen:        f64,
 }
 
 @(private = "file")
-order_probe_tick :: proc(world: ^World, id: Actor_Id, self: ^Order_Probe, dt: f32) {
-	self.seen = script_test_number(world, "ticks")
+order_probe_tick :: proc(self: ^Order_Probe, dt: f32) {
+	self.seen = script_test_number(self.world, "ticks")
 }
 
 // Odin-side destroyer: its tick removes one batch actor before Lua runs.
 @(private = "file")
 Batch_Killer :: struct {
-	victim: Actor_Id,
+	using actor: Actor,
+	victim:      Actor_Id,
 }
 
 @(private = "file")
-batch_killer_tick :: proc(world: ^World, id: Actor_Id, self: ^Batch_Killer, dt: f32) {
-	world_destroy_actor(world, self.victim)
+batch_killer_tick :: proc(self: ^Batch_Killer, dt: f32) {
+	world_destroy_actor(self.world, self.victim)
 }
 
 @(test)
@@ -122,8 +125,10 @@ return M
 	world := world_create(nil)
 	defer world_destroy(&world)
 
-	probe_type := register_type(&world, Order_Probe, nil, order_probe_tick, nil)
-	_, probe := spawn_typed(&world, probe_type, Order_Probe{}, Script{path = path})
+	probe := world_add_actor(&world, Order_Probe{
+		actor  = actor_hooks(Order_Probe, tick = order_probe_tick),
+		script = Script{path = path},
+	})
 
 	// Odin tick sees the Lua tick count from before this frame, so Odin ran first.
 	world_update(&world, 0.1)
@@ -917,8 +922,7 @@ return M
 	defer os.remove(path)
 	ids: [5]Actor_Id
 	for &id in ids do id = spawn(&world, Transform{}, Script{path = path})
-	victim_type := register_type(&world, Batch_Killer, nil, batch_killer_tick, nil)
-	_, _ = spawn_typed(&world, victim_type, Batch_Killer{victim = ids[2]})
+	_ = world_add_actor(&world, Batch_Killer{actor = actor_hooks(Batch_Killer, tick = batch_killer_tick), victim = ids[2]})
 	world_update(&world, 0.1)
 	testing.expect(t, !world_valid(&world, ids[2]), "odin tick destroyed the victim before the batch")
 	testing.expect_value(t, script_test_number(&world, "batch_calls"), 1)

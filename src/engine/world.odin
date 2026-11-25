@@ -28,12 +28,11 @@
 //   // read:   engine.actor_props(world, id, Hit_Box).hp
 //   // remove: engine.actor_remove_props(world, id, Hit_Box)
 //
-// Per-actor logic (registry): a state struct plus create/tick/destroy procs.
-//   Ship :: struct { target: engine.Actor_Type }
-//   ship_create :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Ship) { /* actor_add_props */ }
-//   ship_tick :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Ship, dt: f32) { /* ... */ }
-//   // start:  ship := engine.register_type(world, Ship, ship_create, ship_tick, nil)
-//   // spawn:  engine.spawn_typed(world, ship, Ship{target = player_type})
+// Per-actor logic: a struct embedding Actor as first field, self-only hooks.
+//   Ship :: struct { using actor: engine.Actor, target: engine.Actor_Id }
+//   ship_tick :: proc(self: ^Ship, dt: f32) { /* ... */ }
+//   // spawn: ship := engine.world_add_actor(world, Ship{actor = engine.actor_hooks(Ship, tick = ship_tick)})
+//   // find:  engine.world_find(world, Ship), engine.world_count(world, Ship), engine.world_get(world, id, Ship)
 // Ticks run in slot order (spawn order, reused slots included), once per world_update.
 // Actors spawned during world_update first tick on the next one.
 // Lua behaviour: Script{path = "src/scenes/<scene>/x.lua"} runs the module's create and destroy
@@ -46,7 +45,6 @@ import "core:log"
 import "core:math"
 import "core:math/linalg"
 import "core:mem"
-import "core:reflect"
 import "core:slice"
 import "core:strings"
 import gfx "gfx"
@@ -59,19 +57,6 @@ Vec3 :: gfx.Vec3
 // Generation 0 is never a live slot, so the zero Actor_Id is always invalid.
 Actor_Id :: struct {
 	index, generation: u32,
-}
-
-// Handle from register_type. Zero is invalid; handles are 1-based indices into World.types.
-Actor_Type :: distinct u32
-
-// Procs are stored type-erased. The state is a heap block owned by the slot.
-Actor_Type_Info :: struct {
-	state_size, state_align: int,
-	create:                  proc(world: ^World, id: Actor_Id, state: rawptr),
-	tick:                    proc(world: ^World, id: Actor_Id, state: rawptr, dt: f32),
-	fixed_tick:              proc(world: ^World, id: Actor_Id, state: rawptr, dt: f32),
-	destroy:                 proc(world: ^World, id: Actor_Id, state: rawptr),
-	contact:                 proc(world: ^World, id: Actor_Id, state: rawptr, other: Actor_Id),
 }
 
 // Embedded at offset 0 of a world_add_actor struct; hooks get the same pointer as the user struct.
@@ -239,7 +224,6 @@ World :: struct {
 	props:          map[typeid]Prop_Info, // registered Prop types; see register_props
 	slots:          [dynamic]Slot,
 	free:           [dynamic]u32,
-	types:          [dynamic]Actor_Type_Info,
 	assets:         Assets,
 	updating:       bool, // true while world_update ticks; spawns then wait one frame
 	time:           f32, // scene clock in seconds: world_update adds dt; world_fixed_update does not
@@ -284,8 +268,7 @@ Slot :: struct {
 	draw:       gfx.Draw,
 	owned_mesh: ^gfx.Mesh, // Raw_Draw's mesh; freed when the Prop is removed
 	playback:   Maybe(gfx.Playback), // skinned Models only
-	type:       Actor_Type, // 0 when the actor has no registered type
-	type_id:    typeid, // T of a world_add_actor actor; nil for spawn and spawn_typed
+	type_id:    typeid, // T of a world_add_actor actor; nil for spawn
 	state:      rawptr,
 	emitter:    Maybe(particles.Emitter_Handle), // this actor's emitter; nil when none
 	body:       Maybe(phys.Tracked), // this actor's Collider body; nil when none
@@ -317,32 +300,6 @@ world_create :: proc(gfx_ctx: ^gfx.Device, gravity := Vec3{0, -10, 0}) -> World 
 	return world
 }
 
-// Registers a per-actor state type. create runs after spawn, tick once per
-// world_update, destroy before the actor's Props are freed. fixed_tick runs once per
-// world_fixed_update and never from world_update. Any proc may be nil.
-register_type :: proc(
-	world: ^World,
-	$T: typeid,
-	create: proc(world: ^World, id: Actor_Id, self: ^T),
-	tick: proc(world: ^World, id: Actor_Id, self: ^T, dt: f32),
-	destroy: proc(world: ^World, id: Actor_Id, self: ^T),
-	fixed_tick: proc(world: ^World, id: Actor_Id, self: ^T, dt: f32) = nil,
-	contact: proc(world: ^World, id: Actor_Id, self: ^T, other: Actor_Id) = nil,
-) -> Actor_Type {
-	info := Actor_Type_Info {
-		state_size  = size_of(T),
-		state_align = align_of(T),
-	}
-	// Same ABI trick as run: only the pointer parameter type differs.
-	if create != nil do info.create = transmute(proc(_: ^World, _: Actor_Id, _: rawptr))create
-	if tick != nil do info.tick = transmute(proc(_: ^World, _: Actor_Id, _: rawptr, _: f32))tick
-	if fixed_tick != nil do info.fixed_tick = transmute(proc(_: ^World, _: Actor_Id, _: rawptr, _: f32))fixed_tick
-	if contact != nil do info.contact = transmute(proc(_: ^World, _: Actor_Id, _: rawptr, _: Actor_Id))contact
-	if destroy != nil do info.destroy = transmute(proc(_: ^World, _: Actor_Id, _: rawptr))destroy
-	append(&world.types, info)
-	return Actor_Type(len(world.types))
-}
-
 // Registers a Prop type for this World. spawn, actor_add_props and hot reload accept
 // only registered types; world_create registers the builtins. added/removed may be nil.
 register_props :: proc(
@@ -355,25 +312,10 @@ register_props :: proc(
 		size  = size_of(T),
 		align = align_of(T),
 	}
-	// Same ABI trick as register_type: only the pointer parameter type differs.
+	// Same ABI trick as actor_hooks: only the pointer parameter type differs.
 	if added != nil do info.added = transmute(proc(_: ^World, _: Actor_Id, _: rawptr))added
 	if removed != nil do info.removed = transmute(proc(_: ^World, _: Actor_Id, _: rawptr))removed
 	world.props[typeid_of(T)] = info
-}
-
-// Copies init into a new state block, spawns the Props, then runs create.
-// Props of one type replace the earlier one; Transform is always present.
-spawn_typed :: proc(world: ^World, type: Actor_Type, init: $T, props: ..any) -> (Actor_Id, ^T) {
-	info := actor_type_info(world, type, T)
-	state, err := mem.alloc(info.state_size, info.state_align)
-	assert(err == nil, "engine: out of memory for actor state")
-	(^T)(state)^ = init
-	id := spawn(world, ..props)
-	slot := &world.slots[id.index]
-	slot.type = type
-	slot.state = state
-	if info.create != nil do info.create(world, id, state)
-	return id, (^T)(state)
 }
 
 // Props are plain values of registered types. Props of one type replace the
@@ -440,31 +382,6 @@ world_actors :: proc(world: ^World) -> []Actor_Id {
 	return list[:]
 }
 
-// State of an actor spawned with spawn_typed. Nil for invalid ids.
-world_get_state :: proc(world: ^World, id: Actor_Id, $T: typeid) -> ^T {
-	if !world_valid(world, id) do return nil
-	slot := &world.slots[id.index]
-	if _, ok := slot_type(world, slot); !ok do return nil
-	_ = actor_type_info(world, slot.type, T)
-	return (^T)(slot.state)
-}
-
-// First live actor of type, in slot order. Returns the zero Actor_Id and nil if none.
-world_find_state :: proc(world: ^World, type: Actor_Type, $T: typeid) -> (Actor_Id, ^T) {
-	_ = actor_type_info(world, type, T)
-	for &slot, index in world.slots {
-		if slot.alive && slot.type == type do return Actor_Id{u32(index), slot.generation}, (^T)(slot.state)
-	}
-	return {}, nil
-}
-
-// Live actors of type.
-world_count :: proc(world: ^World, type: Actor_Type) -> int {
-	count := 0
-	for &slot in world.slots do if slot.alive && slot.type == type do count += 1
-	return count
-}
-
 // Adds a Prop, replacing the actor's Prop of the same type. The old Prop's removed
 // hook runs first; the new one's added hook runs after the store.
 actor_add_props :: proc(world: ^World, id: Actor_Id, prop: any) {
@@ -522,21 +439,8 @@ world_destroy_actor :: proc(world: ^World, id: Actor_Id) {
 		// The destroy proc may have destroyed other actors, or this one.
 		if !world_valid(world, id) do return
 	}
-	if info, ok := slot_type(world, &world.slots[id.index]); ok && info.destroy != nil {
-		info.destroy(world, id, world.slots[id.index].state)
-		// The destroy proc may have destroyed other actors, or this one.
-		if !world_valid(world, id) do return
-	}
 	destroy_slot(world, id)
 	append(&world.free, id.index)
-}
-
-// Destroys every live actor of type (their destroy procs run).
-world_destroy_type :: proc(world: ^World, type: Actor_Type) {
-	for index := 0; index < len(world.slots); index += 1 {
-		slot := world.slots[index]
-		if slot.alive && slot.type == type do world_destroy_actor(world, Actor_Id{u32(index), slot.generation})
-	}
 }
 
 // Frees every actor, cached asset and effect. Clears the Post passes, fog, sun and
@@ -568,7 +472,6 @@ world_destroy :: proc(world: ^World) {
 	delete(world.free)
 	if len(world.sky_path) > 0 do delete(world.sky_path)
 	delete(world.texts)
-	delete(world.types)
 	for _, layout in world.embedded_props do delete(layout)
 	if world.embedded_props != nil do delete(world.embedded_props)
 	delete(world.props)
@@ -594,13 +497,7 @@ world_update :: proc(world: ^World, dt: f32) {
 	for index := 0; index < len(world.slots); index += 1 {
 		slot := &world.slots[index]
 		if !slot.alive || slot.born do continue
-		if actor := actor_of(slot); actor != nil {
-			if actor.tick != nil do actor.tick(actor, dt)
-			continue
-		}
-		info, ok := slot_type(world, slot)
-		if !ok || info.tick == nil do continue
-		info.tick(world, Actor_Id{u32(index), slot.generation}, slot.state, dt)
+		if actor := actor_of(slot); actor != nil && actor.tick != nil do actor.tick(actor, dt)
 	}
 	script_update(world, dt, .Tick)
 	world.updating = false
@@ -657,13 +554,7 @@ world_fixed_update :: proc(world: ^World, dt: f32) {
 	for index := 0; index < len(world.slots); index += 1 {
 		slot := &world.slots[index]
 		if !slot.alive || slot.born do continue
-		if actor := actor_of(slot); actor != nil {
-			if actor.fixed_tick != nil do actor.fixed_tick(actor, dt)
-			continue
-		}
-		info, ok := slot_type(world, slot)
-		if !ok || info.fixed_tick == nil do continue
-		info.fixed_tick(world, Actor_Id{u32(index), slot.generation}, slot.state, dt)
+		if actor := actor_of(slot); actor != nil && actor.fixed_tick != nil do actor.fixed_tick(actor, dt)
 	}
 	script_update(world, dt, .Fixed_Tick)
 	world.updating = false
@@ -1005,20 +896,6 @@ set_effect_passes :: proc(world: ^World, camera: ^Camera) {
 	gfx.renderer_set_passes(&world.gfx_ctx.renderer, .Post, passes[:count])
 }
 
-@(private = "file")
-actor_type_info :: proc(world: ^World, type: Actor_Type, $T: typeid) -> Actor_Type_Info {
-	assert(type != 0 && int(type) <= len(world.types), "engine: unknown Actor_Type")
-	info := world.types[int(type) - 1]
-	assert(info.state_size == size_of(T), "engine: state type does not match register_type")
-	return info
-}
-
-@(private = "file")
-slot_type :: proc(world: ^World, slot: ^Slot) -> (info: Actor_Type_Info, ok: bool) {
-	if slot.type == 0 do return {}, false
-	return world.types[int(slot.type) - 1], true
-}
-
 // Reuses a freed index when there is one. The generation was bumped on destroy.
 claim_slot :: proc(world: ^World) -> u32 {
 	index: u32
@@ -1225,7 +1102,6 @@ contact_notify :: proc(world: ^World, id, other: Actor_Id) {
 	if !world_valid(world, id) || !world_valid(world, other) do return
 	slot := &world.slots[id.index]
 	if actor := actor_of(slot); actor != nil && actor.contact != nil do actor.contact(actor, other)
-	if info, ok := slot_type(world, slot); ok && info.contact != nil do info.contact(world, id, slot.state, other)
 	if !world_valid(world, id) || !world_valid(world, other) do return
 	script_contact(world, id, other)
 }
@@ -1279,7 +1155,6 @@ destroy_slot :: proc(world: ^World, id: Actor_Id) {
 	slot.props = nil
 	if slot.state != nil do free(slot.state)
 	slot.state = nil
-	slot.type = 0
 	slot.alive = false
 	slot.generation += 1
 }

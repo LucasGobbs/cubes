@@ -250,34 +250,6 @@ collider_ball_rests_on_static_ground :: proc(t: ^testing.T) {
 	if transform != nil do testing.expect(t, transform.position.y >= 0.4 && transform.position.y <= 0.6)
 }
 
-Fixed_Counter :: struct {
-	fixed_ticks, ticks: int,
-}
-
-fixed_counter_fixed_tick :: proc(world: ^World, id: Actor_Id, self: ^Fixed_Counter, dt: f32) {
-	self.fixed_ticks += 1
-}
-
-fixed_counter_tick :: proc(world: ^World, id: Actor_Id, self: ^Fixed_Counter, dt: f32) {
-	self.ticks += 1
-}
-
-@(test)
-fixed_update_runs_fixed_tick_only :: proc(t: ^testing.T) {
-	world := world_create(nil)
-	defer world_destroy(&world)
-	counter := register_type(&world, Fixed_Counter, nil, fixed_counter_tick, nil, fixed_counter_fixed_tick)
-
-	_, state := spawn_typed(&world, counter, Fixed_Counter{})
-	for _ in 0 ..< 3 do world_fixed_update(&world, 1.0 / 60.0)
-	testing.expect(t, state.fixed_ticks == 3)
-	testing.expect(t, state.ticks == 0)
-
-	world_update(&world, 1.0 / 60.0)
-	testing.expect(t, state.ticks == 1)
-	testing.expect(t, state.fixed_ticks == 3)
-}
-
 @(test)
 world_time_sums_update_dt_only :: proc(t: ^testing.T) {
 	world := world_create(nil)

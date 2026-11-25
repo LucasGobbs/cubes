@@ -27,7 +27,7 @@ actor_hooks :: proc(
 	return actor
 }
 
-// Actor handle of a slot added by world_add_actor; nil for spawn and spawn_typed slots.
+// Actor handle of a slot added by world_add_actor; nil for spawn slots.
 actor_of :: proc(slot: ^Slot) -> ^Actor {
 	if slot.type_id == nil do return nil
 	return (^Actor)(slot.state)
@@ -110,7 +110,7 @@ world_find :: proc(world: ^World, $T: typeid) -> ^T {
 }
 
 // Live actors of struct type T.
-world_count_of :: proc(world: ^World, $T: typeid) -> int {
+world_count :: proc(world: ^World, $T: typeid) -> int {
 	count := 0
 	for &slot in world.slots do if slot.alive && slot.type_id == typeid_of(T) do count += 1
 	return count

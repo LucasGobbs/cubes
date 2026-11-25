@@ -1,5 +1,5 @@
-// Enemy ship: spawns on a ring around the player and chases it. Registered with
-// engine.register_type; see game_player.odin for the per-actor convention.
+// Enemy ship: spawns on a ring around the player and chases it. Built with
+// engine.world_add_actor; see game_player.odin for the per-actor convention.
 package game
 
 import engine "../../engine"
@@ -16,42 +16,49 @@ ENEMY_HIT_RADIUS :: 1.2
 ENEMY_HIT_DAMAGE :: 25
 
 Enemy :: struct {
-	player: engine.Actor_Type, // finds the target player
-}
-enemy_register_type :: proc(world: ^engine.World) -> engine.Actor_Type {
-	return engine.register_type(world, Enemy, enemy_create, enemy_tick, nil)
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	using model:     engine.Model,
 }
 
 // Spawns on the ring around the player, facing it.
-enemy_create :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Enemy) {
-	player_id, _ := engine.world_find_state(world, self.player, Player)
-	player_position := engine.actor_props(world, player_id, engine.Transform).position
+enemy_spawn :: proc(world: ^engine.World) {
+	player := engine.world_find(world, Player)
 	angle := rand.float32_range(0, linalg.TAU)
 	offset := engine.Vec3{math.cos(angle), 0, math.sin(angle)} * ENEMY_RING
-	engine.actor_add_props(world, id, engine.Model{path = ENEMY_MODEL})
-	engine.actor_set_transform(
+	engine.world_add_actor(
 		world,
-		id,
-		position = player_position + offset,
-		rotation = game_facing(-offset),
-		scale = {ENEMY_SCALE, ENEMY_SCALE, ENEMY_SCALE},
+		Enemy {
+			actor = engine.actor_hooks(Enemy, tick = enemy_tick),
+			transform = engine.transform_create(
+				position = player.position + offset,
+				rotation = game_facing(-offset),
+				scale = {ENEMY_SCALE, ENEMY_SCALE, ENEMY_SCALE},
+			),
+			model = engine.model_create(path = ENEMY_MODEL),
+		},
 	)
+}
+
+// Destroys every live Enemy; the player's respawn clears the field.
+enemy_destroy_all :: proc(world: ^engine.World) {
+	for id in engine.world_actors(world) {
+		if engine.world_get(world, id, Enemy) != nil do engine.world_destroy_actor(world, id)
+	}
 }
 
 // Chases the player on the XZ plane. On contact the enemy destroys itself, which
 // frees self: nothing may touch self after world_destroy_actor.
-enemy_tick :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^Enemy, dt: f32) {
-	player_id, _ := engine.world_find_state(world, self.player, Player)
-	target := engine.actor_props(world, player_id, engine.Transform).position
-	transform := engine.actor_props(world, id, engine.Transform)
-	to_target := target - transform.position
+enemy_tick :: proc(self: ^Enemy, dt: f32) {
+	player := engine.world_find(self.world, Player)
+	target := player.position
+	to_target := target - self.position
 	to_target.y = 0
-	transform.position += linalg.normalize0(to_target) * ENEMY_SPEED * dt
-	transform.rotation = game_facing(to_target)
-	if linalg.length(transform.position - target) >= ENEMY_HIT_RADIUS do return
+	self.position += linalg.normalize0(to_target) * ENEMY_SPEED * dt
+	self.rotation = game_facing(to_target)
+	if linalg.length(self.position - target) >= ENEMY_HIT_RADIUS do return
 
-	engine.world_destroy_actor(world, id)
-	health := engine.actor_props(world, player_id, engine.Health)
-	health.current -= ENEMY_HIT_DAMAGE
-	log.infof("game: enemy destroyed, health %.0f/%.0f", health.current, health.max)
+	engine.world_destroy_actor(self.world, self.id)
+	player.health.current -= ENEMY_HIT_DAMAGE
+	log.infof("game: enemy destroyed, health %.0f/%.0f", player.health.current, player.health.max)
 }

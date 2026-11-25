@@ -1,6 +1,6 @@
 // Game: a CesiumMan player steered on the XZ plane with WASD, chased by ship
-// enemies that spawn on a ring around it. All game state lives in engine.World;
-// the scene keeps only the actor types it registered and reads input in fixed_tick.
+// enemies that spawn on a ring around it. All game state lives in engine.World as
+// actor structs; the scene keeps only input and timers and reads input in fixed_tick.
 // Idle for 3 s and the player circles on its own, so a screenshot shows hits without
 // input. Per-actor logic lives in game_player.odin and game_enemy.odin.
 package game
@@ -16,8 +16,6 @@ GAME_SPAWN_INTERVAL :: 2 // seconds
 
 Game_State :: struct {
 	world:       engine.World,
-	player_type: engine.Actor_Type,
-	enemy_type:  engine.Actor_Type,
 	move:        input.Axis_2D_Action,
 	spawn_timer: f32,
 	log_timer:   f32,
@@ -49,12 +47,9 @@ game_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	)
 
 	state.world = engine.world_create(gfx_ctx)
-	// Player first: its slot ticks before enemies, so enemies chase this frame's position.
-	state.player_type = player_register_type(&state.world)
-
-	state.enemy_type = enemy_register_type(&state.world)
 	engine.spawn_camera(&state.world, {0, 6, 8})
-	engine.spawn_typed(&state.world, state.player_type, Player{enemy = state.enemy_type})
+	// Player spawns before any enemy: its slot ticks first, so enemies chase this frame's position.
+	player_spawn(&state.world)
 	return true
 }
 
@@ -67,30 +62,26 @@ game_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 game_fixed_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	state := cast(^Game_State)demo.state
 	v := input.axis_2d(&ctx.input, state.move)
-	player_id, player := engine.world_find_state(&state.world, state.player_type, Player)
+	player := engine.world_find(&state.world, Player)
 	player.wish_dir = {v.x, 0, -v.y} // W = -Z, as before
 
 	state.spawn_timer += delta_time
 	if state.spawn_timer >= GAME_SPAWN_INTERVAL {
 		state.spawn_timer = 0
-		if engine.world_count(&state.world, state.enemy_type) < GAME_ENEMY_MAX {
-			engine.spawn_typed(&state.world, state.enemy_type, Enemy{player = state.player_type})
-			log.infof(
-				"game: enemy spawned, %d alive",
-				engine.world_count(&state.world, state.enemy_type),
-			)
+		if engine.world_count(&state.world, Enemy) < GAME_ENEMY_MAX {
+			enemy_spawn(&state.world)
+			log.infof("game: enemy spawned, %d alive", engine.world_count(&state.world, Enemy))
 		}
 	}
 
 	state.log_timer += delta_time
 	if state.log_timer >= 1 {
 		state.log_timer = 0
-		health := engine.actor_props(&state.world, player_id, engine.Health)
 		log.infof(
 			"game: health %.0f/%.0f, enemies %d",
-			health.current,
-			health.max,
-			engine.world_count(&state.world, state.enemy_type),
+			player.health.current,
+			player.health.max,
+			engine.world_count(&state.world, Enemy),
 		)
 	}
 

@@ -66,22 +66,23 @@ test_registry_data_scene_has_no_import :: proc(t: ^testing.T) {
 @(test)
 test_scene_add_actor_idempotent_order :: proc(t: ^testing.T) {
 	src := "package demo\n\nimport engine \"../../engine\"\n\ndemo_create :: proc(demo: ^engine.Scene) -> bool {\n\tstate := new(State)\n\treturn true\n}\n"
-	first, ok := scene_add_actor(src, "demo", "bot", "Bot")
+	first, ok := scene_add_actor(src, "demo", "bot")
 	testing.expect(t, ok, "marker added inside create")
 	testing.expect_value(t, strings.count(first, MARK_ACTORS), 1)
+	testing.expect(t, strings.contains(first, "\tbot_spawn(&state.world)\n\t// cubes:actors\n\treturn true"), "spawn line above marker")
 
-	second, ok2 := scene_add_actor(first, "demo", "rock", "Rock")
+	second, ok2 := scene_add_actor(first, "demo", "rock")
 	testing.expect(t, ok2, "second actor with marker present")
 	testing.expect_value(t, strings.count(second, MARK_ACTORS), 1)
-	bot_at := strings.index(second, "bot_type :=")
-	rock_at := strings.index(second, "rock_type :=")
+	bot_at := strings.index(second, "bot_spawn(")
+	rock_at := strings.index(second, "rock_spawn(")
 	marker_at := strings.index(second, MARK_ACTORS)
 	testing.expect(t, 0 <= bot_at && bot_at < rock_at && rock_at < marker_at, "actor lines before marker, in order")
-	testing.expect(t, strings.contains(second, "\tengine.spawn_typed(&state.world, bot_type, Bot{})"), "spawn line")
+	testing.expect(t, strings.contains(second, "\trock_spawn(&state.world)\n\t// cubes:actors"), "one spawn line per actor")
 }
 
 @(test)
 test_scene_add_actor_unrecognised :: proc(t: ^testing.T) {
-	_, ok := scene_add_actor("package demo\n", "demo", "bot", "Bot")
+	_, ok := scene_add_actor("package demo\n", "demo", "bot")
 	testing.expect(t, !ok, "no create proc: refuse")
 }

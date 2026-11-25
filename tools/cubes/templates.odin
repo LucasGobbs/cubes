@@ -49,27 +49,31 @@ SCENE_DATA :: `{
 }
 `
 
-ACTOR_CODE :: `// Per-actor convention: a state struct registered with engine.register_type, plus
-// create/tick/destroy procs. Props (Transform, Model, Health, ...) live in engine.World,
-// never in the struct. Scenes only orchestrate.
+ACTOR_CODE :: `// Per-actor convention: a struct that embeds engine.Actor and its Props, with self-only
+// hooks. Props (Transform, Model, Health, ...) are fields of the struct; scenes only orchestrate.
 package {{SCENE}}
 
 import engine "../../engine"
 
 {{TYPE}} :: struct {
-	ticks: u32, // frames ticked
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	// add Props as fields, e.g. using model: engine.Model, health: engine.Health
+	ticks:           u32, // frames ticked
 }
 
-{{ACTOR}}_create :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^{{TYPE}}) {
-	engine.actor_add_props(world, id, engine.Model{path = "static/models/rigged_cesiumman.glb"})
-	engine.actor_add_props(world, id, engine.Animator{clip = "clip_0"})
+{{ACTOR}}_spawn :: proc(world: ^engine.World) -> ^{{TYPE}} {
+	return engine.world_add_actor(world, {{TYPE}}{
+		actor     = engine.actor_hooks({{TYPE}}, tick = {{ACTOR}}_tick, destroy = {{ACTOR}}_destroy),
+		transform = engine.transform_create(),
+	})
 }
 
-{{ACTOR}}_tick :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^{{TYPE}}, dt: f32) {
+{{ACTOR}}_tick :: proc(self: ^{{TYPE}}, dt: f32) {
 	self.ticks += 1
 }
 
-{{ACTOR}}_destroy :: proc(world: ^engine.World, id: engine.Actor_Id, self: ^{{TYPE}}) {
+{{ACTOR}}_destroy :: proc(self: ^{{TYPE}}) {
 }
 `
 
