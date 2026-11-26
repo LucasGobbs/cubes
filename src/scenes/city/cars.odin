@@ -67,20 +67,13 @@ emit_car :: proc(b: ^Mesh_Builder, along_z: bool, across, along, sign, s, speed,
 
 cars_pipeline_create :: proc(gfx_ctx: ^gfx.Device, state: ^City_State) -> gfx.Pipeline_Handle {
 	attributes := shader_parameters.city_cars_vertex_attributes(gfx.VertexData)
-	return gfx.pipeline_create(
+	return gfx.light_sprite_pipeline_create(
 		gfx_ctx,
-		{
-			vertex = shader_parameters.city_cars_vertex(),
-			fragment = shader_parameters.city_cars_fragment(),
-			vertex_attributes = attributes[:],
-			vertex_stride = u32(size_of(gfx.VertexData)),
-			depth_test = true,
-			depth_write = false, // glows add into the scene and do not hide each other
-			additive = true,
-			cull_mode = .NONE, // billboards face the camera; either winding is fine
-			bind_draw = cars_bind_draw,
-			user_data = state,
-		},
+		shader_parameters.city_cars_vertex(),
+		shader_parameters.city_cars_fragment(),
+		attributes[:],
+		cars_bind_draw,
+		state,
 	)
 }
 

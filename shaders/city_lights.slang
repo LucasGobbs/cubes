@@ -1,6 +1,7 @@
-// Streetlights: one camera-facing billboard per lamp. The vertex colour.rg carries the corner in [-1,1]^2; the vertex
-// shader expands it in the camera's right/up around the lamp centre. The fragment is a round soft glow (bright core
-// plus gaussian halo), HDR, drawn additively with no depth write so overlapping glows add up.
+// Streetlights: one camera-facing soft glow per lamp (src/engine/gfx/shaders/light_sprite.slang). HDR, additive, so
+// overlapping glows add up.
+
+import "../src/engine/gfx/shaders/light_sprite";
 
 struct Uniforms {
     float4x4 mvp;
@@ -29,14 +30,7 @@ static const float LAMP_MIN_ANGULAR = 0.004; // full width grows with distance s
 
 [shader("vertex")]
 VertexOutput vertexMain(VertexInput input) {
-    float3 eye = data.camera_position.xyz;
-    float3 to_eye = eye - input.position;
-    float dist = length(to_eye);
-    float3 fwd = to_eye / max(dist, 1e-4);
-    float3 right = normalize(cross(float3(0.0, 1.0, 0.0), fwd));
-    float3 up = cross(fwd, right);
-    float size = max(LAMP_WORLD_SIZE, dist * LAMP_MIN_ANGULAR) * 0.5;
-    float3 world = input.position + (right * input.color.r + up * input.color.g) * size;
+    float3 world = sprite_corner_world(input.position, input.color.rg, LAMP_WORLD_SIZE, LAMP_MIN_ANGULAR, data.camera_position.xyz);
 
     VertexOutput output;
     output.position = mul(data.mvp, float4(world, 1.0));
@@ -46,10 +40,5 @@ VertexOutput vertexMain(VertexInput input) {
 
 [shader("fragment")]
 float4 pixelMain(VertexOutput input) : SV_Target0 {
-    float r = length(input.corner);
-    if (r > 1.0) discard;
-    float a = exp(-r * r * 4.0);
-    float core = smoothstep(0.35, 0.0, r);
-    float3 sodium = float3(1.0, 0.5, 0.15);
-    return float4(sodium * (core * 1.6 + a * 1.0), 1.0);
+    return sprite_shade(input.corner, float3(1.0, 0.5, 0.15), 1.6, 1.0); // sodium
 }

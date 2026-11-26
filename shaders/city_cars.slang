@@ -1,7 +1,9 @@
-// Cars: each lamp is a camera-facing billboard. The vertex shader slides its centre along the lane from the time
-// uniform, so the CPU does no per-frame work and a car leaving one end of the map reappears at the other. The vertex
-// colour.rg carries the corner in [-1,1]^2 and colour.b the lane length. Lamps are HDR, round soft glows: red when
-// the car drives away from the eye, warm white when it comes toward it.
+// Cars: each lamp is a camera-facing billboard (src/engine/gfx/shaders/light_sprite.slang). The vertex shader slides
+// its centre along the lane from the time uniform, so the CPU does no per-frame work and a car leaving one end of the
+// map reappears at the other. The vertex colour.rg carries the corner in [-1,1]^2 and colour.b the lane length. Lamps
+// are HDR, round soft glows: red when the car drives away from the eye, warm white when it comes toward it.
+
+import "../src/engine/gfx/shaders/light_sprite";
 
 struct Uniforms {
     float4x4 mvp;
@@ -41,13 +43,7 @@ VertexOutput vertexMain(VertexInput input) {
     float3 centre = input.position + dir * (s - s0);
 
     float3 eye = data.camera_position.xyz;
-    float3 to_eye = eye - centre;
-    float dist = length(to_eye);
-    float3 fwd = to_eye / max(dist, 1e-4);
-    float3 right = normalize(cross(float3(0.0, 1.0, 0.0), fwd));
-    float3 up = cross(fwd, right);
-    float size = max(LAMP_WORLD_SIZE, dist * LAMP_MIN_ANGULAR) * 0.5;
-    float3 world = centre + (right * input.color.r + up * input.color.g) * size;
+    float3 world = sprite_corner_world(centre, input.color.rg, LAMP_WORLD_SIZE, LAMP_MIN_ANGULAR, eye);
 
     VertexOutput output;
     output.position = mul(data.mvp, float4(world, 1.0));
@@ -59,12 +55,8 @@ VertexOutput vertexMain(VertexInput input) {
 
 [shader("fragment")]
 float4 pixelMain(VertexOutput input) : SV_Target0 {
-    float r = length(input.corner);
-    if (r > 1.0) discard;
-    float a = exp(-r * r * 4.0);
-    float core = smoothstep(0.35, 0.0, r);
     // dot(dir, centre - eye) > 0: the car is moving away, so we see its tail lamps.
     bool away = dot(input.dir, -input.to_camera) > 0.0;
     float3 tint = away ? float3(1.0, 0.08, 0.04) : float3(1.0, 0.92, 0.75);
-    return float4(tint * (core * 1.6 + a * 1.0), 1.0);
+    return sprite_shade(input.corner, tint, 1.6, 1.0);
 }

@@ -17,6 +17,14 @@ Onda 1 entregue (commits `f652d11`, `9a647e5`): A1, D1, D2, D3. Detalhes e desvi
 - **D3** feito: F12 salva `shots/<cena>-<data>.png`. Não testado com tecla real.
 - **Bug aberto (causa raiz não achada):** as primeiras 3 capturas após criar os buffers de readback voltam zeradas. O D1 mascara com 3 frames de aquecimento e o D3 captura 4 frames e guarda o último (`READBACK_ONE_SHOT_FRAMES`). Provável latência de frames em voo ou do blit para textura nova; investigar antes de depender do readback em outro lugar.
 
+Onda 2 entregue (commits `84bba3d`, A3 logo depois): A2, A3, A4, B1.
+
+- **A2** feito: `Bloom` da engine com `levels` 1..3, pesos e black floor (`bloom_create_multi`; `bloom_create` inalterado). `bloom.odin` e `city_bloom_*` da city removidos. Black floor da engine é escalar (0.012): o da city era (0.012, 0.012, 0.016), perde 0.004 no azul.
+- **A3** feito: `light_sprite.slang` (billboard, `sprite_shade`, `blink`) + `gfx.light_sprite_pipeline_create`; postes, carros e beacons usam. Sem teste CPU (só shader e glue).
+- **A4** feito, com desvio: módulo `src/engine/gfx/shaders/fog.slang` (importável de `shaders/` com `import "../src/engine/gfx/shaders/fog";`), usado por city, city_ground, sea, textured_instanced, textured_skinned. `forest.slang` e `forest_instanced.slang` NÃO migrados: usam rampa 0.10/0.90 (perspectiva aérea), não a 0.6/1.0. `city_sky` BELOW continua amarrado a CITY_FOG à mão.
+- **B1** feito: `shaders/constants.json` -> `shaders/constants.slang` + `src/scenes/city/constants_generated.odin` (gerados, commitados) por `tools/constants`, alvo `make constants`. Slang `import constants;` funciona e o depfile do goose rastreia.
+- Verificado: o `import` do Slang resolve relativo ao arquivo; nenhum shader usava `import` antes (a premissa do plano estava errada, o spike A4 corrigiu).
+
 ## Fatos verificados (2026-11-25, não suposições)
 
 - Tonemap, exposição e color grading: **não existem**. `grep -w tonemap|exposure|reinhard|ACES` em `src/` e `shaders/` volta vazio. Só há bloom e blur em `src/engine/gfx/postfx.odin`.
