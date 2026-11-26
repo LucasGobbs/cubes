@@ -14,23 +14,31 @@ CITY_SKY_VERTEX_UNIFORM_BUFFERS :: 1
 
 CitySkyVertexUniforms :: struct #max_field_align(16) {
 	mvp: matrix[4, 4]f32,
+	horizon: [4]f32,
+	zenith: [4]f32,
+	sun: [4]f32,
+	params: [4]f32,
 }
 
 #assert(offset_of(CitySkyVertexUniforms, mvp) == 0)
-#assert(size_of(CitySkyVertexUniforms) == 64)
+#assert(offset_of(CitySkyVertexUniforms, horizon) == 64)
+#assert(offset_of(CitySkyVertexUniforms, zenith) == 80)
+#assert(offset_of(CitySkyVertexUniforms, sun) == 96)
+#assert(offset_of(CitySkyVertexUniforms, params) == 112)
+#assert(size_of(CitySkyVertexUniforms) == 128)
 
 CitySkyVertexUniformBlock :: struct #max_field_align(16) {
 	data: CitySkyVertexUniforms,
 }
 
 #assert(offset_of(CitySkyVertexUniformBlock, data) == 0)
-#assert(size_of(CitySkyVertexUniformBlock) == 64)
+#assert(size_of(CitySkyVertexUniformBlock) == 128)
 
 CITY_SKY_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 CITY_SKY_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 CITY_SKY_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 CITY_SKY_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-CITY_SKY_VERTEX_UNIFORM_BLOCK_SIZE :: 64
+CITY_SKY_VERTEX_UNIFORM_BLOCK_SIZE :: 128
 CITY_SKY_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = CITY_SKY_VERTEX_UNIFORM_BLOCK_SPACE, binding = CITY_SKY_VERTEX_UNIFORM_BLOCK_BINDING, slot = CITY_SKY_VERTEX_UNIFORM_BLOCK_SLOT, count = CITY_SKY_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -53,7 +61,7 @@ city_sky_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttribute 
 }
 
 CITY_SKY_VERTEX_BINDINGS := [1]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 64},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 128},
 }
 
 city_sky_vertex :: proc() -> goose.GraphicsParameters {
@@ -130,23 +138,31 @@ CITY_SKY_VERTEX_UNIFORM_BUFFERS :: 1
 
 CitySkyVertexUniforms :: struct #max_field_align(16) {
 	mvp: matrix[4, 4]f32,
+	horizon: [4]f32,
+	zenith: [4]f32,
+	sun: [4]f32,
+	params: [4]f32,
 }
 
 #assert(offset_of(CitySkyVertexUniforms, mvp) == 0)
-#assert(size_of(CitySkyVertexUniforms) == 64)
+#assert(offset_of(CitySkyVertexUniforms, horizon) == 64)
+#assert(offset_of(CitySkyVertexUniforms, zenith) == 80)
+#assert(offset_of(CitySkyVertexUniforms, sun) == 96)
+#assert(offset_of(CitySkyVertexUniforms, params) == 112)
+#assert(size_of(CitySkyVertexUniforms) == 128)
 
 CitySkyVertexUniformBlock :: struct #max_field_align(16) {
 	data: CitySkyVertexUniforms,
 }
 
 #assert(offset_of(CitySkyVertexUniformBlock, data) == 0)
-#assert(size_of(CitySkyVertexUniformBlock) == 64)
+#assert(size_of(CitySkyVertexUniformBlock) == 128)
 
 CITY_SKY_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 CITY_SKY_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 CITY_SKY_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 CITY_SKY_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-CITY_SKY_VERTEX_UNIFORM_BLOCK_SIZE :: 64
+CITY_SKY_VERTEX_UNIFORM_BLOCK_SIZE :: 128
 CITY_SKY_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = CITY_SKY_VERTEX_UNIFORM_BLOCK_SPACE, binding = CITY_SKY_VERTEX_UNIFORM_BLOCK_BINDING, slot = CITY_SKY_VERTEX_UNIFORM_BLOCK_SLOT, count = CITY_SKY_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -169,7 +185,7 @@ city_sky_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttribute 
 }
 
 CITY_SKY_VERTEX_BINDINGS := [1]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 64},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 128},
 }
 
 city_sky_vertex :: proc() -> goose.GraphicsParameters {
@@ -246,23 +262,31 @@ CITY_SKY_VERTEX_UNIFORM_BUFFERS :: 1
 
 CitySkyVertexUniforms :: struct #max_field_align(16) {
 	mvp: matrix[4, 4]f32,
+	horizon: [4]f32,
+	zenith: [4]f32,
+	sun: [4]f32,
+	params: [4]f32,
 }
 
 #assert(offset_of(CitySkyVertexUniforms, mvp) == 0)
-#assert(size_of(CitySkyVertexUniforms) == 64)
+#assert(offset_of(CitySkyVertexUniforms, horizon) == 64)
+#assert(offset_of(CitySkyVertexUniforms, zenith) == 80)
+#assert(offset_of(CitySkyVertexUniforms, sun) == 96)
+#assert(offset_of(CitySkyVertexUniforms, params) == 112)
+#assert(size_of(CitySkyVertexUniforms) == 128)
 
 CitySkyVertexUniformBlock :: struct #max_field_align(16) {
 	data: CitySkyVertexUniforms,
 }
 
 #assert(offset_of(CitySkyVertexUniformBlock, data) == 0)
-#assert(size_of(CitySkyVertexUniformBlock) == 64)
+#assert(size_of(CitySkyVertexUniformBlock) == 128)
 
 CITY_SKY_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 CITY_SKY_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 CITY_SKY_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 CITY_SKY_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-CITY_SKY_VERTEX_UNIFORM_BLOCK_SIZE :: 64
+CITY_SKY_VERTEX_UNIFORM_BLOCK_SIZE :: 128
 CITY_SKY_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = CITY_SKY_VERTEX_UNIFORM_BLOCK_SPACE, binding = CITY_SKY_VERTEX_UNIFORM_BLOCK_BINDING, slot = CITY_SKY_VERTEX_UNIFORM_BLOCK_SLOT, count = CITY_SKY_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -285,7 +309,7 @@ city_sky_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttribute 
 }
 
 CITY_SKY_VERTEX_BINDINGS := [1]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 64},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 128},
 }
 
 city_sky_vertex :: proc() -> goose.GraphicsParameters {

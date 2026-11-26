@@ -27,6 +27,7 @@ Ground_Texture :: struct {
 	pipeline: gfx.Compute_Pipeline_Handle,
 	texture:  gfx.Texture_Handle,
 	mask:     gfx.Buffer_Handle, // packed road bits, read by the compute pass
+	wetness:  f32, // 0..1, read by the draw; the default is the drizzle's damp street (ground_set_wetness)
 }
 
 // One bit per cell, row-major by z, to match Plan.claimed. Bit set = road.
@@ -43,6 +44,7 @@ ground_texture_create :: proc(gfx_ctx: ^gfx.Device) -> Ground_Texture {
 		pipeline = gfx.compute_pipeline_create(gfx_ctx, shader_parameters.city_ground_gen_compute()),
 		texture = gfx.texture_create_storage(gfx_ctx, CITY_W, CITY_D),
 		mask = gfx.buffer_create(gfx_ctx, u32(GROUND_MASK_WORDS * size_of(u32)), .COMPUTE_STORAGE_READ),
+		wetness = 0.6,
 	}
 }
 
@@ -79,7 +81,7 @@ ground_texture_generate :: proc(gfx_ctx: ^gfx.Device, ground: ^Ground_Texture) {
 	gfx.texture_generate_mips(gfx_ctx, ground.texture)
 }
 
-ground_pipeline_create :: proc(gfx_ctx: ^gfx.Device) -> gfx.Pipeline_Handle {
+ground_pipeline_create :: proc(gfx_ctx: ^gfx.Device, state: ^City_State) -> gfx.Pipeline_Handle {
 	attributes := shader_parameters.city_ground_vertex_attributes(gfx.VertexData)
 	return gfx.pipeline_create(
 		gfx_ctx,
@@ -92,18 +94,26 @@ ground_pipeline_create :: proc(gfx_ctx: ^gfx.Device) -> gfx.Pipeline_Handle {
 			depth_write = true,
 			cull_mode = .NONE, // one plane; winding not worth matching
 			bind_draw = ground_bind_draw,
+			user_data = state,
 		},
 	)
 }
 
 ground_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, parameters: gfx.Draw_Parameters) {
+	state := cast(^City_State)user_data
 	camera := parameters.camera_position
 	uniforms := shader_parameters.CityGroundVertexUniforms {
 		mvp             = parameters.view_projection * parameters.model_transform,
 		camera_position = {camera.x, camera.y, camera.z, 1},
 		fog             = parameters.fog,
+		wet             = {state.ground_texture.wetness, state.day.daylight, 0, 0},
 	}
 	gfx.draw_push_uniform(draw_context, shader_parameters.CITY_GROUND_VERTEX_UNIFORM_BLOCK, &uniforms)
+}
+
+// Wet street, 0..1: 0 is the dry matte asphalt, 1 soaks the road into puddles that mirror the lamps.
+ground_set_wetness :: proc(state: ^City_State, wetness: f32) {
+	state.ground_texture.wetness = clamp(wetness, 0, 1)
 }
 
 // The city plus GROUND_MARGIN on every side as one quad; uv = world / city size, so the texture covers 0..1.

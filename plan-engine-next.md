@@ -25,6 +25,13 @@ Onda 2 entregue (commits `84bba3d`, A3 logo depois): A2, A3, A4, B1.
 - **B1** feito: `shaders/constants.json` -> `shaders/constants.slang` + `src/scenes/city/constants_generated.odin` (gerados, commitados) por `tools/constants`, alvo `make constants`. Slang `import constants;` funciona e o depfile do goose rastreia.
 - Verificado: o `import` do Slang resolve relativo ao arquivo; nenhum shader usava `import` antes (a premissa do plano estava errada, o spike A4 corrigiu).
 
+Onda 3 (visual) entregue: C1, F e rua molhada.
+
+- **C1** feito: `Emitter_Desc.wrap_box` (volume que acompanha a câmera sem emissor, sem spawn, `floor_y`), intensidade 0..1 em tempo real (`rain_set_intensity`). ~14 mil gotas; custo medido ~5% (3 rodadas alternadas, ruído alto). `wrap_time` em f32 tem jitter após horas de sessão; spread e gravidade não valem no modo wrap. C2 (respingos) NÃO feito.
+- **F** feito: `time_of_day` (0..24) com `daycycle.odin` (céu, neblina, exposição, fachadas, janelas, postes/carros/beacons) e clima 0/0.5/1 com relâmpago (+1 EV). Teclas Y (hora), U (ciclo), V (clima). Chão e céu seguem a luz do dia. Sem sombra direcional nem sol real.
+- **Rua molhada** feita (aproximada): poças + faixas de sódio falsas, `wetness` ligada ao clima. Só se lê bem na câmera de pista (olho a ~7 unidades). Faixas saem diagonais, não verticais; carros não refletem. Bug corrigido: `LAMP_SPACING` agora em `constants.json` (pools do chão não alinhavam com os postes desde o passo 17).
+- Bloom na pista às 22 h estoura em halos perto da câmera (light_sprite/bloom): pendente.
+
 ## Fatos verificados (2026-11-25, não suposições)
 
 - Tonemap, exposição e color grading: **não existem**. `grep -w tonemap|exposure|reinhard|ACES` em `src/` e `shaders/` volta vazio. Só há bloom e blur em `src/engine/gfx/postfx.odin`.

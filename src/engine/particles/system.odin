@@ -22,6 +22,7 @@ System :: struct {
 	free_slots:      [dynamic]u32,
 	// The GPU sim integrates in the before hook, which has no dt of its own.
 	dt:              f32,
+	time:            f64, // seconds of simulated time; wrap-mode drops fall by time * velocity in the render shader
 }
 
 system_create :: proc(renderer: ^gfx.Renderer) -> ^System {
@@ -81,15 +82,20 @@ emitter_add :: proc(system: ^System, desc: Emitter_Desc) -> Emitter_Handle {
 	emitter_init(e, desc)
 	e.generation = generation
 
+	_, wrap := e.desc.wrap_box.?
 	usage := sdl.GPUBufferUsageFlags{.GRAPHICS_STORAGE_READ}
-	if e.desc.mode == .GPU do usage += {.COMPUTE_STORAGE_WRITE}
+	if e.desc.mode == .GPU && !wrap do usage += {.COMPUTE_STORAGE_WRITE}
 	// Zero memory is dead, so an unuploaded buffer would show garbage particles on the first frame.
 	e.buffer = gfx.buffer_create_zeroed(gfx_ctx, e.desc.capacity * u32(size_of(Particle)), usage)
+	if wrap {
+		// Wrap drops never change on the GPU: stage the fixed layout once. The buffer aliases e.cpu (emitter-owned).
+		e.buffer = gfx.buffer_stage(gfx_ctx, e.buffer, e.cpu, .GRAPHICS_STORAGE_READ)
+	}
 	gfx.uploader_begin(&system.renderer.uploader)
 	gfx.uploader_upload_buffer(&system.renderer.uploader, e.buffer)
 	gfx.uploader_flush(&system.renderer.uploader)
 	staged := gfx.buffer_get(gfx_ctx, e.buffer)
-	delete(staged._temporary_raw_data)
+	if !wrap do delete(staged._temporary_raw_data)
 	staged._temporary_raw_data = nil
 
 	return Emitter_Handle{index = slot, generation = generation}
@@ -116,6 +122,7 @@ emitter_get :: proc(system: ^System, handle: Emitter_Handle) -> ^Emitter {
 
 system_update :: proc(system: ^System, dt: f32) {
 	system.dt = dt
+	system.time += f64(dt)
 	for &e in system.emitters {
 		if e.alive do emitter_step(&e, dt)
 	}
@@ -126,6 +133,7 @@ particles_before :: proc(renderer: ^gfx.Renderer, user: rawptr) {
 	gfx_ctx := renderer.gfx_ctx
 	for &e in system.emitters {
 		if !e.alive do continue
+		if _, wrap := e.desc.wrap_box.?; wrap do continue // fixed layout: no sim dispatch
 		switch e.desc.mode {
 		case .GPU:
 			block := gfx.DefaultParticleSimComputeUniformBlock{}
@@ -174,6 +182,8 @@ particles_draw :: proc(renderer: ^gfx.Renderer, user: rawptr) {
 	gfx_ctx := renderer.gfx_ctx
 	for &e in system.emitters {
 		if !e.alive || !gfx.handle_pool_contains(&gfx_ctx.buffer_handles, gfx.Resource_Handle(e.buffer)) do continue
+		count := draw_count(&e)
+		if count == 0 do continue
 
 		pipeline_handle := system.render_alpha if e.desc.blend == .Alpha else system.render_additive
 		pipeline := gfx.pipeline_get(gfx_ctx, pipeline_handle)
@@ -189,6 +199,11 @@ particles_draw :: proc(renderer: ^gfx.Renderer, user: rawptr) {
 		p.color_end = e.desc.color_end
 		p.fade_in = e.desc.fade_in
 		p.stretch_cam = {renderer.camera.position.x, renderer.camera.position.y, renderer.camera.position.z, e.desc.stretch}
+		box, wrap := e.desc.wrap_box.?
+		if wrap do p.wrap_box = {box.x, box.y, box.z, 1}
+		floor_y, floored := e.desc.floor_y.?
+		p.wrap_time = {f32(system.time), floor_y, 0, 0}
+		if floored do p.wrap_time.z = 1
 		goose_sdl.push_uniform(gfx_ctx.command_buffer, gfx.DEFAULT_PARTICLE_RENDER_VERTEX_UNIFORM_BLOCK, &block)
 
 		buffer := gfx.buffer_get(gfx_ctx, e.buffer)
@@ -198,7 +213,7 @@ particles_draw :: proc(renderer: ^gfx.Renderer, user: rawptr) {
 			&buffer.handle,
 			1,
 		)
-		// Dead slots are clipped in the vertex shader, so every slot gets its quad.
-		sdl.DrawGPUPrimitives(renderer.pass, 6 * e.desc.capacity, 1, 0, 0)
+		// Dead slots are clipped in the vertex shader; wrap emitters draw only their first `count` slots (intensity).
+		sdl.DrawGPUPrimitives(renderer.pass, 6 * count, 1, 0, 0)
 	}
 }

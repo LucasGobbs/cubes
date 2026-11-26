@@ -57,7 +57,7 @@ sky_texture_destroy :: proc(gfx_ctx: ^gfx.Device, sky: ^Sky_Texture) {
 	sky^ = {}
 }
 
-sky_pipeline_create :: proc(gfx_ctx: ^gfx.Device) -> gfx.Pipeline_Handle {
+sky_pipeline_create :: proc(gfx_ctx: ^gfx.Device, state: ^City_State) -> gfx.Pipeline_Handle {
 	attributes := shader_parameters.city_sky_vertex_attributes(gfx.VertexData)
 	return gfx.pipeline_create(
 		gfx_ctx,
@@ -69,16 +69,28 @@ sky_pipeline_create :: proc(gfx_ctx: ^gfx.Device) -> gfx.Pipeline_Handle {
 			depth_test = true,
 			depth_write = false, // drawn first in spirit: never occludes the city
 			cull_mode = .NONE, // the cap and walls are seen from inside
+			user_data = state,
 			bind_draw = sky_bind_draw,
 		},
 	)
 }
 
+// Colour as a vec4 with alpha 1.
+rgb1 :: proc(c: [3]f32) -> [4]f32 {
+	return {c.x, c.y, c.z, 1}
+}
+
 // The lampshade follows the camera, so the horizon stays at eye level and at infinity.
 sky_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, parameters: gfx.Draw_Parameters) {
+	state := cast(^City_State)user_data
+	d := state.day
 	c := parameters.camera_position
 	uniforms := shader_parameters.CitySkyVertexUniforms {
-		mvp = parameters.view_projection * linalg.matrix4_translate_f32({c.x, c.y, c.z}) * parameters.model_transform,
+		mvp     = parameters.view_projection * linalg.matrix4_translate_f32({c.x, c.y, c.z}) * parameters.model_transform,
+		horizon = rgb1(d.horizon_color),
+		zenith  = rgb1(d.zenith_color),
+		sun     = {d.sun_dir.x, d.sun_dir.y, d.sun_dir.z, d.daylight},
+		params  = {d.star_alpha, d.fog_color.x, d.fog_color.y, d.fog_color.z},
 	}
 	gfx.draw_push_uniform(draw_context, shader_parameters.CITY_SKY_VERTEX_UNIFORM_BLOCK, &uniforms)
 }

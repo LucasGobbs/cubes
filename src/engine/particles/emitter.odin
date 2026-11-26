@@ -26,10 +26,13 @@ emitter_init :: proc(e: ^Emitter, desc: Emitter_Desc) {
 	}
 	desc.direction = unit_direction(desc.direction)
 
-	e^ = Emitter{desc = desc, active = true, alive = true, rng = RNG_SEED}
-	if desc.mode == .CPU {
+	e^ = Emitter{desc = desc, active = true, intensity = 1, alive = true, rng = RNG_SEED}
+	_, wrap := desc.wrap_box.?
+	assert(!wrap || desc.mode == .GPU, "wrap_box needs a GPU emitter")
+	if desc.mode == .CPU || wrap {
 		e.cpu = make([]Particle, desc.capacity)
 	}
+	if wrap do wrap_fill(desc, e.cpu)
 }
 
 emitter_destroy :: proc(e: ^Emitter) {
@@ -43,6 +46,10 @@ emitter_burst :: proc(e: ^Emitter, count: u32) {
 }
 
 emitter_step :: proc(e: ^Emitter, dt: f32) {
+	if _, wrap := e.desc.wrap_box.?; wrap {
+		e.spawn_count = 0 // wrap drops are fixed at creation: nothing spawns and nothing integrates
+		return
+	}
 	capacity := e.desc.capacity
 
 	spawns := e.pending_burst
@@ -138,4 +145,39 @@ rng_next :: proc(state: ^u32) -> u32 {
 // Uniform [0,1); 24 bits keep the result strictly below 1.0.
 rng_float :: proc(state: ^u32) -> f32 {
 	return f32(rng_next(state) >> 8) * (1.0 / 16777216.0)
+}
+
+// Mirrors wrap_axis() in particle_render.slang: folds x into [-b/2, b/2) with period b.
+wrap_axis :: proc(x, b: f32) -> f32 {
+	return x - b * math.floor(x / b + 0.5)
+}
+
+// Slots drawn this frame. Wrap emitters draw the first intensity*capacity slots, so lowering intensity removes slots
+// without moving any drop; `active` = false hides them all.
+draw_count :: proc(e: ^Emitter) -> u32 {
+	if _, wrap := e.desc.wrap_box.?; !wrap do return e.desc.capacity
+	if !e.active do return 0
+	return u32(math.round(clamp(e.intensity, 0, 1) * f32(e.desc.capacity)))
+}
+
+// Wrap mode layout: each drop's fixed position in the box and its constant fall velocity, hashed from its slot.
+wrap_fill :: proc(desc: Emitter_Desc, out: []Particle) {
+	box, _ := desc.wrap_box.?
+	dir := unit_direction(desc.direction)
+	for &p, i in out {
+		u := u32(i)
+		p = Particle {
+			position = (Vec3{wrap_hash(u, 1), wrap_hash(u, 2), wrap_hash(u, 3)} - 0.5) * box,
+			velocity = dir * (desc.speed[0] + (desc.speed[1] - desc.speed[0]) * wrap_hash(u, 4)),
+			lifetime = 1,
+			color    = desc.color_start,
+		}
+	}
+}
+
+// Uniform [0,1) from (slot, salt): one PCG step after mixing the inputs.
+wrap_hash :: proc(slot, salt: u32) -> f32 {
+	state: u32 = slot ~ (salt * 0x9E3779B9)
+	rng_next(&state)
+	return rng_float(&state)
 }

@@ -7,6 +7,7 @@ SKY_W :: 2048 // night sky texture, u (wraps around the lampshade)
 SKY_H :: 512 // night sky texture, v (zenith row 0)
 TILE_COUNT_SIDE :: 6 // window atlas: tiles per side
 TILE_PX :: 512 // window atlas: texels per tile side
+LAMP_SPACING :: 14 // units between lamp posts along a street (lights.odin places them; ground pools follow)
 WINDOW_PX :: 8 // window atlas: texels per window cell
 TILE_COUNT :: TILE_COUNT_SIDE * TILE_COUNT_SIDE // window atlas: tiles in total
 ATLAS_SIZE :: TILE_COUNT_SIDE * TILE_PX // window atlas: texels per side

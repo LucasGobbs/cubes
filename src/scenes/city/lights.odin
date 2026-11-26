@@ -8,7 +8,6 @@ import gfx "../../engine/gfx"
 import shader_parameters "../../shader_parameters"
 import "core:log"
 
-LAMP_SPACING :: 14 // units between posts along a street
 LAMP_JITTER :: 1 // +- units along the street, from the seed
 LAMP_KERB :: 0.5 // unit cell centre inside the road edge
 LAMP_HEIGHT :: 4
@@ -85,10 +84,12 @@ lights_pipeline_create :: proc(gfx_ctx: ^gfx.Device, state: ^City_State) -> gfx.
 }
 
 lights_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, parameters: gfx.Draw_Parameters) {
+	state := cast(^City_State)user_data
 	camera := parameters.camera_position
 	uniforms := shader_parameters.CityLightsVertexUniforms {
 		mvp             = parameters.view_projection * parameters.model_transform,
 		camera_position = {camera.x, camera.y, camera.z, 1},
+		gain            = {1 - state.day.daylight, 0, 0, 0},
 	}
 	gfx.draw_push_uniform(draw_context, shader_parameters.CITY_LIGHTS_VERTEX_UNIFORM_BLOCK, &uniforms)
 }

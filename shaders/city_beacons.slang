@@ -9,6 +9,7 @@ struct Uniforms {
     float4x4 mvp;
     float4 camera_position;
     float4 time; // x = seconds
+    float4 gain; // x = brightness multiplier: 1 at night, 0 by day
 };
 
 [[vk::binding(0, 0)]]
@@ -39,7 +40,7 @@ VertexOutput vertexMain(VertexInput input) {
     VertexOutput output;
     output.position = mul(data.mvp, float4(world, 1.0));
     output.corner = input.color.rg;
-    output.glow = input.normal * brightness;
+    output.glow = input.normal * brightness * data.gain.x;
     return output;
 }
 

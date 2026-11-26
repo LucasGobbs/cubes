@@ -8,6 +8,7 @@ struct Uniforms {
     float4x4 mvp;
     float4 camera_position;
     float4 fog; // rgb = linear fog color, a = view distance (<= 0 = off)
+    float4 day; // x = daylight (0 night .. 1 day), y = lightning flash (0..1)
 };
 
 [[vk::binding(0, 0)]]
@@ -28,6 +29,7 @@ struct VertexOutput {
     float2 uv : UV;
     float3 to_camera : TO_CAMERA; // world space: the mesh is already in world space
     float4 fog : FOG;
+    float4 day : DAY;
 };
 
 [shader("vertex")]
@@ -38,6 +40,7 @@ VertexOutput vertexMain(VertexInput input) {
     output.uv = input.uv;
     output.to_camera = data.camera_position.xyz - input.position;
     output.fog = data.fog;
+    output.day = data.day;
     return output;
 }
 
@@ -65,7 +68,12 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     float luma = dot(lit, float3(0.2126, 0.7152, 0.0722));
     float dark = 1.0 - smoothstep(0.1, 0.35, luma);
     lit = lerp(lit, lit * lit * (3.0 - 2.0 * lit), 0.5 * dark);
-    lit *= 1.0 + 2.2 * smoothstep(0.08, 0.45, luma);
+    lit *= 1.0 + 2.2 * smoothstep(0.08, 0.45, luma) * (1.0 - input.day.x); // boost is night-only: by day lit windows stay dim
+    // Day: windows dim, the wall gets a grey ambient term; mesh roofs and stripes are black (colour 0), so
+    // albedo floors at grey. A lightning flash adds a cool fill.
+    float3 albedo = max(input.color.rgb, 0.3);
+    lit = lit * (1.0 - 0.8 * input.day.x) + input.day.x * float3(0.18, 0.2, 0.24) * albedo;
+    lit += input.day.y * 0.25 * float3(0.7, 0.8, 1.0) * albedo;
 
     // Distance fog: see src/engine/gfx/shaders/fog.slang.
     return float4(apply_fog(lit, length(input.to_camera), input.fog), 1.0);

@@ -6,6 +6,7 @@ static const uint SKY_W = 2048; // night sky texture, u (wraps around the lampsh
 static const uint SKY_H = 512; // night sky texture, v (zenith row 0)
 static const uint TILE_COUNT_SIDE = 6; // window atlas: tiles per side
 static const uint TILE_PX = 512; // window atlas: texels per tile side
+static const uint LAMP_SPACING = 14; // units between lamp posts along a street (lights.odin places them; ground pools follow)
 static const uint WINDOW_PX = 8; // window atlas: texels per window cell
 static const uint TILE_COUNT = TILE_COUNT_SIDE * TILE_COUNT_SIDE; // window atlas: tiles in total
 static const uint ATLAS_SIZE = TILE_COUNT_SIDE * TILE_PX; // window atlas: texels per side

@@ -6,6 +6,7 @@ import "../src/engine/gfx/shaders/light_sprite";
 struct Uniforms {
     float4x4 mvp;
     float4 camera_position;
+    float4 gain; // x = brightness multiplier: 1 at night, 0 by day
 };
 
 [[vk::binding(0, 0)]]
@@ -23,6 +24,7 @@ struct VertexInput {
 struct VertexOutput {
     float4 position : SV_POSITION;
     float2 corner : CORNER;
+    float gain : GAIN;
 };
 
 static const float LAMP_WORLD_SIZE = 3.0; // full width in units
@@ -35,10 +37,11 @@ VertexOutput vertexMain(VertexInput input) {
     VertexOutput output;
     output.position = mul(data.mvp, float4(world, 1.0));
     output.corner = input.color.rg;
+    output.gain = data.gain.x;
     return output;
 }
 
 [shader("fragment")]
 float4 pixelMain(VertexOutput input) : SV_Target0 {
-    return sprite_shade(input.corner, float3(1.0, 0.5, 0.15), 1.6, 1.0); // sodium
+    return sprite_shade(input.corner, float3(1.0, 0.5, 0.15), 1.6, 1.0) * input.gain; // sodium
 }

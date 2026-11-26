@@ -9,6 +9,7 @@ struct Uniforms {
     float4x4 mvp;
     float4 camera_position;
     float4 time; // x = seconds
+    float4 gain; // x = brightness multiplier (the car lamps stay faintly on by day)
 };
 
 [[vk::binding(0, 0)]]
@@ -28,6 +29,7 @@ struct VertexOutput {
     float2 corner : CORNER;
     float3 dir : DIR;
     float3 to_camera : TO_CAMERA; // world space
+    float gain : GAIN;
 };
 
 static const float LAMP_WORLD_SIZE = 1.4; // full width in units
@@ -50,6 +52,7 @@ VertexOutput vertexMain(VertexInput input) {
     output.corner = input.color.rg;
     output.dir = dir;
     output.to_camera = eye - centre;
+    output.gain = data.gain.x;
     return output;
 }
 
@@ -58,5 +61,5 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     // dot(dir, centre - eye) > 0: the car is moving away, so we see its tail lamps.
     bool away = dot(input.dir, -input.to_camera) > 0.0;
     float3 tint = away ? float3(1.0, 0.08, 0.04) : float3(1.0, 0.92, 0.75);
-    return sprite_shade(input.corner, tint, 1.6, 1.0);
+    return sprite_shade(input.corner, tint, 1.6, 1.0) * input.gain;
 }

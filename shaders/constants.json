@@ -6,6 +6,7 @@
     {"name": "SKY_H", "value": 512, "comment": "night sky texture, v (zenith row 0)"},
     {"name": "TILE_COUNT_SIDE", "value": 6, "comment": "window atlas: tiles per side"},
     {"name": "TILE_PX", "value": 512, "comment": "window atlas: texels per tile side"},
+    {"name": "LAMP_SPACING", "value": 14, "comment": "units between lamp posts along a street (lights.odin places them; ground pools follow)"},
     {"name": "WINDOW_PX", "value": 8, "comment": "window atlas: texels per window cell"},
     {"name": "TILE_COUNT", "expr": "TILE_COUNT_SIDE * TILE_COUNT_SIDE", "comment": "window atlas: tiles in total"},
     {"name": "ATLAS_SIZE", "expr": "TILE_COUNT_SIDE * TILE_PX", "comment": "window atlas: texels per side"},

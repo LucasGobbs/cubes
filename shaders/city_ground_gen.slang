@@ -1,13 +1,13 @@
 // Ground texture: one texel per unit of the city grid (1 texel = 1 unit = 1 lane). Reads the road plan as packed bits
 // (bit i of word i / 32 = cell i, row-major by z) and paints streets as warm asphalt under sodium lamps; everything
-// else is near-black blue. Output is display-referred: the ground fragment shader linearizes it.
+// else is near-black blue. Output is display-referred: the ground fragment shader linearizes it. Alpha carries the
+// puddle field (0..1 on road, 0 elsewhere): the fragment shader thresholds it by wetness, so the texture is weather-free.
 //
 // SDL_GPU compute binding order: read-only storage buffers -> read-write storage textures.
 
 import constants;
 
 static const float PI = 3.14159265;
-static const float LAMP_SPACING = 8.0; // units between lamps along each kerb
 static const float INV_U32 = 1.0 / 4294967296.0;
 
 [[vk::binding(0, 0)]]
@@ -36,7 +36,19 @@ bool is_kerb(int2 p) {
 
 // Lamp pool along one axis: 1 under a lamp, 0.55 halfway between two.
 float lamp_pool(float along) {
-    return 0.55 + 0.45 * pow(abs(cos(PI * along / LAMP_SPACING)), 3.0);
+    return 0.55 + 0.45 * pow(abs(cos(PI * (along - 0.5 * float(LAMP_SPACING)) / float(LAMP_SPACING))), 3.0);
+}
+
+float hash01(int2 c) {
+    return float(pcg(uint(c.x) * 73856093u ^ uint(c.y) * 19349663u)) * INV_U32;
+}
+
+// Value noise, smooth across texels: puddles are a low-frequency field, so mips average them instead of shimmering.
+float value_noise(float2 p) {
+    int2 i = int2(floor(p));
+    float2 f = p - floor(p);
+    float2 u = f * f * (3.0 - 2.0 * f);
+    return lerp(lerp(hash01(i), hash01(i + int2(1, 0)), u.x), lerp(hash01(i + int2(0, 1)), hash01(i + int2(1, 1)), u.x), u.y);
 }
 
 [shader("compute")]
@@ -45,7 +57,7 @@ void computeMain(uint2 tid : SV_DispatchThreadID)
 {
     int2 p = int2(tid);
     if (!is_road(p)) {
-        output_image[tid] = float4(0.003, 0.003, 0.005, 1.0);
+        output_image[tid] = float4(0.003, 0.003, 0.005, 0.0);
         return;
     }
 
@@ -53,8 +65,8 @@ void computeMain(uint2 tid : SV_DispatchThreadID)
     // Intersections (kerbs on both axes) take the brighter of the two pools.
     bool x_kerb = !is_road(p + int2(-1, 0)) || !is_road(p + int2(1, 0));
     bool z_kerb = !is_road(p + int2(0, -1)) || !is_road(p + int2(0, 1));
-    float pool_x = lamp_pool(float(p.x) + 0.5);
-    float pool_z = lamp_pool(float(p.y) + 0.5);
+    float pool_x = lamp_pool(float(p.x));
+    float pool_z = lamp_pool(float(p.y));
     float pool = (x_kerb && !z_kerb) ? pool_z : (z_kerb && !x_kerb) ? pool_x : max(pool_x, pool_z);
 
     // Lamp reach: the lane one in from the kerb is brighter; the kerb line itself is slightly darker.
@@ -66,5 +78,6 @@ void computeMain(uint2 tid : SV_DispatchThreadID)
     float grain = 0.8 + 0.2 * float(h) * INV_U32;
 
     float3 asphalt = float3(0.13, 0.10, 0.07);
-    output_image[tid] = float4(saturate(asphalt * grain * pool * reach), 1.0);
+    float puddle = 0.65 * value_noise(float2(p) / 9.0) + 0.35 * value_noise(float2(p) / 3.1 + 17.0);
+    output_image[tid] = float4(saturate(asphalt * grain * pool * reach), puddle);
 }

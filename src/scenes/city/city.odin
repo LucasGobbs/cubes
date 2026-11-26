@@ -13,7 +13,7 @@ ROAD_HEIGHT :: 0.05 // above the ground plane so the streets never z-fight with 
 // Golden-ratio multiplier: spreads per-building seeds across the u32 range.
 BUILDING_SEED_MIX :: 0x9E3779B9
 
-city_pipeline_create :: proc(gfx_ctx: ^gfx.Device) -> gfx.Pipeline_Handle {
+city_pipeline_create :: proc(gfx_ctx: ^gfx.Device, state: ^City_State) -> gfx.Pipeline_Handle {
 	attributes := shader_parameters.city_vertex_attributes(gfx.VertexData)
 	return gfx.pipeline_create(
 		gfx_ctx,
@@ -25,17 +25,20 @@ city_pipeline_create :: proc(gfx_ctx: ^gfx.Device) -> gfx.Pipeline_Handle {
 			depth_test = true,
 			depth_write = true,
 			cull_mode = .BACK,
+			user_data = state,
 			bind_draw = city_bind_draw,
 		},
 	)
 }
 
 city_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, parameters: gfx.Draw_Parameters) {
+	state := cast(^City_State)user_data
 	camera := parameters.camera_position
 	uniforms := shader_parameters.CityVertexUniforms {
 		mvp             = parameters.view_projection * parameters.model_transform,
 		camera_position = {camera.x, camera.y, camera.z, 1},
 		fog             = parameters.fog,
+		day             = {state.day.daylight, state.flash, 0, 0},
 	}
 	gfx.draw_push_uniform(draw_context, shader_parameters.CITY_VERTEX_UNIFORM_BLOCK, &uniforms)
 }
@@ -151,12 +154,9 @@ city_set_dev :: proc(state: ^City_State, renderer: ^gfx.Renderer, dev: bool) {
 	city_apply_effects(state, renderer)
 }
 
-// Fog and bloom are night-only: the dev view is an unlit, flat overlay. Both follow their toggles.
-// Fog and grade live on world.stage; world_update applies them to the renderer every frame.
+// Bloom is night-only: the dev view is an unlit, flat overlay. Follows its toggle.
 city_apply_effects :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 	night := !state.dev
-	state.world.stage.fog = nil
-	if night && state.fog_on do state.world.stage.fog = CITY_FOG
 	if night && state.bloom_on {
 		gfx.renderer_set_passes(renderer, .Post, []gfx.Render_Pass{gfx.bloom_pass(&state.bloom)})
 	} else {
@@ -164,12 +164,31 @@ city_apply_effects :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 	}
 }
 
-// Dev keys [ and ]: step the grade's exposure in EV and log it.
-city_set_exposure :: proc(state: ^City_State, ev: f32) {
-	grade := state.world.stage.grade.?
-	grade.exposure += ev
+// Day/night and weather, every frame before the world renders: sky params from the clock, lightning from the
+// storm, then fog and grade on world.stage. Night and clear is the base look (all terms zero or identity). The dev
+// view keeps the base grade plus the user's exposure offset.
+city_apply_day :: proc(state: ^City_State) {
+	state.day = sky_params(state.time_of_day)
+	state.flash = lightning(state.time, state.seed) * smooth_step(0.75, 1, state.weather)
+	grade := CITY_GRADE
+	grade.exposure += state.exposure_offset
+	state.world.stage.fog = nil
+	if !state.dev {
+		grade.exposure += state.day.exposure_ev - 0.5 * min(2 * state.weather, 1) + 1.0 * state.flash
+		if state.fog_on {
+			fog := CITY_FOG
+			fog.color = state.day.fog_color
+			fog.distance = CITY_FOG.distance * (1 - 0.4 * state.weather)
+			state.world.stage.fog = fog
+		}
+	}
 	state.world.stage.grade = grade
-	log.infof("city: exposure %.2f EV", grade.exposure)
+}
+
+// Dev keys [ and ]: step the grade's exposure offset in EV and log it.
+city_set_exposure :: proc(state: ^City_State, ev: f32) {
+	state.exposure_offset += ev
+	log.infof("city: exposure offset %.2f EV", state.exposure_offset)
 }
 
 // Re-plans and re-spawns the city for state.seed, keeping the dev overlay in step.

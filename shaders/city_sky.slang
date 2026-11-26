@@ -1,7 +1,13 @@
-// Night sky on the lampshade cylinder: samples the sky texture (city_sky_gen). Repeats in u, clamps in v.
+// Sky on the lampshade cylinder: the night sky texture (city_sky_gen, stars, clouds, night glow) cross-fades with a
+// procedural day gradient and a sun disk + halo. Night is the texture alone; by day the texture fades out.
+// Repeats in u, clamps in v.
 
 struct Uniforms {
     float4x4 mvp;
+    float4 horizon; // rgb = linear day colour at the horizon
+    float4 zenith; // rgb = linear day colour overhead
+    float4 sun; // xyz = unit direction to the sun, w = daylight (0 hides the sun)
+    float4 params; // x = star_alpha (night texture visibility), yzw = colour the lampshade's lower band fades to (sRGB numbers, = fog)
 };
 
 [[vk::binding(0, 0)]]
@@ -20,6 +26,11 @@ struct VertexOutput {
     float4 position : SV_POSITION;
     float4 color : COLOR;
     float2 uv : UV;
+    float3 dir : DIR; // view direction on the cylinder (local = world, the cylinder follows the eye)
+    float4 horizon : HORIZON;
+    float4 zenith : ZENITH;
+    float4 sun : SUN;
+    float4 params : PARAMS;
 };
 
 [shader("vertex")]
@@ -28,6 +39,11 @@ VertexOutput vertexMain(VertexInput input) {
     output.position = mul(data.mvp, float4(input.position, 1.0));
     output.color = input.color;
     output.uv = input.uv;
+    output.dir = input.position;
+    output.horizon = data.horizon;
+    output.zenith = data.zenith;
+    output.sun = data.sun;
+    output.params = data.params;
     return output;
 }
 
@@ -40,9 +56,16 @@ SamplerState sky_sampler;
 float4 pixelMain(VertexOutput input) : SV_Target0 {
     // The compute shader writes display-referred values into a UNORM texture; linearize for the sRGB swapchain.
     float4 texel = sky_texture.Sample(sky_sampler, input.uv);
-    // Vertex colour (1 at the horizon, 0 at the bottom ring) fades the part below the horizon to a dark blue-grey, not
-    // to the red horizon glow.
-    static const float3 BELOW = float3(0.0015, 0.0018, 0.003); // = CITY_FOG rgb in scene.odin: keep equal, so the ground fogs into the sky
-    float3 glow = pow(texel.rgb, 2.2);
-    return float4(lerp(BELOW, glow, pow(input.color.r, 6.0)), 1.0);
+    float3 night = pow(texel.rgb, 2.2);
+
+    float3 dir = normalize(input.dir);
+    float3 day = lerp(input.horizon.rgb, input.zenith.rgb, saturate(dir.y / 0.35));
+    float sd = max(dot(dir, input.sun.xyz), 0.0);
+    float3 sun_light = float3(1.0, 0.92, 0.75) * input.sun.w;
+    day += sun_light * (pow(sd, 24.0) * 0.35 + pow(sd, 1500.0) * 4.0); // halo, then disk
+
+    float3 glow = lerp(day, night, input.params.x);
+    // Vertex colour (1 at the horizon, 0 at the bottom ring) fades the part below the horizon to the fog colour, so the
+    // ground fogs into the sky.
+    return float4(lerp(input.params.yzw, glow, pow(input.color.r, 6.0)), 1.0);
 }

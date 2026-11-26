@@ -1,8 +1,7 @@
-// Rain: two GPU particle emitters that ride along with the camera, so only the volume around the viewer is simulated
-// (no city-sized emitter). New drops spawn in a sphere centred on the camera each frame; drops already in flight keep
-// their world position and fall out of view behind a moving camera. A small dense layer carries the nearby rain and a
-// big sparse layer (radius 260) fills the distance, so the camera cannot easily outrun the rain. Drops are
-// velocity-aligned streaks (Emitter_Desc.stretch), additive and very faint blue-white (a subtle effect, not a downpour).
+// Rain: two GPU particle layers in wrap mode (Emitter_Desc.wrap_box). Drops are fixed in a box centred on the camera and
+// folded inside it by the render shader, so the volume follows the viewer with no emitter, nothing spawns, and no drop
+// can be outrun. Drops are velocity-aligned streaks (Emitter_Desc.stretch), additive and very faint blue-white, and
+// stop at the ground (floor_y). A small dense layer carries the nearby rain and a big sparse layer fills the distance.
 package city
 
 import engine "../../engine"
@@ -12,23 +11,19 @@ RAIN_WIND :: gfx.Vec3{0.12, -1, 0.05} // fall direction; the slant makes drops r
 RAIN_SPEED :: [2]f32{62, 78} // fall speed, units/s
 
 Rain_Layer :: struct {
-	capacity: u32,
-	radius:   f32, // spawn sphere around the camera, world units
-	lift:     f32, // the sphere sits this far above the camera: drops spend more of their fall in view
-	lifetime: [2]f32, // long enough to fall across the sphere
-	stretch:  f32, // s of travel drawn as streak length; far drops are longer so they stay visible
-	alpha:    f32,
+	side:    f32, // edge of the wrap box centred on the camera, world units
+	density: f32, // drops per unit^3 at intensity 1; the count follows from side
+	stretch: f32, // s of travel drawn as streak length; far drops are longer so they stay visible
+	alpha:   f32,
 }
 
-// rate = capacity / mean lifetime keeps each ring full without overwriting live drops.
 RAIN_LAYERS := [2]Rain_Layer {
-	{capacity = 6144, radius = 90, lift = 25, lifetime = {1.4, 1.8}, stretch = 0.03, alpha = 0.1},
-	{capacity = 9216, radius = 260, lift = 90, lifetime = {3.0, 4.0}, stretch = 0.12, alpha = 0.05},
+	{side = 180, density = 1.5e-3, stretch = 0.03, alpha = 0.1},
+	{side = 520, density = 4.0e-5, stretch = 0.12, alpha = 0.05},
 }
 
 rain_spawn :: proc(state: ^City_State) {
 	for layer, i in RAIN_LAYERS {
-		mean_life := (layer.lifetime[0] + layer.lifetime[1]) / 2
 		state.rain[i] = engine.world_add_actor(
 			&state.world,
 			Rain_Emitter {
@@ -36,17 +31,13 @@ rain_spawn :: proc(state: ^City_State) {
 				emitter = engine.Particle_Emitter {
 					mode = .GPU,
 					blend = .Additive,
-					capacity = layer.capacity,
-					rate = f32(layer.capacity) / mean_life,
+					capacity = u32(layer.density * layer.side * layer.side * layer.side),
+					wrap_box = gfx.Vec3{layer.side, layer.side, layer.side},
+					floor_y = GROUND_Y,
 					direction = RAIN_WIND,
-					spread = 0.03,
-					radius = layer.radius,
-					lifetime = layer.lifetime,
 					speed = RAIN_SPEED,
 					size = {0.03, 0.03},
 					color_start = {0.55, 0.65, 0.85, layer.alpha},
-					color_end = {0.55, 0.65, 0.85, 0},
-					fade_in = 0.12, // drops fade in instead of popping into the sphere
 					stretch = layer.stretch,
 				},
 			},
@@ -54,19 +45,17 @@ rain_spawn :: proc(state: ^City_State) {
 	}
 }
 
-// Moves the emitters to the camera. The engine copies the actor Transform to the emitter in world_update, so call
-// this before it.
-rain_follow_camera :: proc(state: ^City_State, ctx: ^engine.Context) {
-	cam := gfx.camera(&ctx.gfx).position
-	for layer, i in RAIN_LAYERS {
-		state.rain[i].position = cam + {0, layer.lift, 0}
-	}
-}
-
-// Stops or resumes spawning; drops already falling finish their fall.
+// Stops or resumes the rain; while off nothing is drawn.
 rain_set :: proc(state: ^City_State, on: bool) {
 	state.rain_on = on
 	for r in state.rain {
 		if emitter := engine.actor_emitter(&state.world, r.id); emitter != nil do emitter.active = on
+	}
+}
+
+// Rain density, 0..1 (1 = the default look). Lower intensity draws a prefix of each layer's fixed drops.
+rain_set_intensity :: proc(state: ^City_State, intensity: f32) {
+	for r in state.rain {
+		if emitter := engine.actor_emitter(&state.world, r.id); emitter != nil do emitter.intensity = intensity
 	}
 }

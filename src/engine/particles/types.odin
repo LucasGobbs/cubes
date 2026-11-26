@@ -44,11 +44,14 @@ Emitter_Desc :: struct {
 	color_end:   [4]f32, // zero = fade to transparent (intended)
 	fade_in:     f32,
 	stretch:     f32, // 0 = round billboard; > 0 = streak along the velocity, this many seconds of travel long (rain)
+	wrap_box:    Maybe(Vec3), // set = wrap mode (GPU, render-only): nothing spawns, drops stay fixed in a box centred on the camera
+	floor_y:     Maybe(f32), // wrap mode: drops whose streak reaches below this world y are hidden
 }
 
 Emitter :: struct {
 	desc:         Emitter_Desc, // capacity already resolved (never 0)
-	active:       bool, // false = no continuous spawning (bursts still work)
+	active:       bool, // false = no continuous spawning (bursts still work); wrap mode: nothing drawn
+	intensity:    f32, // wrap mode: fraction of slots drawn (0..1), the first ones in the ring
 	alive:        bool, // slot in use
 	generation:   u32,
 	accumulator:  f32,
