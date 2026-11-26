@@ -20,6 +20,7 @@ LIGHTNING_SEED_MIX :: 0x6C8E9CF5
 // CITY_FOG (what the shaders blend with), so at night it equals CITY_FOG.color.
 Day_Params :: struct {
 	daylight:      f32, // 0 night .. 1 day
+	twilight:      f32, // 0 away from the horizon crossings .. 1 at sunrise / sunset: warms the ground haze near the horizon
 	horizon_color: [3]f32,
 	zenith_color:  [3]f32,
 	fog_color:     [3]f32,
@@ -57,6 +58,7 @@ sky_params :: proc(hour: f32) -> Day_Params {
 	twilight_fog := linalg.lerp(horizon, [3]f32{grey, grey, grey}, 0.7) * 0.6
 	return {
 		daylight      = day,
+		twilight      = twilight,
 		horizon_color = horizon,
 		zenith_color  = zenith,
 		fog_color     = linalg.lerp([3]f32{0.01938, 0.023256, 0.03876}, linalg.lerp(horizon, twilight_fog, twilight), day),

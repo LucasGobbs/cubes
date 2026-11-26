@@ -85,6 +85,7 @@ sky_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, parame
 	state := cast(^City_State)user_data
 	d := state.day
 	fog := gfx.color_srgb_to_linear({d.fog_color.x, d.fog_color.y, d.fog_color.z, 1}) // the ground fogs with this linear colour
+	fog.xyz = linalg.lerp(fog.xyz, d.horizon_color, d.twilight) // dusk: the band under the horizon warms like the ground haze
 	c := parameters.camera_position
 	uniforms := shader_parameters.CitySkyVertexUniforms {
 		mvp     = parameters.view_projection * linalg.matrix4_translate_f32({c.x, c.y, c.z}) * parameters.model_transform,

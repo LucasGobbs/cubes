@@ -8,6 +8,7 @@ struct Uniforms {
     float4 camera_position;
     float4 fog; // rgb = linear fog color, a = view distance (<= 0 = off)
     float4 wet; // x = wetness 0..1, y = daylight 0..1
+    float4 horizon; // rgb = linear sky band at the horizon, a unused
 };
 
 [[vk::binding(0, 0)]]
@@ -29,6 +30,7 @@ struct VertexOutput {
     float4 fog : FOG;
     float wetness : WETNESS; // 0 = dry (identical to the matte ground), 1 = soaked
     float daylight : DAYLIGHT; // 0 night .. 1 day: the road and the outskirts follow the day look
+    float4 horizon : HORIZON; // rgb = linear horizon band, a = dusk weight 0..1
 };
 
 [shader("vertex")]
@@ -40,6 +42,7 @@ VertexOutput vertexMain(VertexInput input) {
     output.fog = data.fog;
     output.wetness = data.wet.x;
     output.daylight = data.wet.y;
+    output.horizon = float4(data.horizon.rgb, data.wet.z);
     return output;
 }
 
@@ -67,7 +70,12 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     // Alpha is the puddle field (see city_ground_gen).
     float4 tex = ground_texture.Sample(ground_sampler, input.uv);
     float inside = inside_city(input.uv);
-    float3 outer = lerp(float3(0.0012, 0.0012, 0.002), input.fog.rgb, input.daylight); // night keeps the fixed dark outskirts
+    // Outskirts: night black; by day the grey-blue ambient of the road, the fog colour only at full day (noon unchanged).
+    float day_gate = smoothstep(0.0, 0.5, input.daylight);
+    float3 ambient = float3(0.16, 0.19, 0.24);
+    float lum = pow(input.daylight, 1.8); // dusk: the open ground darkens and warms toward the horizon colour
+    float3 open_day = lerp(input.horizon.rgb * 0.15, ambient, lum);
+    float3 outer = lerp(float3(0.0012, 0.0012, 0.002), lerp(open_day, input.fog.rgb, smoothstep(0.8, 1.0, input.daylight)), day_gate);
     float3 lit = lerp(outer, pow(tex.rgb, 2.2), inside);
     float wet = input.wetness;
     lit *= lerp(1.0, WET_DARKEN, wet); // wet asphalt is darker than dry
@@ -77,7 +85,7 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     // Rim haze: within 300 units of the city edge the ground fades into the fog colour, so the edge is not a hard line.
     float2 edge = min(input.uv, 1.0 - input.uv) * float2(float(CITY_W), float(CITY_D));
     float rim = inside * (1.0 - smoothstep(0.0, 300.0, min(edge.x, edge.y))) * step(0.0, input.fog.a);
-    lit = lerp(lit, input.fog.rgb, rim);
+    lit = lerp(lit, lerp(input.fog.rgb, outer, day_gate), rim);
 
     // Puddles: the value-noise field clusters near 0.5, so stretch it around 0.5 before thresholding; wet lowers the cut.
     float field = saturate((tex.a - 0.5) * 4.0 + 0.5);
@@ -111,5 +119,9 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     // black at the view distance and the sky shows below the horizon instead of a flat dark band.
     float dist = length(input.to_camera);
     if (input.fog.a > 0.0 && dist > 1.03 * input.fog.a) discard;
-    return float4(apply_fog_soft(lit, dist, input.fog), 1.0);
+    // Dusk: the haze turns to the horizon band with distance, so the plane meets the sky glow instead of a brown step.
+    float warm = input.horizon.a * 0.6 * saturate(dist / max(input.fog.a, 1e-3));
+    float3 ember = min(input.horizon.rgb, float3(0.85, 0.85, 0.85)) * float3(1.0, 0.6, 0.6); // saturated orange, not cream
+    float4 haze = float4(lerp(input.fog.rgb, ember, warm), input.fog.a);
+    return float4(apply_fog_soft(lit, dist, haze), 1.0);
 }

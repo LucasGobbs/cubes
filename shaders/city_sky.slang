@@ -61,12 +61,15 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     float3 dir = normalize(input.dir);
     float3 day = lerp(input.horizon.rgb, input.zenith.rgb, saturate(dir.y / 0.35));
     float sd = max(dot(dir, input.sun.xyz), 0.0);
-    float3 sun_light = float3(1.0, 0.92, 0.75) * input.sun.w;
+    float3 sun_light = lerp(float3(1.0, 0.5, 0.2), float3(1.0, 0.92, 0.75), smoothstep(0.0, 0.3, input.sun.y)) * input.sun.w; // low sun: orange halo, not white
     day += sun_light * (pow(sd, 24.0) * 0.35 + pow(sd, 1500.0) * 4.0); // halo, then disk
 
     float3 glow = lerp(day, night, input.params.x);
     // Below the horizon and in a thin band above it the sky is the fog colour (linear, same as the ground fog), so
     // the ground meets the sky with no seam. Vertex colour.r is unused now; the ring data stays for the mesh.
     float haze = smoothstep(0.0, 0.08, dir.y);
-    return float4(lerp(input.params.yzw, glow, haze), 1.0);
+    float3 band = min(lerp(input.params.yzw, glow, haze), float3(0.85, 0.85, 0.85)); // no channel above 0.85: keeps the dusk orange from blowing out to cream
+    float k = lerp(0.6, 1.0, smoothstep(0.1, 0.9, input.sun.w)); // noon keeps full colour; dusk and night pull green/blue down
+    band = float3(band.x, band.y * k, band.z * k);
+    return float4(band, 1.0);
 }

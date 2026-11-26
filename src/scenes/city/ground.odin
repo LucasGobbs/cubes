@@ -106,7 +106,8 @@ ground_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, par
 		mvp             = parameters.view_projection * parameters.model_transform,
 		camera_position = {camera.x, camera.y, camera.z, 1},
 		fog             = parameters.fog,
-		wet             = {state.ground_texture.wetness, state.day.daylight, 0, 0},
+		wet             = {state.ground_texture.wetness, state.day.daylight, state.day.twilight, 0},
+		horizon         = {state.day.horizon_color.x, state.day.horizon_color.y, state.day.horizon_color.z, 0},
 	}
 	gfx.draw_push_uniform(draw_context, shader_parameters.CITY_GROUND_VERTEX_UNIFORM_BLOCK, &uniforms)
 }
@@ -122,7 +123,8 @@ ground_build_mesh :: proc() -> Mesh_Builder {
 	sx, sz := f32(CITY_W), f32(CITY_D)
 	lo_x, hi_x := -f32(GROUND_MARGIN), sx + f32(GROUND_MARGIN)
 	lo_z, hi_z := -f32(GROUND_MARGIN), sz + f32(GROUND_MARGIN)
-	builder_quad(&b, {lo_x, GROUND_Y, lo_z}, {lo_x, GROUND_Y, hi_z}, {hi_x, GROUND_Y, hi_z}, {hi_x, GROUND_Y, lo_z}, {lo_x / sx, lo_z / sz}, {hi_x / sx, hi_z / sz}, {1, 1, 1, 1})
+	// builder_quad maps uv0 to p0, uv1.x to p1 and uv1 to p2: corners go along +x first, or uv is transposed.
+	builder_quad(&b, {lo_x, GROUND_Y, lo_z}, {hi_x, GROUND_Y, lo_z}, {hi_x, GROUND_Y, hi_z}, {lo_x, GROUND_Y, hi_z}, {lo_x / sx, lo_z / sz}, {hi_x / sx, hi_z / sz}, {1, 1, 1, 1})
 	return b
 }
 
