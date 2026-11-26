@@ -18,12 +18,14 @@ actor_hooks :: proc(
 	fixed_tick: proc(self: ^T, dt: f32) = nil,
 	destroy: proc(self: ^T) = nil,
 	contact: proc(self: ^T, other: Actor_Id) = nil,
+	lua: string = "",
 ) -> Actor {
 	actor: Actor
 	if tick != nil do actor.tick = transmute(proc(self: ^Actor, dt: f32))tick
 	if fixed_tick != nil do actor.fixed_tick = transmute(proc(self: ^Actor, dt: f32))fixed_tick
 	if destroy != nil do actor.destroy = transmute(proc(self: ^Actor))destroy
 	if contact != nil do actor.contact = transmute(proc(self: ^Actor, other: Actor_Id))contact
+	actor.lua = lua
 	return actor
 }
 
@@ -79,6 +81,11 @@ world_add_actor :: proc(world: ^World, value: $T) -> ^T {
 	if !has_transform do store_prop(world, id, Transform{}, false)
 	for prop in layout do if prop.type == transform do append_embedded(world, index, block, prop)
 	for prop in layout do if prop.type != transform do append_embedded(world, index, block, prop)
+
+	// actor.lua becomes a Script prop unless T embeds one, which then wins.
+	has_script := false
+	for prop in layout do if prop.type == typeid_of(Script) do has_script = true
+	if actor.lua != "" && !has_script do store_prop(world, id, Script{path = actor.lua}, false)
 
 	count := len(world.slots[index].props)
 	for i in 0 ..< count {

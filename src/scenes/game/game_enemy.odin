@@ -3,7 +3,6 @@
 package game
 
 import engine "../../engine"
-import "core:log"
 import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
@@ -14,6 +13,7 @@ ENEMY_SPEED :: 1.2
 ENEMY_RING :: 9 // spawn distance from the player
 ENEMY_HIT_RADIUS :: 1.2
 ENEMY_HIT_DAMAGE :: 25
+ENEMY_SCRIPT :: "src/scenes/game/enemy.lua" // chase, contact and damage; constants pushed by game_create
 
 Enemy :: struct {
 	using actor:     engine.Actor,
@@ -29,7 +29,7 @@ enemy_spawn :: proc(world: ^engine.World) {
 	engine.world_add_actor(
 		world,
 		Enemy {
-			actor = engine.actor_hooks(Enemy, tick = enemy_tick),
+			actor = engine.actor_hooks(Enemy, lua = ENEMY_SCRIPT),
 			transform = engine.transform_create(
 				position = player.position + offset,
 				rotation = game_facing(-offset),
@@ -45,20 +45,4 @@ enemy_destroy_all :: proc(world: ^engine.World) {
 	for id in engine.world_actors(world) {
 		if engine.world_get(world, id, Enemy) != nil do engine.world_destroy_actor(world, id)
 	}
-}
-
-// Chases the player on the XZ plane. On contact the enemy destroys itself, which
-// frees self: nothing may touch self after world_destroy_actor.
-enemy_tick :: proc(self: ^Enemy, dt: f32) {
-	player := engine.world_find(self.world, Player)
-	target := player.position
-	to_target := target - self.position
-	to_target.y = 0
-	self.position += linalg.normalize0(to_target) * ENEMY_SPEED * dt
-	self.rotation = game_facing(to_target)
-	if linalg.length(self.position - target) >= ENEMY_HIT_RADIUS do return
-
-	engine.world_destroy_actor(self.world, self.id)
-	player.health.current -= ENEMY_HIT_DAMAGE
-	log.infof("game: enemy destroyed, health %.0f/%.0f", player.health.current, player.health.max)
 }

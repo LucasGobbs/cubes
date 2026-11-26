@@ -21,6 +21,7 @@ Player :: struct {
 	using model:     engine.Model, // before animator: the Animator needs the skinned Model
 	animator:        engine.Animator,
 	health:          engine.Health,
+	name:            engine.Name, // lets enemy.lua find the player with engine.find("player")
 	wish_dir:        engine.Vec3, // zero means no input; the scene's fixed_tick writes it each step
 	idle:            f32, // seconds since last input
 	heading:         f32, // heading of the autopilot circle
@@ -34,6 +35,7 @@ player_spawn :: proc(world: ^engine.World) {
 			transform = engine.transform_create(),
 			model = engine.model_create(path = PLAYER_MODEL),
 			animator = engine.Animator{clip = PLAYER_CLIP},
+			name = engine.Name{value = "player"},
 			health = engine.Health{current = PLAYER_HEALTH, max = PLAYER_HEALTH},
 		},
 	)

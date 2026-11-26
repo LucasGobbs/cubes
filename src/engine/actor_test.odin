@@ -1,7 +1,12 @@
 package engine
 
+import "core:fmt"
 import "core:math/linalg"
+import "core:os"
+import "core:sync"
 import "core:testing"
+import "input"
+import mock "input/adapters/mock"
 
 Probe_Box :: struct {
 	hp: int,
@@ -188,4 +193,69 @@ embedded_layout_requires_actor_first :: proc(t: ^testing.T) {
 	testing.expect(t, !ok)
 	_, ok_good := embedded_layout(&world, Probe_Ticker)
 	testing.expect(t, ok_good)
+}
+
+// Writes a Lua module to /tmp under a per-test name; the caller removes it.
+@(private = "file")
+actor_test_lua_write :: proc(name, src: string) -> string {
+	path := fmt.tprintf("/tmp/cubes_actor_test_%s.lua", name)
+	err := os.write_entire_file(path, transmute([]byte)src)
+	assert(err == nil, "actor test: write failed")
+	return path
+}
+
+@(test)
+actor_hooks_lua_attaches_script_and_ticks :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
+	path := actor_test_lua_write("tick", `
+local M = {}
+function M.tick(self, a, dt)
+  a:transform().position.x = 5
+end
+return M
+`)
+	defer os.remove(path)
+	inputs := input.system_create(mock.create())
+	defer input.system_destroy(&inputs)
+	world := world_create(nil)
+	defer world_destroy(&world)
+	script_bind(&world, &inputs)
+
+	a := world_add_actor(&world, Probe_Ticker{actor = actor_hooks(Probe_Ticker, lua = path)})
+	script := actor_props(&world, a.id, Script)
+	testing.expect(t, script != nil, "lua adds a Script prop")
+	testing.expect_value(t, script.path, path)
+	world_update(&world, 0.1)
+	testing.expect_value(t, actor_props(&world, a.id, Transform).position.x, f32(5))
+}
+
+@(test)
+actor_hooks_lua_yields_to_embedded_script :: proc(t: ^testing.T) {
+	sync.guard(&script_api_lock)
+	path := actor_test_lua_write("embedded", `
+local M = {}
+function M.tick(self, a, dt) end
+return M
+`)
+	defer os.remove(path)
+	inputs := input.system_create(mock.create())
+	defer input.system_destroy(&inputs)
+	world := world_create(nil)
+	defer world_destroy(&world)
+	script_bind(&world, &inputs)
+
+	Scripted :: struct {
+		using actor: Actor,
+		script:      Script,
+	}
+	a := world_add_actor(&world, Scripted{actor = actor_hooks(Scripted, lua = "missing.lua"), script = Script{path = path}})
+	testing.expect_value(t, actor_props(&world, a.id, Script).path, path)
+}
+
+@(test)
+actor_without_lua_has_no_script_prop :: proc(t: ^testing.T) {
+	world := world_create(nil)
+	defer world_destroy(&world)
+	a := world_add_actor(&world, Probe_Ticker{})
+	testing.expect(t, actor_props(&world, a.id, Script) == nil)
 }

@@ -2,7 +2,7 @@
 // enemies that spawn on a ring around it. All game state lives in engine.World as
 // actor structs; the scene keeps only input and timers and reads input in fixed_tick.
 // Idle for 3 s and the player circles on its own, so a screenshot shows hits without
-// input. Per-actor logic lives in game_player.odin and game_enemy.odin.
+// input. Per-actor logic lives in game_player.odin and game_enemy.odin; the enemy's Lua is enemy.lua.
 package game
 
 import engine "../../engine"
@@ -31,6 +31,15 @@ game_scene :: proc() -> engine.Scene {
 	}
 }
 
+// Lua side of the game: enemy.lua reads the player's Health and the enemy constants.
+game_lua_setup :: proc(world: ^engine.World) -> bool {
+	if !engine.script_expose(world, engine.Health, "Health", "typedef struct { float current, max; } Health;") do return false
+	if !engine.script_set_config(world, "ENEMY_SPEED", ENEMY_SPEED) do return false
+	if !engine.script_set_config(world, "ENEMY_HIT_RADIUS", ENEMY_HIT_RADIUS) do return false
+	if !engine.script_set_config(world, "ENEMY_HIT_DAMAGE", ENEMY_HIT_DAMAGE) do return false
+	return true
+}
+
 game_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx_ctx := &ctx.gfx
 	state := new(Game_State)
@@ -47,6 +56,13 @@ game_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	)
 
 	state.world = engine.world_create(gfx_ctx)
+	engine.script_bind(&state.world, &ctx.input, ctx)
+	if !game_lua_setup(&state.world) {
+		engine.world_destroy(&state.world)
+		demo.state = nil
+		free(state)
+		return false
+	}
 	engine.spawn_camera(&state.world, {0, 6, 8})
 	// Player spawns before any enemy: its slot ticks first, so enemies chase this frame's position.
 	player_spawn(&state.world)

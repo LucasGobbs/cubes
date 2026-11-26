@@ -37,6 +37,7 @@
 // Actors spawned during world_update first tick on the next one.
 // Lua behaviour: Script{path = "src/scenes/<scene>/x.lua"} runs the module's create and destroy
 // around its Prop's lifetime, and tick / fixed_tick in world_update / world_fixed_update.
+// actor_hooks(T, lua = path) gives a world_add_actor struct the same Script behaviour.
 // A runtime error faults that actor's script only (logged once). script_call calls a
 // named Lua function from Odin.
 package engine
@@ -67,6 +68,7 @@ Actor :: struct {
 	fixed_tick: proc(self: ^Actor, dt: f32),
 	destroy:    proc(self: ^Actor),
 	contact:    proc(self: ^Actor, other: Actor_Id),
+	lua:        string // Lua module for this actor, stored as Script{path} by world_add_actor; borrowed like Script.path
 }
 
 Transform :: struct {

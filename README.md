@@ -184,7 +184,7 @@ and `// cubes:actors` markers: keep them. The tool is `tools/cubes/` (run from t
 
 - `src/` - app (`main.odin`, scene registry `scene.odin`), `scenekit/` (shared scene type and helpers), `scenes/<name>/scene.odin` (one folder per scene).
 - `src/gbbfx/` - renderer, render passes/postfx (`rgraph.odin`), loader (glTF), and default shaders in `defaults/`.
-- `src/engine/` - `World` of actors x Props: an actor is a struct with `using actor: engine.Actor` first, Props as fields, and `engine.world_add_actor`. `engine.run` drives the loop. See `examples/hello_engine` and the `game` scene (`src/scenes/game/game_player.odin`, `game_enemy.odin`).
+- `src/engine/` - `World` of actors x Props: an actor is a struct with `using actor: engine.Actor` first, Props as fields, and `engine.world_add_actor`; `actor_hooks(T, lua = path)` attaches a Lua module as a Script. `engine.run` drives the loop. See `examples/hello_engine` and the `game` scene (`src/scenes/game/game_player.odin`, `game_enemy.odin`; the enemy's behaviour is `enemy.lua`).
 - `src/glove/` - input system.
 - `static/` - models, textures, fonts, skybox.
 - `third_party/goose/` - shader build tool and Slang.
