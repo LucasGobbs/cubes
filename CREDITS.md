@@ -1,0 +1,53 @@
+# Credits and third-party notices
+
+This file lists the sources and licenses of the third-party assets and software
+used by this project. The project's own code is licensed under the MIT License
+(see [LICENSE](LICENSE)).
+
+Status legend:
+
+- **Known**: source and license identified from evidence in the repository or in upstream metadata.
+- **Attribution required**: the license requires credit; it is given here.
+- **Verify before redistributing**: license or provenance is unclear or restrictive.
+- **UNKNOWN**: no evidence of origin or license found. Must be replaced, removed, or confirmed by the author.
+
+## Inspiration
+
+The procedural city is inspired by the *Procedural City* series by Shamus Young:
+<https://www.shamusyoung.com/twentysidedtale/?p=2940>.
+Ideas and generation algorithms are inspired by that series. No code or art was copied from it.
+
+## Assets (`static/`)
+
+| Asset | Source | License | Status |
+|---|---|---|---|
+| `static/prototype_textures/**` (Prototype Textures 1.0) | Kenney, <https://www.kenney.nl> | CC0 1.0 (`static/prototype_textures/License.txt`) | Known |
+| `static/models/rigged_cesiumman.glb` (CesiumMan) | Cesium, via Khronos glTF-Sample-Assets (<https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CesiumMan>) | CC-BY 4.0 (`static/models/README-rigged.txt`; Khronos model README) | Known. Attribution required. The model includes the Cesium logo, which the Khronos README marks as a separate trademark/logo license (`LicenseRef-LegalMark-Cesium`): verify before redistributing |
+| `static/models/rigged_riggedsimple.glb` (RiggedSimple) | Cesium, via Khronos glTF-Sample-Assets (<https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/RiggedSimple>) | CC-BY 4.0 (`static/models/README-rigged.txt`; Khronos model README) | Known. Attribution required |
+| `static/models/sphere.glb` (Sphere) | oatmas64134, Sketchfab (<https://sketchfab.com/3d-models/sphere-bb721dfff9594206aee62175e43c08b2>) | CC-BY-NC-SA 4.0 (glTF `asset.extras.license`) | Known. Attribution required. **NonCommercial and ShareAlike: verify before redistributing** |
+| `static/models/sea/stanford_dragon_pbr.glb` (Stanford Dragon PBR) | hackmans, Sketchfab (<https://sketchfab.com/3d-models/stanford-dragon-pbr-5d610f842a4542ccb21613d41bbd7ea1>) | CC-BY 4.0 (glTF `asset.extras.license`) | Known. Attribution required |
+| `static/models/sea/**` (~50 `.glb` boat, ship, cargo, buoy, gate, and ramp models, plus `Textures/colormap.png`) | No evidence. Exported with UnityGLTF; no author, source, or license in the files | — | **UNKNOWN** |
+| `static/models/uv_sphere.glb` | No evidence. glTF `asset.generator` is `shader_explorer gen` (a generator tool, not a license) | — | **UNKNOWN** (confirm if it is the author's own generated mesh) |
+| `static/skybox/skybox-{alien,day,morning,night,space}.png` | No evidence. No author or license in the PNG metadata | — | **UNKNOWN** |
+| `static/muddy_ground.jpg` | No evidence. No EXIF or metadata | — | **UNKNOWN** |
+| `static/fonts/andale-mono.ttf` (Andale Mono) | Monotype Corporation (name table: "Digitized data copyright (C) 1993-1997 The Monotype Corporation"; <http://www.monotype.com/html/type/license.html>) | Proprietary font license | **Verify before redistributing.** Likely not free to redistribute |
+
+Note: `static/.DS_Store` and `static/models/.DS_Store` are macOS metadata files, not assets.
+
+## Software dependencies
+
+| Component | Use | License | Evidence |
+|---|---|---|---|
+| Odin compiler and `core` library | Language and standard library | Zlib-style license, "Copyright (c) 2016-2025 Ginger Bill" | `LICENSE` in the Odin distribution |
+| SDL3 (Odin `vendor:sdl3`) | Windowing, input, GPU | Zlib license, "Copyright (C) 1997-2026 Sam Lantinga" | `vendor/sdl3/LICENSE.txt` in the Odin distribution |
+| Slang (`slangc`, via the `goose` submodule) | Shader compilation (`shaders/*.slang`) | Apache-2.0 WITH LLVM-exception | `third_party/goose/vendor/slang/LICENSE` and `PROVENANCE.md` |
+| LuaJIT | Scripting (`third_party/luajit`) | MIT (LuaJIT: Copyright (C) 2005-2026 Mike Pall. Also includes Lua 1994-2012 PUC-Rio, MIT) | `third_party/luajit/COPYRIGHT` |
+| microui (Odin `vendor:microui`) | Immediate-mode UI | MIT (Copyright (c) 2020 rxi; modifications by oskarnp and gingerBill) | `vendor/microui/LICENSE` in the Odin distribution |
+| cgltf (Odin `vendor:cgltf`) | glTF loading | MIT (Copyright (c) 2018-2021 Johannes Kuhlmann) | `vendor/cgltf/LICENSE` in the Odin distribution |
+| stb (Odin `vendor:stb`: image, truetype, and others) | Image loading, font rasterization | Public domain (headers state "public domain"; no LICENSE file in the vendor folder) | Headers in `vendor/stb/src/` in the Odin distribution |
+| Box3D (Odin `vendor:box3d`) | Physics | MIT (`SPDX-License-Identifier: MIT`; Copyright Erin Catto) | SPDX headers in `vendor/box3d/src/` in the Odin distribution. No LICENSE file was found in that folder |
+| ffmpeg | External tool. Called only for `--render-video` and `scripts/record.sh`. Not bundled in this repository | Depends on the user's ffmpeg build (LGPL or GPL): verify if ffmpeg is ever bundled | `src/video.odin`, `scripts/record.sh` |
+
+## Related project
+
+`third_party/goose` is a private submodule written by the same author (Lucas Costa Gobbi). It is the build tool that compiles the Slang shaders.
