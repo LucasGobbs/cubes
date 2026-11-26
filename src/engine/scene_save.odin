@@ -6,10 +6,11 @@ import "core:math/linalg"
 import "core:os"
 
 // Snapshot of the live world as a definition. Only named actors are written;
-// unnamed ones were not loaded from the file. name, assets and clear_color come
-// from base. Strings borrow from live Props; slices use the temp allocator.
+// unnamed ones were not loaded from the file. name and assets come from base; stage comes
+// from the world and is written only when set. Strings borrow from live Props; slices use the temp allocator.
 world_to_def :: proc(world: ^World, base: ^Scene_Def) -> Scene_Def {
-	def := Scene_Def{name = base.name, assets = base.assets, clear_color = base.clear_color}
+	def := Scene_Def{name = base.name, assets = base.assets}
+	if world.stage != (Stage{}) do def.stage = stage_to_def(world.stage)
 	actors := make([dynamic]Actor_Def, context.temp_allocator)
 	for id in world_actors(world) {
 		name := actor_props(world, id, Name)
@@ -62,7 +63,6 @@ actor_to_def :: proc(world: ^World, id: Actor_Id, name: string) -> Actor_Def {
 	}
 	if health := actor_props(world, id, Health); health != nil do actor.health = Health_Def{current = health.current, max = health.max}
 	if collider := actor_props(world, id, Collider); collider != nil && collider.shape != nil do actor.collider = collider_to_def(collider^)
-	if environment := actor_props(world, id, Environment); environment != nil do actor.environment = environment_to_def(environment^)
 	return actor
 }
 
@@ -97,10 +97,10 @@ collider_to_def :: proc(collider: Collider) -> Collider_Def {
 }
 
 @(private = "file")
-environment_to_def :: proc(env: Environment) -> Environment_Def {
-	def := Environment_Def{skybox = env.skybox, shadows = env.shadows, sun_direction = env.sun_direction, uncapped = env.uncapped}
-	if fog, has := env.fog.?; has do def.fog = Fog_Def{fog.color, fog.distance}
-	if grade, has := env.grade.?; has do def.grade = Grade_Def{exposure = grade.exposure, contrast = grade.contrast, saturation = grade.saturation}
+stage_to_def :: proc(stage: Stage) -> Stage_Def {
+	def := Stage_Def{skybox = stage.skybox, clear_color = stage.clear_color, shadows = stage.shadows, sun_direction = stage.sun_direction, uncapped = stage.uncapped}
+	if fog, has := stage.fog.?; has do def.fog = Fog_Def{fog.color, fog.distance}
+	if grade, has := stage.grade.?; has do def.grade = Grade_Def{exposure = grade.exposure, contrast = grade.contrast, saturation = grade.saturation}
 	return def
 }
 

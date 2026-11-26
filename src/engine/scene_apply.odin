@@ -6,14 +6,20 @@ import "core:log"
 // equal by value are refreshed in place (no renderable rebuild), changed ones are
 // replaced, missing ones added, absent ones removed. Actors without a Name are
 // never touched. Props of types the file does not describe (custom, Raw_Draw) are left alone.
-// Collider and Environment are removed when absent only if previous (the definition the
-// world was built from) gave them to that actor, so code-added ones survive.
+// Collider is removed when absent only if previous (the definition the world was built from)
+// gave it to that actor, so code-added ones survive. Stage follows the file when it has one;
+// when previous had one and this file does not, the stage is reset. Code-set stage survives.
 // String lifetime: after this call no Prop points into the previous arena.
 // Equal Props are overwritten with the new value, so their borrowed strings
 // move to the new arena; replaced Props drop the old value; Name is cloned.
 world_apply_scene :: proc(world: ^World, def: ^Scene_Def, previous: ^Scene_Def) -> bool {
 	assets_load(world, def.assets)
-	apply_clear_color(world, def)
+	if stage, ok := def.stage.?; ok {
+		world.stage = stage_from_def(stage)
+	} else if previous != nil {
+		_, had := previous.stage.?
+		if had do world.stage = {}
+	}
 	wanted := scene_wanted(def)
 	for id in world_actors(world) {
 		name := actor_props(world, id, Name)
@@ -27,11 +33,6 @@ world_apply_scene :: proc(world: ^World, def: ^Scene_Def, previous: ^Scene_Def) 
 		}
 	}
 	return true
-}
-
-// Sets the renderer background from the file. No-op without a Device (tests).
-apply_clear_color :: proc(world: ^World, def: ^Scene_Def) {
-	if color, ok := def.clear_color.?; ok && world.gfx_ctx != nil do world.gfx_ctx.renderer.clear_color = {color.x, color.y, color.z, 1}
 }
 
 // Name key -> Props. A duplicate name is logged and dropped (first wins).
@@ -53,7 +54,7 @@ scene_wanted :: proc(def: ^Scene_Def) -> map[string][]any {
 // Which optional Props the previous definition gave one actor.
 @(private = "file")
 Defined_Props :: struct {
-	collider, environment: bool,
+	collider: bool,
 }
 
 @(private = "file")
@@ -62,7 +63,6 @@ previously_defined :: proc(previous: ^Scene_Def, key: string) -> (defined: Defin
 	for actor, index in previous.actors {
 		if actor_key(actor, index) != key do continue
 		_, defined.collider = actor.collider.?
-		_, defined.environment = actor.environment.?
 		return
 	}
 	return
@@ -79,7 +79,6 @@ sync_actor :: proc(world: ^World, id: Actor_Id, want: []any, defined: Defined_Pr
 	sync_kind(world, id, want, Sprite_Anim)
 	sync_kind(world, id, want, Health)
 	sync_kind(world, id, want, Collider, defined.collider)
-	sync_kind(world, id, want, Environment, defined.environment)
 	sync_kind(world, id, want, Camera)
 	sync_kind(world, id, want, Camera_2D)
 }

@@ -175,7 +175,7 @@ function M.hud_text(text, x, y, r, g, b, a)
   end
 end
 
--- Camera and environment setters act on the first live actor with that component; false when there is none.
+-- Camera setters act on the first live actor with a Camera; false when there is none. Fog, sun and shadows setters write the World stage; false only without a world.
 function M.camera_look_at(x, y, z) return api.camera_look_at(host, x, y, z) end
 function M.camera_set_fov(fov_y) return api.camera_set_fov(host, fov_y) end
 function M.set_fog(r, g, b, distance) return api.set_fog(host, r, g, b, distance) end

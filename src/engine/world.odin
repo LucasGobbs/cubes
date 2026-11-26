@@ -104,17 +104,22 @@ Camera :: struct {
 	blur:    Maybe(i32),
 }
 
-// The first live actor with an Environment drives the renderer on every world_update.
+// The look of the scene, set on World.stage (not a Prop). world_update applies it to the renderer
+// every frame while it is set, and once more when it returns to Stage{} so fog, grade and sky clear.
+// A World that never set it leaves the renderer alone (forest scenes write it directly).
 // skybox: equirectangular panorama path, "" = none; borrowed, the World keeps its own copy.
 // fog nil = off; shadows nil = on; sun_direction nil = gfx.DEFAULT_LIGHT_DIRECTION.
 // uncapped switches the present mode to IMMEDIATE (tearing allowed).
-Environment :: struct {
+// clear_color is sRGB; nil = gfx.DEFAULT_CLEAR_COLOR.
+// grade: nil = no tonemap pass; exposure, contrast and saturation of the final image.
+Stage :: struct {
 	skybox:        string,
+	clear_color:   Maybe([3]f32),
 	fog:           Maybe(Fog),
 	shadows:       Maybe(bool),
 	sun_direction: Maybe(Vec3),
 	uncapped:      bool,
-	grade:         Maybe(Grade), // nil = no tonemap pass; exposure, contrast and saturation of the final image
+	grade:         Maybe(Grade),
 }
 
 // color is sRGB. Fog starts at 60% of distance and is full at distance.
@@ -231,7 +236,7 @@ World :: struct {
 	time:           f32, // scene clock in seconds: world_update adds dt; world_fixed_update does not
 	bloom:          ^gfx.Bloom,
 	blur:           ^gfx.Blur,
-	tonemap:        ^gfx.Tonemap, // lazy like bloom: created on the first Environment with a grade
+	tonemap:        ^gfx.Tonemap, // lazy like bloom: created on the first Stage with a grade
 	particles:      ^particles.System, // lazy like bloom/blur: created on the first Particle_Emitter
 	batch:          Maybe(gfx.Batch),
 	camera_2d:      gfx.Camera2D,
@@ -241,9 +246,11 @@ World :: struct {
 	embedded_props: map[typeid][]Embedded_Prop, // world_add_actor: per-type embedded Prop layout; lazy, freed in world_destroy
 	texts:          [dynamic]Hud_Text, // queued by world_text; world_render draws and clears them
 	hud:            Maybe(Hud), // lazy like batch: created on the first world_text
-	sky:            Maybe(gfx.Skybox), // lazy: follows Environment.skybox
+	sky:            Maybe(gfx.Skybox), // lazy: follows Stage.skybox
 	sky_path:       string, // owned copy of the path sky was built from
-	uncapped:       bool, // IMMEDIATE present mode, applied by Environment
+	uncapped:       bool, // IMMEDIATE present mode, applied by Stage
+	stage:          Stage, // the scene's look; set it directly, world_update applies it (see Stage)
+	stage_applied:  bool, // stage was non-zero at the last world_update, so its reset is still pending
 	scripts:        ^Script_Host, // lazy like particles: created on the first Script
 }
 
@@ -296,7 +303,6 @@ world_create :: proc(gfx_ctx: ^gfx.Device, gravity := Vec3{0, -10, 0}) -> World 
 	register_props(&world, Sprite_Anim)
 	register_props(&world, Health)
 	register_props(&world, Collider, collider_added, collider_removed)
-	register_props(&world, Environment)
 	register_props(&world, Raw_Draw, raw_draw_added, raw_draw_removed)
 	register_props(&world, Script, script_added, script_removed)
 	return world
@@ -541,7 +547,7 @@ world_update :: proc(world: ^World, dt: f32) {
 			for p in tick.playbacks[first:last] do gfx.playback_tick(p, tick.dt)
 		}, 8)
 	if world.particles != nil do particles.system_update(world.particles, dt)
-	update_environment(world)
+	update_stage(world)
 	update_camera(world)
 	update_camera_2d(world)
 	script_gc_step(world)
@@ -794,67 +800,6 @@ update_camera :: proc(world: ^World) {
 		set_effect_passes(world, camera)
 		return
 	}
-}
-
-// The first live Environment drives the renderer; nothing changes while none is live.
-@(private = "file")
-update_environment :: proc(world: ^World) {
-	for &slot in world.slots {
-		if !slot.alive do continue
-		env := slot_component(&slot, Environment)
-		if env == nil do continue
-		assert(world.gfx_ctx != nil, "engine: Environment needs a world with a Device")
-		apply_environment(world, env)
-		return
-	}
-}
-
-@(private = "file")
-apply_environment :: proc(world: ^World, env: ^Environment) {
-	gfx_ctx := world.gfx_ctx
-	if fog, ok := env.fog.?; ok {
-		rgb := gfx.color_srgb_to_linear({fog.color.x, fog.color.y, fog.color.z, 1})
-		gfx_ctx.renderer.fog = {rgb.x, rgb.y, rgb.z, fog.distance}
-	} else {
-		gfx_ctx.renderer.fog = {}
-	}
-	if grade, ok := env.grade.?; ok {
-		if world.tonemap == nil {
-			world.tonemap = new(gfx.Tonemap)
-			world.tonemap^ = gfx.tonemap_create(gfx_ctx)
-		}
-		gfx.tonemap_set(world.tonemap, grade.exposure, grade.contrast, grade.saturation)
-		gfx.renderer_set_passes(
-			&gfx_ctx.renderer,
-			.Final,
-			[]gfx.Render_Pass{gfx.tonemap_pass(world.tonemap)},
-		)
-	} else {
-		gfx.renderer_clear_passes(&gfx_ctx.renderer, .Final)
-	}
-	shadows, shadows_set := env.shadows.?
-	gfx_ctx.renderer.shadow_enabled = shadows if shadows_set else true
-	sun, sun_set := env.sun_direction.?
-	if !sun_set do sun = gfx.DEFAULT_LIGHT_DIRECTION
-	gfx.renderer_update_light(&gfx_ctx.renderer, sun)
-	if env.uncapped != world.uncapped {
-		world.uncapped = env.uncapped
-		gfx.set_present_mode(gfx_ctx, .IMMEDIATE if env.uncapped else .VSYNC)
-	}
-	update_sky(world, env.skybox)
-}
-
-// Rebuilds the skybox when its path changes; "" means no skybox.
-@(private = "file")
-update_sky :: proc(world: ^World, path: string) {
-	if path == world.sky_path do return
-	if sky, ok := &world.sky.?; ok do gfx.skybox_destroy(world.gfx_ctx, sky)
-	world.sky = nil
-	if len(world.sky_path) > 0 do delete(world.sky_path)
-	world.sky_path = ""
-	if path == "" do return
-	world.sky = gfx.skybox_create(world.gfx_ctx, path)
-	world.sky_path = strings.clone(path)
 }
 
 // Yaw and pitch of a view direction, in gfx.Camera's convention. A zero

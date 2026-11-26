@@ -138,7 +138,7 @@ city_set_dev :: proc(state: ^City_State, renderer: ^gfx.Renderer, dev: bool) {
 		city_despawn_beacons(state)
 		city_despawn_ground(state)
 		city_spawn_roads(state)
-		renderer.clear_color = CITY_CLEAR_COLOR
+		state.world.stage.clear_color = CITY_CLEAR_COLOR.xyz
 	} else {
 		city_despawn_roads(state)
 		city_spawn_sky(state)
@@ -146,18 +146,17 @@ city_set_dev :: proc(state: ^City_State, renderer: ^gfx.Renderer, dev: bool) {
 		city_spawn_cars(state)
 		city_spawn_beacons(state)
 		city_spawn_ground(state)
-		renderer.clear_color = CITY_NIGHT_COLOR
+		state.world.stage.clear_color = CITY_NIGHT_COLOR.xyz
 	}
 	city_apply_effects(state, renderer)
 }
 
 // Fog and bloom are night-only: the dev view is an unlit, flat overlay. Both follow their toggles.
-// Fog lives on the Environment: apply_environment rewrites renderer.fog from it every world_update.
+// Fog and grade live on world.stage; world_update applies them to the renderer every frame.
 city_apply_effects :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 	night := !state.dev
-	env := &state.env.env
-	env.fog = nil
-	if night && state.fog_on do env.fog = CITY_FOG
+	state.world.stage.fog = nil
+	if night && state.fog_on do state.world.stage.fog = CITY_FOG
 	if night && state.bloom_on {
 		gfx.renderer_set_passes(renderer, .Post, []gfx.Render_Pass{gfx.bloom_pass(&state.bloom)})
 	} else {
@@ -167,10 +166,9 @@ city_apply_effects :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 
 // Dev keys [ and ]: step the grade's exposure in EV and log it.
 city_set_exposure :: proc(state: ^City_State, ev: f32) {
-	env := &state.env.env
-	grade := env.grade.?
+	grade := state.world.stage.grade.?
 	grade.exposure += ev
-	env.grade = grade
+	state.world.stage.grade = grade
 	log.infof("city: exposure %.2f EV", grade.exposure)
 }
 

@@ -91,10 +91,9 @@ p8_load :: proc(t: ^testing.T, name, text: string, file: ^Scene_File) -> Scene_F
 	return scene_file_load(file, path)
 }
 
-P8_PROPS_JSON :: `{"name": "p8", "actors": [
+P8_PROPS_JSON :: `{"name": "p8", "stage": {"fog": {"color": [0.5, 0.5, 0.6], "distance": 300}, "shadows": false, "sun_direction": [0, -1, 0], "uncapped": true, "grade": {"exposure": 0.5, "contrast": 1.1}}, "actors": [
 	{"name": "ball", "position": [0, 3, 0], "collider": {"shape": "sphere", "radius": 0.5, "density": 2}},
-	{"name": "floor", "collider": {"shape": "box", "half": [10, 0.5, 10], "body": "static"}},
-	{"name": "env", "environment": {"fog": {"color": [0.5, 0.5, 0.6], "distance": 300}, "shadows": false, "sun_direction": [0, -1, 0], "uncapped": true, "grade": {"exposure": 0.5, "contrast": 1.1}}}
+	{"name": "floor", "collider": {"shape": "box", "half": [10, 0.5, 10], "body": "static"}}
 ]}`
 
 P8_BALL_JSON :: `{"name": "p8", "actors": [{"name": "ball", "collider": {"shape": "sphere", "radius": 0.5, "density": 2}}]}`
@@ -131,25 +130,21 @@ p8_props_from_json :: proc(t: ^testing.T) {
 		testing.expect(t, false, "floor has no Collider")
 	}
 
-	env_id, _ := world_find_by_name(&world, "env")
-	if env := actor_props(&world, env_id, Environment); env != nil {
-		fog, has_fog := env.fog.?
-		testing.expect(t, has_fog)
-		testing.expect_value(t, fog.color, [3]f32{0.5, 0.5, 0.6})
-		testing.expect_value(t, fog.distance, f32(300))
-		shadows, has_shadows := env.shadows.?
-		testing.expect(t, has_shadows && !shadows)
-		sun, has_sun := env.sun_direction.?
-		testing.expect(t, has_sun && sun == [3]f32{0, -1, 0})
-		testing.expect(t, env.uncapped)
-		grade, has_grade := env.grade.?
-		testing.expect(t, has_grade)
-		testing.expect_value(t, grade.exposure, f32(0.5))
-		testing.expect_value(t, grade.contrast, f32(1.1))
-		testing.expect_value(t, grade.saturation, f32(1)) // omitted in JSON: default 1
-	} else {
-		testing.expect(t, false, "env has no Environment")
-	}
+	stage := world.stage
+	fog, has_fog := stage.fog.?
+	testing.expect(t, has_fog)
+	testing.expect_value(t, fog.color, [3]f32{0.5, 0.5, 0.6})
+	testing.expect_value(t, fog.distance, f32(300))
+	shadows, has_shadows := stage.shadows.?
+	testing.expect(t, has_shadows && !shadows)
+	sun, has_sun := stage.sun_direction.?
+	testing.expect(t, has_sun && sun == [3]f32{0, -1, 0})
+	testing.expect(t, stage.uncapped)
+	grade, has_grade := stage.grade.?
+	testing.expect(t, has_grade)
+	testing.expect_value(t, grade.exposure, f32(0.5))
+	testing.expect_value(t, grade.contrast, f32(1.1))
+	testing.expect_value(t, grade.saturation, f32(1)) // omitted in JSON: default 1
 }
 
 @(test)
@@ -174,17 +169,15 @@ p8_save_load_round_trip :: proc(t: ^testing.T) {
 	defer world_destroy(&back)
 	world_spawn_scene(&back, &saved.def)
 
-	for name in ([]string{"ball", "floor", "env"}) {
+	for name in ([]string{"ball", "floor"}) {
 		id, _ := world_find_by_name(&world, name)
 		back_id, found := world_find_by_name(&back, name)
 		testing.expect(t, found)
 		if collider := actor_props(&world, id, Collider); collider != nil {
 			testing.expect_value(t, actor_props(&back, back_id, Collider)^, collider^)
 		}
-		if env := actor_props(&world, id, Environment); env != nil {
-			testing.expect_value(t, actor_props(&back, back_id, Environment)^, env^)
-		}
 	}
+	testing.expect_value(t, back.stage, world.stage)
 }
 
 @(test)

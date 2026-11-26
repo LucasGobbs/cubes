@@ -1151,7 +1151,7 @@ return M
 }
 
 @(test)
-script_api_camera_and_environment_setters_without_live_actor :: proc(t: ^testing.T) {
+script_api_camera_and_stage_setters_without_camera :: proc(t: ^testing.T) {
 	sync.guard(&script_api_lock)
 	path := script_test_write("env_setters", `
 local engine = require("engine")
@@ -1170,12 +1170,17 @@ return M
 	defer world_destroy(&world)
 	script_bind(&world, &inputs)
 
-	// No live Camera or Environment yet: every setter reports false.
+	// No Camera yet: camera setters report false; fog, sun, shadows write world.stage with a World.
 	spawn(&world, Transform{}, Script{path = path})
 	world_update(&world, 0.1)
 	testing.expect_value(t, script_test_number(&world, "cam_ok"), 0)
-	testing.expect_value(t, script_test_number(&world, "fog_ok"), 0)
-	testing.expect_value(t, script_test_number(&world, "clear_ok"), 0)
+	testing.expect_value(t, script_test_number(&world, "fog_ok"), 1)
+	testing.expect_value(t, script_test_number(&world, "clear_ok"), 1)
+	shadows, has_shadows := world.stage.shadows.?
+	testing.expect(t, has_shadows && !shadows, "set_shadows(false) writes world.stage")
+	sun, has_sun := world.stage.sun_direction.?
+	testing.expect(t, has_sun && sun == Vec3{0, -1, 0}, "set_sun writes world.stage")
+	testing.expect(t, world.stage.fog == nil, "clear_fog cleared world.stage.fog")
 }
 
 @(test)

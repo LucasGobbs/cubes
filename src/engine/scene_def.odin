@@ -59,7 +59,6 @@ Actor_Def :: struct {
 	health:         Maybe(Health_Def) `json:"health,omitempty"`,
 	particles:      Maybe(particles.Emitter_Desc) `json:"particles,omitempty"`,
 	collider:       Maybe(Collider_Def) `json:"collider,omitempty"`,
-	environment:    Maybe(Environment_Def) `json:"environment,omitempty"`,
 }
 
 Sprite_Anim_Def :: struct {
@@ -90,9 +89,11 @@ Grade_Def :: struct {
 	saturation: Maybe(f32) `json:"saturation,omitempty"`,
 }
 
-// skybox: equirectangular path, loaded by update_sky while this Environment drives the renderer (not in assets).
-Environment_Def :: struct {
+// skybox: equirectangular path, loaded by world_update while this stage is set (not in assets).
+// clear_color: sRGB background; the renderer default when omitted.
+Stage_Def :: struct {
 	skybox:        string `json:"skybox,omitempty"`,
+	clear_color:   Maybe([3]f32) `json:"clear_color,omitempty"`,
 	fog:           Maybe(Fog_Def) `json:"fog,omitempty"`,
 	shadows:       Maybe(bool) `json:"shadows,omitempty"`,
 	sun_direction: Maybe([3]f32) `json:"sun_direction,omitempty"`,
@@ -110,8 +111,8 @@ Scene_Def :: struct {
 	name:        string `json:"name,omitempty"`,
 	assets:      Assets_Def `json:"assets,omitempty"`,
 	camera:      Maybe(Camera_Def) `json:"camera,omitempty"`,
-	actors:    []Actor_Def `json:"actors,omitempty"`,
-	clear_color: Maybe([3]f32) `json:"clear_color,omitempty"`, // sRGB background; the renderer default when omitted
+	actors:      []Actor_Def `json:"actors,omitempty"`,
+	stage:       Maybe(Stage_Def) `json:"stage,omitempty"`,
 }
 
 Scene_File :: struct {
@@ -208,7 +209,6 @@ actor_props_list :: proc(actor: Actor_Def, key: string) -> []any {
 		append(&list, prop_box(Particle_Emitter(emitter)))
 	}
 	if collider, has := actor.collider.?; has do append(&list, prop_box(collider_from_def(collider)))
-	if environment, has := actor.environment.?; has do append(&list, prop_box(environment_from_def(environment)))
 	return list[:]
 }
 
@@ -262,7 +262,7 @@ collider_def_problem :: proc(c: Collider_Def) -> string {
 	return ""
 }
 
-// Props of the definitions; the collider and environment are read by the World at spawn and on reload.
+// Props of the definitions; the collider is read by the World at spawn and on reload.
 @(private)
 collider_from_def :: proc(def: Collider_Def) -> Collider {
 	collider := Collider{density = def.density}
@@ -278,13 +278,13 @@ collider_from_def :: proc(def: Collider_Def) -> Collider {
 }
 
 @(private)
-environment_from_def :: proc(def: Environment_Def) -> Environment {
-	env := Environment{skybox = def.skybox, shadows = def.shadows, sun_direction = def.sun_direction, uncapped = def.uncapped}
+stage_from_def :: proc(def: Stage_Def) -> Stage {
+	stage := Stage{skybox = def.skybox, clear_color = def.clear_color, shadows = def.shadows, sun_direction = def.sun_direction, uncapped = def.uncapped}
 	if grade, has := def.grade.?; has {
-		env.grade = Grade{exposure = grade.exposure, contrast = grade.contrast.? or_else 1, saturation = grade.saturation.? or_else 1}
+		stage.grade = Grade{exposure = grade.exposure, contrast = grade.contrast.? or_else 1, saturation = grade.saturation.? or_else 1}
 	}
 	if fog, has := def.fog.?; has {
-		env.fog = Fog{fog.color, fog.distance}
+		stage.fog = Fog{fog.color, fog.distance}
 	}
-	return env
+	return stage
 }

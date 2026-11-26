@@ -36,12 +36,6 @@ Emitter_Actor :: struct {
 	emitter:         engine.Particle_Emitter,
 }
 
-// Sky and fog for the scene.
-Boat_Env :: struct {
-	using actor: engine.Actor,
-	env:         engine.Environment,
-}
-
 Boat_State :: struct {
 	world:                        engine.World,
 	sea_state:                    sea.State,
@@ -66,7 +60,7 @@ boat_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	engine.camera_fly(ctx)
 
 	state.world = engine.world_create(&ctx.gfx)
-	engine.world_add_actor(&state.world, Boat_Env{env = engine.Environment{skybox = default.SKYBOX_PATH, fog = engine.Fog{{0.671, 0.757, 0.949}, FOG_VIEW_DISTANCE}}})
+	state.world.stage = engine.Stage{skybox = default.SKYBOX_PATH, fog = engine.Fog{{0.671, 0.757, 0.949}, FOG_VIEW_DISTANCE}}
 	sea.add(&state.world, ctx, &state.sea_state)
 	state.boat = engine.world_add_actor(&state.world, Boat{
 		transform = engine.transform_create(scale = {BOAT_SCALE, BOAT_SCALE, BOAT_SCALE}),

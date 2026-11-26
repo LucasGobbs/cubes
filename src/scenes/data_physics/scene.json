@@ -4,6 +4,10 @@
     "position": [0, 6, 14],
     "look_at": [0, 2, 0]
   },
+  "stage": {
+    "fog": { "color": [0.671, 0.757, 0.949], "distance": 80 },
+    "shadows": true
+  },
   "actors": [
     {
       "name": "ground",
@@ -48,13 +52,6 @@
       "position": [2.8, 6, 0],
       "scale": [0.5, 0.5, 0.5],
       "collider": { "shape": "sphere", "radius": 0.5, "density": 1 }
-    },
-    {
-      "name": "environment",
-      "environment": {
-        "fog": { "color": [0.671, 0.757, 0.949], "distance": 80 },
-        "shadows": true
-      }
     }
   ]
 }

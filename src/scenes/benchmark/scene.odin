@@ -104,16 +104,10 @@ Dragon :: struct {
 	using model:     engine.Model,
 }
 
-Bench_Env :: struct {
-	using actor: engine.Actor,
-	env:         engine.Environment,
-}
-
 BOAT_PROP_CDEF :: "typedef struct { float heading, speed; } Boat;"
 
 Benchmark_State :: struct {
 	world:           engine.World,
-	env:             ^Bench_Env,
 	sea_state:       sea.State,
 	boats:           [dynamic]Boat_Slot,
 	dragons:         [dynamic]^Dragon,
@@ -227,16 +221,7 @@ benchmark_setup :: proc(demo: ^engine.Scene, ctx: ^engine.Context, script, label
 
 	// Uncapped: the point of this scene is measuring real frame cost. Fog on by
 	// default so boats and dragons share the sea's horizon blend.
-	state.env = engine.world_add_actor(
-		&state.world,
-		Bench_Env {
-			env = engine.Environment {
-				skybox = default.SKYBOX_PATH,
-				fog = benchmark_fog(),
-				uncapped = true,
-			},
-		},
-	)
+	state.world.stage = engine.Stage{skybox = default.SKYBOX_PATH, fog = benchmark_fog(), uncapped = true}
 	_ = sea.add(&state.world, ctx, &state.sea_state)
 
 	rand.reset(1) // fixed layout: every run draws the same fleet, so results compare
@@ -355,16 +340,15 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 	if input.pressed(inputs, state.subtract_action) && state.per_model >= BENCH_STEP {
 		benchmark_populate(state, state.per_model - BENCH_STEP)
 	}
-	env := &state.env.env
 	if input.pressed(inputs, state.fog_action) {
-		if _, fog_on := env.fog.?; fog_on {
-			env.fog = nil
+		if _, fog_on := state.world.stage.fog.?; fog_on {
+			state.world.stage.fog = nil
 		} else {
-			env.fog = benchmark_fog()
+			state.world.stage.fog = benchmark_fog()
 		}
 	}
 	if input.pressed(inputs, state.sail_action) do state.sailing = !state.sailing
-	_, fog_on := env.fog.?
+	_, fog_on := state.world.stage.fog.?
 
 	// world_update adds delta_time to world.time after this tick; Lua boats read engine.time() inside
 	// that update, so this value is the one they see. Mesh, Odin boats and Lua boats share it.

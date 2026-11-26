@@ -247,11 +247,11 @@ Never cache one across frames.
 
 ### 4.4 Scalar surface (P4)
 
-Every thunk takes plain scalars, pointers or out-params; no struct crosses by value. Thunks on an actor id validate it and do nothing when stale. Camera and environment setters act on the first live actor carrying that component and return false when there is none.
+Every thunk takes plain scalars, pointers or out-params; no struct crosses by value. Thunks on an actor id validate it and do nothing when stale. Camera setters act on the first live actor carrying a `Camera` and return false when there is none.
 
 - `a:set_scale(sx, sy, sz)`, `a:add_box_collider(hx, hy, hz, is_static)`, `a:add_sphere_collider(r)`, `a:set_name(name)`. A dynamic body unless `is_static`.
 - `engine.camera_look_at(x, y, z)`, `engine.camera_set_fov(fov_y)`: first live `Camera`.
-- `engine.set_fog(r, g, b, distance)`, `engine.clear_fog()`, `engine.set_sun(x, y, z)`, `engine.set_shadows(on)`: first live `Environment`.
+- `engine.set_fog(r, g, b, distance)`, `engine.clear_fog()`, `engine.set_sun(x, y, z)`, `engine.set_shadows(on)`: write `World.stage` (applied by `world_update`); false only without a world.
 - `engine.hud_text(text, x, y [, r, g, b [, a]])`: colour is sRGB, alpha defaults to 1. Two-argument form draws white.
 - `engine.window_size()`: reused `float[2]` (window px), zeros with no Device. Same reuse rule as `camera_position`.
 - `engine.time()`: `World.time` in seconds. `world_update` adds dt; fixed update does not.

@@ -26,14 +26,14 @@ Script_API :: struct {
 	log:             proc "c" (host: rawptr, level: i32, msg: cstring), // 0 debug, 1 info, 2 warn, else error
 	camera_position: proc "c" (host: rawptr, out: ^[3]f32), // World position of the camera; zeros with no ctx bound
 	// P4 scalar surface. Every thunk takes the host first, validates actor ids (no-op when stale) and
-	// writes through the World; camera and environment setters act on the first live actor with that Prop.
+	// writes through the World; camera setters act on the first live actor with a Camera, fog/sun/shadows write World.stage.
 	actor_set_scale:           proc "c" (host: rawptr, index, generation: u32, sx, sy, sz: f32),
 	actor_add_box_collider:    proc "c" (host: rawptr, index, generation: u32, hx, hy, hz: f32, is_static: bool),
 	actor_add_sphere_collider: proc "c" (host: rawptr, index, generation: u32, radius: f32),
 	actor_set_name:            proc "c" (host: rawptr, index, generation: u32, name: cstring),
 	camera_look_at:            proc "c" (host: rawptr, x, y, z: f32) -> bool, // false: no live Camera
 	camera_set_fov:            proc "c" (host: rawptr, fov_y: f32) -> bool,
-	set_fog:                   proc "c" (host: rawptr, r, g, b, distance: f32) -> bool, // false: no live Environment
+	set_fog:                   proc "c" (host: rawptr, r, g, b, distance: f32) -> bool, // false: no world
 	clear_fog:                 proc "c" (host: rawptr) -> bool,
 	set_sun:                   proc "c" (host: rawptr, x, y, z: f32) -> bool,
 	set_shadows:               proc "c" (host: rawptr, on: bool) -> bool,
@@ -75,7 +75,7 @@ script_api_actor_set_name :: proc "c" (host: rawptr, index, generation: u32, nam
 	actor_add_props(h.world, id, Name{value = string(name)}) // name_added clones the string
 }
 
-// First live actor with a Prop of type T, nil if none. Camera and Environment setters act on it.
+// First live actor with a Prop of type T, nil if none. Camera setters act on it.
 script_first_prop :: proc(world: ^World, $T: typeid) -> ^T {
 	for &slot in world.slots do if slot.alive {
 		if prop := slot_component(&slot, T); prop != nil do return prop
@@ -107,9 +107,7 @@ script_api_set_fog :: proc "c" (host: rawptr, r, g, b, distance: f32) -> bool {
 	h := (^Script_Host)(host)
 	context = h.run_context
 	if h.world == nil do return false
-	env := script_first_prop(h.world, Environment)
-	if env == nil do return false
-	env.fog = Fog{color = {r, g, b}, distance = distance}
+	h.world.stage.fog = Fog{color = {r, g, b}, distance = distance}
 	return true
 }
 
@@ -117,9 +115,7 @@ script_api_clear_fog :: proc "c" (host: rawptr) -> bool {
 	h := (^Script_Host)(host)
 	context = h.run_context
 	if h.world == nil do return false
-	env := script_first_prop(h.world, Environment)
-	if env == nil do return false
-	env.fog = nil
+	h.world.stage.fog = nil
 	return true
 }
 
@@ -127,9 +123,7 @@ script_api_set_sun :: proc "c" (host: rawptr, x, y, z: f32) -> bool {
 	h := (^Script_Host)(host)
 	context = h.run_context
 	if h.world == nil do return false
-	env := script_first_prop(h.world, Environment)
-	if env == nil do return false
-	env.sun_direction = Vec3{x, y, z}
+	h.world.stage.sun_direction = Vec3{x, y, z}
 	return true
 }
 
@@ -137,9 +131,7 @@ script_api_set_shadows :: proc "c" (host: rawptr, on: bool) -> bool {
 	h := (^Script_Host)(host)
 	context = h.run_context
 	if h.world == nil do return false
-	env := script_first_prop(h.world, Environment)
-	if env == nil do return false
-	env.shadows = on
+	h.world.stage.shadows = on
 	return true
 }
 

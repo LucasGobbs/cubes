@@ -11,7 +11,7 @@ CITY_NIGHT_COLOR :: [4]f32{0.002, 0.002, 0.003, 1}
 CITY_CAMERA_SPEED :: 300 // units/s (LShift x12, Z x0.1): crossing the 3072-unit city takes ~10 s
 CITY_SEED_START :: 1 // fixed start so a run is repeatable; R steps the seed
 CITY_DEV_START :: false // night view on start; G toggles the dev view (streets)
-// sRGB of linear (0.0015, 0.0018, 0.003): the sky's lower band (city_sky.slang BELOW). Environment.fog takes sRGB. Fully fogged beyond the view distance.
+// sRGB of linear (0.0015, 0.0018, 0.003): the sky's lower band (city_sky.slang BELOW). Stage.fog takes sRGB. Fully fogged beyond the view distance.
 CITY_FOG :: engine.Fog{color = {0.01938, 0.023256, 0.03876}, distance = 3200}
 CITY_GRADE :: engine.Grade{exposure = 1, contrast = 1, saturation = 1} // ACES tonemap; +1 EV matches the pre-tonemap look; [ and ] step 0.25 EV
 
@@ -25,11 +25,6 @@ Rain_Emitter :: struct {
 	using actor:     engine.Actor,
 	using transform: engine.Transform,
 	emitter:         engine.Particle_Emitter,
-}
-
-City_Env :: struct {
-	using actor: engine.Actor,
-	env:         engine.Environment,
 }
 
 City_State :: struct {
@@ -56,7 +51,6 @@ City_State :: struct {
 	cars:         ^City_Draw, // the cars' draw; only alive in the night view
 	beacons:      ^City_Draw, // the aviation beacons and roof lights' draw; only alive in the night view
 	rain:         [2]^Rain_Emitter, // near and far GPU particle emitters that follow the camera (rain.odin)
-	env:          ^City_Env, // the Environment: night fog and the tonemap grade
 	rain_on:      bool,
 	toggle_rain:  input.Button_Action,
 	road_material: gfx.Material, // unlit blue
@@ -95,7 +89,7 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state := new(City_State)
 	demo.state = state
 	state.world = engine.world_create(&ctx.gfx)
-	state.env = engine.world_add_actor(&state.world, City_Env{env = engine.Environment{grade = CITY_GRADE}})
+	state.world.stage = engine.Stage{grade = CITY_GRADE}
 	engine.camera_fly(ctx, {1536, 420, 2500}, {1536, 60, 1024}, CITY_CAMERA_SPEED)
 	orbit_set(&state.orbit, ctx, CITY_ORBIT_START)
 
