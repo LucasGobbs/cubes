@@ -41,7 +41,7 @@ DEBUG_FLAGS   := -debug -o:none
 EDITOR        ?= false
 EDITOR_DEFINE := -define:EDITOR=$(EDITOR)
 
-.PHONY: all build run run-optimized debug debug-optimized shaders default-shaders constants \
+.PHONY: all build run run-optimized debug debug-optimized shaders default-shaders constants models \
         submodules luajit test-input test-input-optimized test-engine \
         test-engine-optimized test test-optimized compute editor example clean \
         new-scene new-actor
@@ -64,6 +64,13 @@ $(CONSTANTS_GEN_BIN): $(wildcard tools/constants/*.odin)
 
 constants: $(CONSTANTS_GEN_BIN)
 	./$(CONSTANTS_GEN_BIN)
+# Procedural GLB assets (static/models/sphere.glb). Rewrites the file only when its bytes change.
+MODELS_GEN_BIN := models-gen.bin
+$(MODELS_GEN_BIN): $(wildcard tools/genmodel/*.odin)
+	$(ODIN) build tools/genmodel -out:$(MODELS_GEN_BIN)
+
+models: $(MODELS_GEN_BIN)
+	./$(MODELS_GEN_BIN)
 
 shaders: constants default-shaders $(GOOSE_BUILD_BIN)
 	./$(GOOSE_BUILD_BIN) --manifest $(GOOSE_MANIFEST) --slang $(SLANG)
