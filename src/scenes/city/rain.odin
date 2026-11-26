@@ -7,7 +7,6 @@ package city
 
 import engine "../../engine"
 import gfx "../../engine/gfx"
-import "core:math/linalg"
 
 RAIN_WIND :: gfx.Vec3{0.12, -1, 0.05} // fall direction; the slant makes drops read as wind-driven
 RAIN_SPEED :: [2]f32{62, 78} // fall speed, units/s
@@ -30,25 +29,27 @@ RAIN_LAYERS := [2]Rain_Layer {
 rain_spawn :: proc(state: ^City_State) {
 	for layer, i in RAIN_LAYERS {
 		mean_life := (layer.lifetime[0] + layer.lifetime[1]) / 2
-		state.rain[i] = engine.spawn(
+		state.rain[i] = engine.world_add_actor(
 			&state.world,
-			engine.Particle_Emitter {
-				mode = .GPU,
-				blend = .Additive,
-				capacity = layer.capacity,
-				rate = f32(layer.capacity) / mean_life,
-				direction = RAIN_WIND,
-				spread = 0.03,
-				radius = layer.radius,
-				lifetime = layer.lifetime,
-				speed = RAIN_SPEED,
-				size = {0.03, 0.03},
-				color_start = {0.55, 0.65, 0.85, layer.alpha},
-				color_end = {0.55, 0.65, 0.85, 0},
-				fade_in = 0.12, // drops fade in instead of popping into the sphere
-				stretch = layer.stretch,
+			Rain_Emitter {
+				transform = engine.transform_create(),
+				emitter = engine.Particle_Emitter {
+					mode = .GPU,
+					blend = .Additive,
+					capacity = layer.capacity,
+					rate = f32(layer.capacity) / mean_life,
+					direction = RAIN_WIND,
+					spread = 0.03,
+					radius = layer.radius,
+					lifetime = layer.lifetime,
+					speed = RAIN_SPEED,
+					size = {0.03, 0.03},
+					color_start = {0.55, 0.65, 0.85, layer.alpha},
+					color_end = {0.55, 0.65, 0.85, 0},
+					fade_in = 0.12, // drops fade in instead of popping into the sphere
+					stretch = layer.stretch,
+				},
 			},
-			engine.Transform{scale = {1, 1, 1}, rotation = linalg.QUATERNIONF32_IDENTITY},
 		)
 	}
 }
@@ -58,14 +59,14 @@ rain_spawn :: proc(state: ^City_State) {
 rain_follow_camera :: proc(state: ^City_State, ctx: ^engine.Context) {
 	cam := gfx.camera(&ctx.gfx).position
 	for layer, i in RAIN_LAYERS {
-		engine.actor_set_transform(&state.world, state.rain[i], position = cam + {0, layer.lift, 0})
+		state.rain[i].position = cam + {0, layer.lift, 0}
 	}
 }
 
 // Stops or resumes spawning; drops already falling finish their fall.
 rain_set :: proc(state: ^City_State, on: bool) {
 	state.rain_on = on
-	for id in state.rain {
-		if emitter := engine.actor_emitter(&state.world, id); emitter != nil do emitter.active = on
+	for r in state.rain {
+		if emitter := engine.actor_emitter(&state.world, r.id); emitter != nil do emitter.active = on
 	}
 }

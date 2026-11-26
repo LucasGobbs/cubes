@@ -119,10 +119,11 @@ ground_build_mesh :: proc() -> Mesh_Builder {
 // Night view only: the dev view is the flat street overlay on the clear colour.
 city_spawn_ground :: proc(state: ^City_State) {
 	b := ground_build_mesh()
-	state.ground_draw = engine.spawn(&state.world, engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.ground_material})
+	state.ground_draw = engine.world_add_actor(&state.world, City_Draw{draw = engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.ground_material}})
 	builder_destroy(&b)
 }
 
 city_despawn_ground :: proc(state: ^City_State) {
-	engine.world_destroy_actor(&state.world, state.ground_draw)
+	if state.ground_draw != nil do engine.world_destroy_actor(&state.world, state.ground_draw.id)
+	state.ground_draw = nil
 }

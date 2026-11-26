@@ -77,7 +77,7 @@ BOAT_LUA_BATCH_PATH :: "src/scenes/benchmark/boat_batch.lua"
 // Rest position in x/z; tick sets its height and tilt from the sea. Heading (radians)
 // drives sailing; yaw is rebuilt from it.
 Boat_Slot :: struct {
-	actor:   engine.Actor_Id,
+	ship:    ^Ship,
 	x, z:    f32,
 	heading: f32,
 	speed:   f32, // units/s
@@ -89,14 +89,34 @@ Boat_Slot :: struct {
 Boat :: struct {
 	heading, speed: f32,
 }
+
+// One actor per boat. boat is the Lua prop; it is unregistered and inert on the Odin path.
+Ship :: struct {
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	using model:     engine.Model,
+	boat:            Boat,
+}
+
+Dragon :: struct {
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	using model:     engine.Model,
+}
+
+Bench_Env :: struct {
+	using actor: engine.Actor,
+	env:         engine.Environment,
+}
+
 BOAT_PROP_CDEF :: "typedef struct { float heading, speed; } Boat;"
 
 Benchmark_State :: struct {
 	world:           engine.World,
-	env:             engine.Actor_Id,
+	env:             ^Bench_Env,
 	sea_state:       sea.State,
 	boats:           [dynamic]Boat_Slot,
-	dragons:         [dynamic]engine.Actor_Id,
+	dragons:         [dynamic]^Dragon,
 	per_model:       int,
 	add_action:      input.Button_Action,
 	subtract_action: input.Button_Action,
@@ -207,12 +227,14 @@ benchmark_setup :: proc(demo: ^engine.Scene, ctx: ^engine.Context, script, label
 
 	// Uncapped: the point of this scene is measuring real frame cost. Fog on by
 	// default so boats and dragons share the sea's horizon blend.
-	state.env = engine.spawn(
+	state.env = engine.world_add_actor(
 		&state.world,
-		engine.Environment {
-			skybox = default.SKYBOX_PATH,
-			fog = benchmark_fog(),
-			uncapped = true,
+		Bench_Env {
+			env = engine.Environment {
+				skybox = default.SKYBOX_PATH,
+				fog = benchmark_fog(),
+				uncapped = true,
+			},
 		},
 	)
 	_ = sea.add(&state.world, ctx, &state.sea_state)
@@ -226,9 +248,9 @@ benchmark_setup :: proc(demo: ^engine.Scene, ctx: ^engine.Context, script, label
 // the World's asset cache; only the actors are recreated.
 benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 	state.per_model = per_model
-	for boat in state.boats do engine.world_destroy_actor(&state.world, boat.actor)
+	for boat in state.boats do engine.world_destroy_actor(&state.world, boat.ship.id)
 	clear(&state.boats)
-	for dragon in state.dragons do engine.world_destroy_actor(&state.world, dragon)
+	for dragon in state.dragons do engine.world_destroy_actor(&state.world, dragon.id)
 	clear(&state.dragons)
 
 	for path in BOAT_PATHS {
@@ -243,22 +265,23 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 			scale := 0.25 + rand.float32_range(0, 0.2)
 			if rand.float32() < 0.12 do scale *= rand.float32_range(2, 4) // a few big ships among the small boats
 			speed := rand.float32_range(2, 6)
-			props := make([dynamic]any, context.temp_allocator)
-			append(
-				&props,
-				engine.Model{path = path},
-				engine.Transform {
-					position = position,
-					rotation = yaw,
-					scale = {scale, scale, scale},
+			ship := engine.world_add_actor(
+				&state.world,
+				Ship {
+					actor = engine.actor_hooks(Ship, lua = state.script),
+					transform = engine.transform_create(
+						position = position,
+						rotation = yaw,
+						scale = {scale, scale, scale},
+					),
+					model = engine.model_create(path = path),
+					boat = Boat{heading = heading, speed = speed},
 				},
 			)
-			if state.script != "" do append(&props, engine.Script{path = state.script}, Boat{heading = heading, speed = speed})
-			actor := engine.spawn(&state.world, ..props[:])
 			append(
 				&state.boats,
 				Boat_Slot {
-					actor = actor,
+					ship = ship,
 					x = position.x,
 					z = position.z,
 					heading = heading,
@@ -273,22 +296,19 @@ benchmark_populate :: proc(state: ^Benchmark_State, per_model: int) {
 	for index in 0 ..< DRAGON_COUNT {
 		angle := f32(index) / DRAGON_COUNT * linalg.TAU
 		scale := f32(DRAGON_SCALE)
-		dragon := engine.spawn(
+		dragon := engine.world_add_actor(
 			&state.world,
-			engine.Model{path = DRAGON_PATH},
-			engine.Transform {
-				position = {
-					math.cos(angle) * DRAGON_RING_RADIUS,
-					0,
-					FLEET_CENTER_Z + math.sin(angle) * DRAGON_RING_RADIUS,
-				},
-				rotation = linalg.quaternion_from_euler_angles_f32(
-					0,
-					-angle - linalg.PI / 2,
-					0,
-					.XYZ,
+			Dragon {
+				transform = engine.transform_create(
+					position = {
+						math.cos(angle) * DRAGON_RING_RADIUS,
+						0,
+						FLEET_CENTER_Z + math.sin(angle) * DRAGON_RING_RADIUS,
+					},
+					rotation = linalg.quaternion_from_euler_angles_f32(0, -angle - linalg.PI / 2, 0, .XYZ),
+					scale = {scale, scale, scale},
 				),
-				scale = {scale, scale, scale},
+				model = engine.model_create(path = DRAGON_PATH),
 			},
 		)
 		append(&state.dragons, dragon)
@@ -335,7 +355,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 	if input.pressed(inputs, state.subtract_action) && state.per_model >= BENCH_STEP {
 		benchmark_populate(state, state.per_model - BENCH_STEP)
 	}
-	env := engine.actor_props(&state.world, state.env, engine.Environment)
+	env := &state.env.env
 	if input.pressed(inputs, state.fog_action) {
 		if _, fog_on := env.fog.?; fog_on {
 			env.fog = nil
@@ -355,7 +375,7 @@ benchmark_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f3
 			boat_step(&boat, camera, delta_time, state.sailing)
 			flat := engine.Vec3{boat.x, sea.Y, boat.z}
 			h, grad := sea.surface_height(flat.xz, state.sea_state.time, linalg.distance(camera, flat))
-			transform := engine.actor_transform(&state.world, boat.actor)
+			transform := &boat.ship.transform
 			transform.position = {boat.x, sea.Y + h + BOAT_DRAFT, boat.z}
 			transform.rotation = sea.tilt(grad) * boat.yaw
 			transform.scale = {boat.scale, boat.scale, boat.scale}

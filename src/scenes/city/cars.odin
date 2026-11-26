@@ -91,11 +91,12 @@ cars_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, param
 city_spawn_cars :: proc(state: ^City_State) {
 	city_despawn_cars(state)
 	b := cars_build(&state.plan, state.seed)
-	state.cars = engine.spawn(&state.world, engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.car_material})
+	state.cars = engine.world_add_actor(&state.world, City_Draw{draw = engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.car_material}})
 	log.infof("city: %v cars, %v vertices", len(b.vertices) / CAR_VERTICES, len(b.vertices))
 	builder_destroy(&b)
 }
 
 city_despawn_cars :: proc(state: ^City_State) {
-	engine.world_destroy_actor(&state.world, state.cars)
+	if state.cars != nil do engine.world_destroy_actor(&state.world, state.cars.id)
+	state.cars = nil
 }

@@ -102,28 +102,30 @@ city_build_roads :: proc(p: ^Plan) -> Mesh_Builder {
 	return b
 }
 
-// Spawns the buildings as one Raw_Draw; the engine copies the mesh at spawn, so the builder is freed here.
+// Spawns the buildings as one City_Draw; the engine copies the mesh at spawn, so the builder is freed here.
 city_spawn :: proc(state: ^City_State) {
 	t := time.tick_now()
 	b := city_build_mesh(&state.plan, state.seed)
 	ms := build_ms(t)
-	state.city = engine.spawn(&state.world, engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.material})
+	state.city = engine.world_add_actor(&state.world, City_Draw{draw = engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.material}})
 	log.infof("city: mesh %v vertices, %v indices, build %.1f ms", len(b.vertices), len(b.indices), ms)
 	builder_destroy(&b)
 }
 
 city_despawn :: proc(state: ^City_State) {
-	engine.world_destroy_actor(&state.world, state.city)
+	if state.city != nil do engine.world_destroy_actor(&state.world, state.city.id)
+	state.city = nil
 }
 
 city_spawn_roads :: proc(state: ^City_State) {
 	b := city_build_roads(&state.plan)
-	state.roads = engine.spawn(&state.world, engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.road_material})
+	state.roads = engine.world_add_actor(&state.world, City_Draw{draw = engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.road_material}})
 	builder_destroy(&b)
 }
 
 city_despawn_roads :: proc(state: ^City_State) {
-	engine.world_destroy_actor(&state.world, state.roads)
+	if state.roads != nil do engine.world_destroy_actor(&state.world, state.roads.id)
+	state.roads = nil
 }
 
 // Dev view: streets on, or the night view with the sky on. Sky and streets are never alive together.
@@ -153,7 +155,7 @@ city_set_dev :: proc(state: ^City_State, renderer: ^gfx.Renderer, dev: bool) {
 // Fog lives on the Environment: apply_environment rewrites renderer.fog from it every world_update.
 city_apply_effects :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 	night := !state.dev
-	env := engine.actor_props(&state.world, state.env, engine.Environment)
+	env := &state.env.env
 	env.fog = nil
 	if night && state.fog_on do env.fog = CITY_FOG
 	if night && state.bloom_on {
@@ -165,7 +167,7 @@ city_apply_effects :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 
 // Dev keys [ and ]: step the grade's exposure in EV and log it.
 city_set_exposure :: proc(state: ^City_State, ev: f32) {
-	env := engine.actor_props(&state.world, state.env, engine.Environment)
+	env := &state.env.env
 	grade := env.grade.?
 	grade.exposure += ev
 	env.grade = grade

@@ -22,18 +22,38 @@ CHIMNEY :: [3]f32{0.4, 1.4, 0}
 BOW :: [3]f32{1.6, 0.2, 0}
 FIREWORK_PERIOD :: 2.5
 
+// The hull: a Model riding the sea surface.
+Boat :: struct {
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	using model:     engine.Model,
+}
+
+// A particle emitter placed at its transform.
+Emitter_Actor :: struct {
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	emitter:         engine.Particle_Emitter,
+}
+
+// Sky and fog for the scene.
+Boat_Env :: struct {
+	using actor: engine.Actor,
+	env:         engine.Environment,
+}
+
 Boat_State :: struct {
-	world:          engine.World,
-	sea_state:      sea.State,
-	boat:           engine.Actor_Id,
-	smoke:          engine.Actor_Id,
-	foam:           engine.Actor_Id,
-	embers:         engine.Actor_Id,
-	spray:          engine.Actor_Id,
-	rain:           engine.Actor_Id,
-	firework:       engine.Actor_Id,
+	world:                        engine.World,
+	sea_state:                    sea.State,
+	boat:                         ^Boat,
+	smoke:                        ^Emitter_Actor,
+	foam:                         ^Emitter_Actor,
+	embers:                       ^Emitter_Actor,
+	spray:                        ^Emitter_Actor,
+	rain:                         ^Emitter_Actor,
+	firework:                     ^Emitter_Actor,
 	firework_timer, firework_hue: f32,
-	angle:          f32, // orbit angle
+	angle:                        f32, // orbit angle
 }
 
 boat_scene :: proc() -> engine.Scene {
@@ -46,16 +66,15 @@ boat_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	engine.camera_fly(ctx)
 
 	state.world = engine.world_create(&ctx.gfx)
-	engine.spawn(&state.world, engine.Environment{skybox = default.SKYBOX_PATH, fog = engine.Fog{{0.671, 0.757, 0.949}, FOG_VIEW_DISTANCE}})
+	engine.world_add_actor(&state.world, Boat_Env{env = engine.Environment{skybox = default.SKYBOX_PATH, fog = engine.Fog{{0.671, 0.757, 0.949}, FOG_VIEW_DISTANCE}}})
 	sea.add(&state.world, ctx, &state.sea_state)
-	state.boat = engine.spawn(
-		&state.world,
-		engine.Model{path = BOAT_PATH},
-		engine.Transform{scale = {BOAT_SCALE, BOAT_SCALE, BOAT_SCALE}},
-	)
+	state.boat = engine.world_add_actor(&state.world, Boat{
+		transform = engine.transform_create(scale = {BOAT_SCALE, BOAT_SCALE, BOAT_SCALE}),
+		model     = engine.model_create(path = BOAT_PATH),
+	})
 
 	// Grey smoke rising from the chimney, drifting downwind (+X).
-	state.smoke = engine.spawn(&state.world, engine.Particle_Emitter{
+	state.smoke = engine.world_add_actor(&state.world, Emitter_Actor{emitter = engine.Particle_Emitter{
 		mode        = .GPU,
 		blend       = .Alpha,
 		capacity    = 2048,
@@ -70,9 +89,9 @@ boat_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		color_start = {0.6, 0.6, 0.6, 0.6},
 		color_end   = {0.35, 0.35, 0.35, 0},
 		fade_in     = 0.2,
-	}, engine.Transform{})
+	}})
 	// White foam wake behind the stern; low speed, wide spread, stays near the water.
-	state.foam = engine.spawn(&state.world, engine.Particle_Emitter{
+	state.foam = engine.world_add_actor(&state.world, Emitter_Actor{emitter = engine.Particle_Emitter{
 		mode        = .CPU,
 		blend       = .Alpha,
 		capacity    = 1024,
@@ -86,9 +105,9 @@ boat_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		size        = {0.4, 1.6},
 		color_start = {1, 1, 1, 0.8},
 		color_end   = {1, 1, 1, 0},
-	}, engine.Transform{})
+	}})
 	// Sparks popping out of the chimney; additive so they glow against the smoke.
-	state.embers = engine.spawn(&state.world, engine.Particle_Emitter{
+	state.embers = engine.world_add_actor(&state.world, Emitter_Actor{emitter = engine.Particle_Emitter{
 		mode        = .GPU,
 		blend       = .Additive,
 		capacity    = 1024,
@@ -103,9 +122,9 @@ boat_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		size        = {0.08, 0.02},
 		color_start = {1, 0.55, 0.15, 1},
 		color_end   = {1, 0.1, 0, 0},
-	}, engine.Transform{})
+	}})
 	// Bright spray thrown up by the bow.
-	state.spray = engine.spawn(&state.world, engine.Particle_Emitter{
+	state.spray = engine.world_add_actor(&state.world, Emitter_Actor{emitter = engine.Particle_Emitter{
 		mode        = .GPU,
 		blend       = .Additive,
 		capacity    = 2048,
@@ -120,9 +139,9 @@ boat_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		size        = {0.15, 0.05},
 		color_start = {0.7, 0.85, 1, 0.8},
 		color_end   = {0.7, 0.85, 1, 0},
-	}, engine.Transform{})
+	}})
 	// Rain around the camera: a big spawn sphere above the viewer falling fast.
-	state.rain = engine.spawn(&state.world, engine.Particle_Emitter{
+	state.rain = engine.world_add_actor(&state.world, Emitter_Actor{emitter = engine.Particle_Emitter{
 		mode        = .GPU,
 		blend       = .Alpha,
 		capacity    = 8192,
@@ -135,22 +154,25 @@ boat_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 		size        = {0.06, 0.06},
 		color_start = {0.75, 0.82, 0.95, 0.5},
 		color_end   = {0.75, 0.82, 0.95, 0.3},
-	}, engine.Transform{})
+	}})
 	// Firework shell: no continuous rate, bursts from boat_tick.
-	state.firework = engine.spawn(&state.world, engine.Particle_Emitter{
-		mode        = .GPU,
-		blend       = .Additive,
-		capacity    = 2048,
-		direction   = {0, 1, 0},
-		spread      = math.PI,
-		lifetime    = {1.5, 2.5},
-		speed       = {6, 14},
-		gravity     = {0, -4, 0},
-		drag        = 1.2,
-		size        = {0.5, 0.1},
-		color_start = {1, 0.5, 0.2, 1},
-		color_end   = {1, 0.2, 0, 0},
-	}, engine.Transform{position = {-10, 45, -40}})
+	state.firework = engine.world_add_actor(&state.world, Emitter_Actor{
+		transform = engine.transform_create(position = {-10, 45, -40}),
+		emitter = engine.Particle_Emitter{
+			mode        = .GPU,
+			blend       = .Additive,
+			capacity    = 2048,
+			direction   = {0, 1, 0},
+			spread      = math.PI,
+			lifetime    = {1.5, 2.5},
+			speed       = {6, 14},
+			gravity     = {0, -4, 0},
+			drag        = 1.2,
+			size        = {0.5, 0.1},
+			color_start = {1, 0.5, 0.2, 1},
+			color_end   = {1, 0.2, 0, 0},
+		},
+	})
 	return true
 }
 
@@ -167,30 +189,29 @@ boat_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	h, grad := sea.surface_height(flat.xz, state.sea_state.time, linalg.distance(camera, flat))
 	orientation := sea.tilt(grad) * yaw
 	origin := engine.Vec3{flat.x, sea.Y + h + BOAT_DRAFT, flat.z}
-	boat := engine.actor_transform(&state.world, state.boat)
-	boat.position = origin
-	boat.rotation = orientation
+	state.boat.position = origin
+	state.boat.rotation = orientation
 
 	chimney := origin + linalg.quaternion_mul_vector3(orientation, CHIMNEY * BOAT_SCALE)
 	stern := origin + linalg.quaternion_mul_vector3(orientation, STERN * BOAT_SCALE)
 	stern_h, _ := sea.surface_height(stern.xz, state.sea_state.time, linalg.distance(camera, stern))
 	astern := linalg.quaternion_mul_vector3(yaw, engine.Vec3{-1, 0, 0})
 
-	engine.actor_transform(&state.world, state.smoke).position = chimney
-	engine.actor_transform(&state.world, state.foam).position = {stern.x, sea.Y + stern_h + 0.05, stern.z}
-	engine.actor_emitter(&state.world, state.foam).desc.direction = {astern.x, 0, astern.z}
+	state.smoke.position = chimney
+	state.foam.position = {stern.x, sea.Y + stern_h + 0.05, stern.z}
+	engine.actor_emitter(&state.world, state.foam.id).desc.direction = {astern.x, 0, astern.z}
 
-	engine.actor_transform(&state.world, state.embers).position = chimney
+	state.embers.position = chimney
 	bow := origin + linalg.quaternion_mul_vector3(orientation, BOW * BOAT_SCALE)
 	bow_h, _ := sea.surface_height(bow.xz, state.sea_state.time, linalg.distance(camera, bow))
-	engine.actor_transform(&state.world, state.spray).position = {bow.x, sea.Y + bow_h, bow.z}
-	engine.actor_transform(&state.world, state.rain).position = camera + {0, 14, 0} // box of rain follows the viewer
+	state.spray.position = {bow.x, sea.Y + bow_h, bow.z}
+	state.rain.position = camera + {0, 14, 0} // box of rain follows the viewer
 
 	// Firework: a new color and burst every few seconds, anchored in the world.
 	state.firework_timer -= delta_time
 	if state.firework_timer <= 0 {
 		state.firework_timer = FIREWORK_PERIOD
-		fw := engine.actor_emitter(&state.world, state.firework)
+		fw := engine.actor_emitter(&state.world, state.firework.id)
 		hue := state.firework_hue
 		state.firework_hue += 0.37
 		hue -= math.floor(hue)

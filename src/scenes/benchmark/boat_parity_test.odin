@@ -21,6 +21,13 @@ PARITY_DT :: 1.0 / 60
 PARITY_ABS :: 1e-3
 PARITY_REL :: 1e-5
 
+// Test-only Lua boat: the Ship shape without Model, so no mesh loads.
+Parity_Boat :: struct {
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	boat:            Boat,
+}
+
 parity_close :: proc(got, want: f32) -> bool {
 	return math.abs(f64(got) - f64(want)) <= PARITY_ABS + PARITY_REL * math.abs(f64(want))
 }
@@ -52,15 +59,17 @@ test_boat_lua_matches_odin_step :: proc(t: ^testing.T) {
 	if !testing.expect(t, benchmark_lua_setup(&world), "benchmark_lua_setup failed") do return
 
 	slots: [PARITY_BOATS]Boat_Slot
-	ids: [PARITY_BOATS]engine.Actor_Id
+	boats: [PARITY_BOATS]^Parity_Boat
 	for i in 0 ..< PARITY_BOATS {
 		x, z, heading, speed := parity_boat_pose(i)
 		slots[i] = Boat_Slot{x = x, z = z, heading = heading, speed = speed}
-		ids[i] = engine.spawn(
+		boats[i] = engine.world_add_actor(
 			&world,
-			engine.Transform{position = {x, -0.5, z}, scale = {1, 1, 1}},
-			engine.Script{path = BOAT_LUA_PATH},
-			Boat{heading = heading, speed = speed},
+			Parity_Boat {
+				actor = engine.actor_hooks(Parity_Boat, lua = BOAT_LUA_PATH),
+				transform = engine.transform_create(position = {x, -0.5, z}),
+				boat = Boat{heading = heading, speed = speed},
+			},
 		)
 	}
 
@@ -70,7 +79,7 @@ test_boat_lua_matches_odin_step :: proc(t: ^testing.T) {
 	}
 
 	for i in 0 ..< PARITY_BOATS {
-		tf := engine.actor_transform(&world, ids[i])
+		tf := &boats[i].transform
 		testing.expectf(
 			t,
 			parity_close(tf.position.x, slots[i].x),
@@ -103,15 +112,17 @@ test_boat_lua_sea_phase_matches_scene_clock :: proc(t: ^testing.T) {
 	if !testing.expect(t, benchmark_lua_setup(&world), "benchmark_lua_setup failed") do return
 
 	for _ in 0 ..< 37 do engine.world_update(&world, PARITY_DT)
-	id := engine.spawn(
+	boat := engine.world_add_actor(
 		&world,
-		engine.Transform{position = {-100, -0.5, -200}, scale = {1, 1, 1}},
-		engine.Script{path = BOAT_LUA_PATH},
-		Boat{heading = 0.5, speed = 3},
+		Parity_Boat {
+			actor = engine.actor_hooks(Parity_Boat, lua = BOAT_LUA_PATH),
+			transform = engine.transform_create(position = {-100, -0.5, -200}),
+			boat = Boat{heading = 0.5, speed = 3},
+		},
 	)
 	engine.world_update(&world, PARITY_DT)
 
-	tf := engine.actor_transform(&world, id)
+	tf := &boat.transform
 	x, z := tf.position.x, tf.position.z
 	dist := math.sqrt(x * x + sea.Y * sea.Y + z * z)
 	h, _ := sea.surface_height({x, z}, world.time, dist)

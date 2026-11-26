@@ -93,16 +93,17 @@ lights_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, par
 	gfx.draw_push_uniform(draw_context, shader_parameters.CITY_LIGHTS_VERTEX_UNIFORM_BLOCK, &uniforms)
 }
 
-// Spawns the streetlights as one Raw_Draw. Night view only.
+// Spawns the streetlights as one City_Draw. Night view only.
 city_spawn_lamps :: proc(state: ^City_State) {
 	positions := lamp_positions(&state.plan, state.seed)
 	defer delete(positions)
 	b := lamps_build_mesh(positions[:])
-	state.lamps = engine.spawn(&state.world, engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.lamp_material})
+	state.lamps = engine.world_add_actor(&state.world, City_Draw{draw = engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.lamp_material}})
 	log.infof("city: %v streetlights, %v vertices", len(positions), len(b.vertices))
 	builder_destroy(&b)
 }
 
 city_despawn_lamps :: proc(state: ^City_State) {
-	engine.world_destroy_actor(&state.world, state.lamps)
+	if state.lamps != nil do engine.world_destroy_actor(&state.world, state.lamps.id)
+	state.lamps = nil
 }

@@ -33,11 +33,12 @@ beacons_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, pa
 city_spawn_beacons :: proc(state: ^City_State) {
 	city_despawn_beacons(state)
 	b, beacons := roof_lights_build(&state.plan, state.seed)
-	state.beacons = engine.spawn(&state.world, engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.beacon_material})
+	state.beacons = engine.world_add_actor(&state.world, City_Draw{draw = engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.beacon_material}})
 	log.infof("city: %v beacons, %v roof lights", beacons, len(b.vertices) / 4 - beacons)
 	builder_destroy(&b)
 }
 
 city_despawn_beacons :: proc(state: ^City_State) {
-	engine.world_destroy_actor(&state.world, state.beacons)
+	if state.beacons != nil do engine.world_destroy_actor(&state.world, state.beacons.id)
+	state.beacons = nil
 }

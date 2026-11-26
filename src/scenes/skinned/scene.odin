@@ -6,6 +6,13 @@ import engine "../../engine"
 SKINNED_MODEL_PATH :: "static/models/rigged_cesiumman.glb"
 SKINNED_CLIP :: "clip_0"
 
+Character :: struct {
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	using model:     engine.Model,
+	animator:        engine.Animator,
+}
+
 Skinned_State :: struct {
 	world: engine.World,
 }
@@ -24,7 +31,7 @@ skinned_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	demo.state = state
 	state.world = engine.world_create(&ctx.gfx)
 	engine.camera_fly(ctx)
-	engine.spawn(&state.world, engine.Model{path = SKINNED_MODEL_PATH}, engine.Animator{clip = SKINNED_CLIP})
+	engine.world_add_actor(&state.world, Character{model = engine.model_create(path = SKINNED_MODEL_PATH), animator = engine.Animator{clip = SKINNED_CLIP}})
 	return true
 }
 

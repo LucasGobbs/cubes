@@ -23,6 +23,23 @@ Scriptdemo_State :: struct {
 	world: engine.World,
 }
 
+Spinner :: struct {
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+}
+
+Ground :: struct {
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	collider:        engine.Collider,
+}
+
+Ball :: struct {
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	using model:     engine.Model,
+}
+
 scriptdemo_scene :: proc() -> engine.Scene {
 	return {
 		name = "Scriptdemo",
@@ -66,20 +83,18 @@ scriptdemo_balls_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bo
 	state.world = engine.world_create(&ctx.gfx)
 	engine.script_bind(&state.world, &ctx.input, ctx)
 	engine.camera_fly(ctx, {0, 6, 14}, {0, 1, 0})
-	engine.spawn(
-		&state.world,
-		engine.Transform{position = {0, -1, 0}},
-		engine.Collider{shape = engine.Box{half = {20, 0.5, 20}}, body = .Static},
-	)
+	engine.world_add_actor(&state.world, Ground{
+		transform = engine.transform_create(position = {0, -1, 0}),
+		collider  = engine.Collider{shape = engine.Box{half = {20, 0.5, 20}}, body = .Static},
+	})
 	for i in 0 ..< count {
-		transform := engine.Transform{position = scriptdemo_position(i, count), scale = {SCRIPTDEMO_BALL_SCALE, SCRIPTDEMO_BALL_SCALE, SCRIPTDEMO_BALL_SCALE}}
-		transform.position.y = 4 + f32(i % 5)
-		engine.spawn(
-			&state.world,
-			transform,
-			engine.Model{path = SCRIPTDEMO_BALL_MODEL_PATH},
-			engine.Script{path = SCRIPTDEMO_BALLS_SCRIPT_PATH},
-		)
+		position := scriptdemo_position(i, count)
+		position.y = 4 + f32(i % 5)
+		engine.world_add_actor(&state.world, Ball{
+			actor     = engine.actor_hooks(Ball, lua = SCRIPTDEMO_BALLS_SCRIPT_PATH),
+			transform = engine.transform_create(position = position, scale = {SCRIPTDEMO_BALL_SCALE, SCRIPTDEMO_BALL_SCALE, SCRIPTDEMO_BALL_SCALE}),
+			model     = engine.model_create(path = SCRIPTDEMO_BALL_MODEL_PATH),
+		})
 	}
 	return true
 }
@@ -119,17 +134,11 @@ scriptdemo_setup :: proc(demo: ^engine.Scene, ctx: ^engine.Context, script_path:
 	engine.script_bind(&state.world, &ctx.input, ctx)
 	engine.camera_fly(ctx)
 	for i in 0 ..< count {
-		transform := engine.Transform{position = scriptdemo_position(i, count)}
-		if nomodel {
-			engine.spawn(&state.world, transform, engine.Script{path = script_path})
-		} else {
-			engine.spawn(
-				&state.world,
-				transform,
-				engine.Model{path = SCRIPTDEMO_MODEL_PATH},
-				engine.Script{path = script_path},
-			)
-		}
+		spinner := engine.world_add_actor(&state.world, Spinner{
+			actor     = engine.actor_hooks(Spinner, lua = script_path),
+			transform = engine.transform_create(position = scriptdemo_position(i, count)),
+		})
+		if !nomodel do engine.model_set(spinner, SCRIPTDEMO_MODEL_PATH)
 	}
 	return true
 }

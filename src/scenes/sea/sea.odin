@@ -21,11 +21,16 @@ State :: struct {
 	material: gfx.Material,
 }
 
-// Spawns the sea as a Raw_Draw actor. state must outlive the actor (it is the draw's material owner).
-add :: proc(world: ^engine.World, ctx: ^engine.Context, state: ^State) -> engine.Actor_Id {
+// Surface: the sea as a Raw_Draw actor. state must outlive the actor (it is the draw's material owner).
+Surface :: struct {
+	using actor: engine.Actor,
+	draw:        engine.Raw_Draw,
+}
+
+add :: proc(world: ^engine.World, ctx: ^engine.Context, state: ^State) -> ^Surface {
 	state.pipeline = pipeline_create(&ctx.gfx, state)
 	state.material = gfx.material_make(state.pipeline)
-	return engine.spawn(world, engine.Raw_Draw{mesh = mesh_data(), material = &state.material})
+	return engine.world_add_actor(world, Surface{draw = engine.Raw_Draw{mesh = mesh_data(), material = &state.material}})
 }
 
 // Call after world_destroy: the sea actor's Raw_Draw points at state.material.

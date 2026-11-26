@@ -26,3 +26,5 @@ src/engine/gfx/generated/
 /city-series.md
 # F12 screenshots (engine screenshot.odin)
 /shots/
+# camera path saved by the K key (engine camera_path_io.odin)
+/camera.path.json

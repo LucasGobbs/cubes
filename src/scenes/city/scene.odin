@@ -15,6 +15,23 @@ CITY_DEV_START :: false // night view on start; G toggles the dev view (streets)
 CITY_FOG :: engine.Fog{color = {0.01938, 0.023256, 0.03876}, distance = 3200}
 CITY_GRADE :: engine.Grade{exposure = 1, contrast = 1, saturation = 1} // ACES tonemap; +1 EV matches the pre-tonemap look; [ and ] step 0.25 EV
 
+// Actors of the city, each a struct added with engine.world_add_actor. The state holds pointers; nil when despawned.
+City_Draw :: struct {
+	using actor: engine.Actor,
+	draw:        engine.Raw_Draw,
+}
+
+Rain_Emitter :: struct {
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	emitter:         engine.Particle_Emitter,
+}
+
+City_Env :: struct {
+	using actor: engine.Actor,
+	env:         engine.Environment,
+}
+
 City_State :: struct {
 	world:        engine.World,
 	pipeline:     gfx.Pipeline_Handle,
@@ -29,17 +46,17 @@ City_State :: struct {
 	ground_sampler:  gfx.Sampler_Handle,
 	ground_pipeline: gfx.Pipeline_Handle,
 	ground_material: gfx.Material,
-	ground_draw:     engine.Actor_Id, // the street ground quad; only alive in the night view
+	ground_draw:     ^City_Draw, // the street ground quad; only alive in the night view
 	seed:         u32,
 	plan:         Plan,
-	city:         engine.Actor_Id, // the buildings' Raw_Draw; respawned when R re-rolls the seed
-	roads:        engine.Actor_Id, // the streets' Raw_Draw; only alive in the dev view
-	sky:          engine.Actor_Id, // the lampshade's Raw_Draw; only alive in the night view
-	lamps:        engine.Actor_Id, // the streetlights' Raw_Draw; only alive in the night view
-	cars:         engine.Actor_Id, // the cars' Raw_Draw; only alive in the night view
-	beacons:      engine.Actor_Id, // the aviation beacons and roof lights' Raw_Draw; only alive in the night view
-	rain:         [2]engine.Actor_Id, // near and far GPU particle emitters that follow the camera (rain.odin)
-	env:          engine.Actor_Id, // the Environment: night fog and the tonemap grade
+	city:         ^City_Draw, // the buildings' draw; respawned when R re-rolls the seed
+	roads:        ^City_Draw, // the streets' draw; only alive in the dev view
+	sky:          ^City_Draw, // the lampshade's draw; only alive in the night view
+	lamps:        ^City_Draw, // the streetlights' draw; only alive in the night view
+	cars:         ^City_Draw, // the cars' draw; only alive in the night view
+	beacons:      ^City_Draw, // the aviation beacons and roof lights' draw; only alive in the night view
+	rain:         [2]^Rain_Emitter, // near and far GPU particle emitters that follow the camera (rain.odin)
+	env:          ^City_Env, // the Environment: night fog and the tonemap grade
 	rain_on:      bool,
 	toggle_rain:  input.Button_Action,
 	road_material: gfx.Material, // unlit blue
@@ -78,7 +95,7 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state := new(City_State)
 	demo.state = state
 	state.world = engine.world_create(&ctx.gfx)
-	state.env = engine.spawn(&state.world, engine.Environment{grade = CITY_GRADE})
+	state.env = engine.world_add_actor(&state.world, City_Env{env = engine.Environment{grade = CITY_GRADE}})
 	engine.camera_fly(ctx, {1536, 420, 2500}, {1536, 60, 1024}, CITY_CAMERA_SPEED)
 	orbit_set(&state.orbit, ctx, CITY_ORBIT_START)
 

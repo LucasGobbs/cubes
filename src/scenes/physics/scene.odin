@@ -13,7 +13,20 @@ BALL_SCALE :: BALL_RADIUS / SPHERE_MODEL_RADIUS
 
 Physics_State :: struct {
 	world: engine.World,
-	balls: [dynamic]engine.Actor_Id,
+	balls: [dynamic]^Ball,
+}
+
+Ground :: struct {
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	collider:        engine.Collider,
+}
+
+Ball :: struct {
+	using actor:     engine.Actor,
+	using transform: engine.Transform,
+	using model:     engine.Model,
+	collider:        engine.Collider,
 }
 
 physics_scene :: proc() -> engine.Scene {
@@ -31,25 +44,23 @@ physics_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	demo.state = state
 
 	state.world = engine.world_create(&ctx.gfx)
-	engine.spawn(
-		&state.world,
-		engine.Transform{position = {0, -0.5, 0}},
-		engine.Collider{shape = engine.Box{half = {20, 0.5, 20}}, body = .Static},
-	)
+	engine.world_add_actor(&state.world, Ground{
+		transform = engine.transform_create(position = {0, -0.5, 0}),
+		collider  = engine.Collider{shape = engine.Box{half = {20, 0.5, 20}}, body = .Static},
+	})
 	engine.spawn_camera(&state.world, {0, 6, 14}, {0, 2, 0})
 
-	state.balls = make([dynamic]engine.Actor_Id, 0, BALL_COUNT)
+	state.balls = make([dynamic]^Ball, 0, BALL_COUNT)
 	for i in 0 ..< BALL_COUNT {
 		column := f32(i % 5) - 2
 		row := f32(i / 5)
 		position := [3]f32{column * 1.4, 2 + row * 2.4, (row - 1.5) * 1.4}
-		actor := engine.spawn(
-			&state.world,
-			engine.Transform{position = position, scale = {BALL_SCALE, BALL_SCALE, BALL_SCALE}},
-			engine.Model{path = BALL_MODEL},
-			engine.Collider{shape = engine.Sphere{radius = BALL_RADIUS}},
-		)
-		append(&state.balls, actor)
+		ball := engine.world_add_actor(&state.world, Ball{
+			transform = engine.transform_create(position = position, scale = {BALL_SCALE, BALL_SCALE, BALL_SCALE}),
+			model     = engine.model_create(path = BALL_MODEL),
+			collider  = engine.Collider{shape = engine.Sphere{radius = BALL_RADIUS}},
+		})
+		append(&state.balls, ball)
 	}
 	return true
 }

@@ -119,10 +119,11 @@ sky_build_mesh :: proc() -> Mesh_Builder {
 city_spawn_sky :: proc(state: ^City_State) {
 	city_despawn_sky(state)
 	b := sky_build_mesh()
-	state.sky = engine.spawn(&state.world, engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.sky_material})
+	state.sky = engine.world_add_actor(&state.world, City_Draw{draw = engine.Raw_Draw{mesh = builder_to_mesh_data(&b), material = &state.sky_material}})
 	builder_destroy(&b)
 }
 
 city_despawn_sky :: proc(state: ^City_State) {
-	engine.world_destroy_actor(&state.world, state.sky)
+	if state.sky != nil do engine.world_destroy_actor(&state.world, state.sky.id)
+	state.sky = nil
 }
