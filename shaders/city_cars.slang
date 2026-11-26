@@ -8,6 +8,7 @@ import "../src/engine/gfx/shaders/light_sprite";
 struct Uniforms {
     float4x4 mvp;
     float4 camera_position;
+    float4 fog; // rgb = linear fog colour, a = view distance (<= 0 = off)
     float4 time; // x = seconds
     float4 gain; // x = brightness multiplier (the car lamps stay faintly on by day)
 };
@@ -52,7 +53,7 @@ VertexOutput vertexMain(VertexInput input) {
     output.corner = input.color.rg;
     output.dir = dir;
     output.to_camera = eye - centre;
-    output.gain = data.gain.x;
+    output.gain = data.gain.x * sprite_fog_fade(length(output.to_camera), data.fog);
     return output;
 }
 

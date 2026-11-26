@@ -25,6 +25,7 @@ beacons_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, pa
 	uniforms := shader_parameters.CityBeaconsVertexUniforms {
 		mvp             = parameters.view_projection * parameters.model_transform,
 		camera_position = {camera.x, camera.y, camera.z, 1},
+		fog             = parameters.fog,
 		time            = {state.time, 0, 0, 0},
 		gain            = {1 - state.day.daylight, 0, 0, 0},
 	}

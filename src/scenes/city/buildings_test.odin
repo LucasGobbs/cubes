@@ -4,7 +4,7 @@ import "core:testing"
 
 @(test)
 test_building_indices_valid :: proc(t: ^testing.T) {
-	gens := [9]Building_Proc{building_cube, building_blocky, building_modern, building_tower, building_stepped, building_slab, building_twin, building_lshape, building_warehouse}
+	gens := [10]Building_Proc{building_cube, building_blocky, building_modern, building_tower, building_stepped, building_slab, building_twin, building_lshape, building_warehouse, building_supertall}
 	for gen, k in gens {
 		for seed in u32(1) ..< 64 {
 			b: Mesh_Builder
@@ -71,5 +71,45 @@ test_tower_within_stories :: proc(t: ^testing.T) {
 			testing.expectf(t, top >= f32(stories), "seed %d: top %v below stories %d", seed, top, stories)
 			builder_destroy(&b)
 		}
+	}
+}
+
+@(test)
+test_supertall_within_stories :: proc(t: ^testing.T) {
+	// Tiers, lids and crown stack to `stories`; crown, pinnacle and antenna add at most SUPERTALL_TOP_MAX more.
+	sizes := [2][3]f32{{26, 26, 160}, {40, 32, 260}} // footprint x, footprint z, stories
+	for size in sizes {
+		footprint := [2]f32{size.x, size.y}
+		stories := int(size.z)
+		for seed in u32(1) ..< 32 {
+			b: Mesh_Builder
+			rng := rng_seed(seed)
+			building_supertall(&b, &rng, {100, 0, 200}, footprint, stories)
+			top: f32 = -1
+			for v in b.vertices {
+				top = max(top, v.position.y)
+				testing.expectf(t, abs(v.position.x - 100) <= footprint.x / 2 + 1, "seed %d: x %v outside footprint", seed, v.position.x)
+				testing.expectf(t, abs(v.position.z - 200) <= footprint.y / 2 + 1, "seed %d: z %v outside footprint", seed, v.position.z)
+			}
+			testing.expectf(t, top <= f32(stories + SUPERTALL_TOP_MAX), "seed %d: top %v above stories %d", seed, top, stories)
+			testing.expectf(t, top >= f32(stories), "seed %d: top %v below stories %d", seed, top, stories)
+			testing.expectf(t, len(b.vertices) <= 3000, "seed %d: %d vertices", seed, len(b.vertices))
+			builder_destroy(&b)
+		}
+	}
+}
+
+@(test)
+test_supertall_deterministic :: proc(t: ^testing.T) {
+	a, b: Mesh_Builder
+	defer builder_destroy(&a)
+	defer builder_destroy(&b)
+	ra := rng_seed(9)
+	rb := rng_seed(9)
+	building_supertall(&a, &ra, {0, 0, 0}, {30, 30}, 200)
+	building_supertall(&b, &rb, {0, 0, 0}, {30, 30}, 200)
+	testing.expectf(t, len(a.vertices) == len(b.vertices), "same seed: %d vs %d vertices", len(a.vertices), len(b.vertices))
+	for i in 0 ..< min(len(a.vertices), len(b.vertices)) {
+		testing.expectf(t, a.vertices[i].position == b.vertices[i].position, "same seed, vertex %d differs", i)
 	}
 }

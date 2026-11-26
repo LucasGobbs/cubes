@@ -15,6 +15,13 @@ TOWER_MIN_WIDTH :: 6 // taper never narrows a tier below this
 CLUTTER_SCALE :: 0.5 // modern clutter stays inside this share of the ellipse's bounding box (cut sectors chord inward)
 ARCH_MIN_FOOTPRINT :: 6 // stepped, slab, twin and L fall back to a cube on smaller plots
 TWIN_MIN_WIDTH :: 8 // two 3-unit towers and a 2-unit gap
+SUPERTALL_TIER_STORIES :: 40 // about this many stories per tier; a black lid of SUPERTALL_LID stories sits between tiers
+SUPERTALL_LID :: 2
+SUPERTALL_CROWN :: 3 // black band on the top tier
+SUPERTALL_STEP :: 2 // stories per pinnacle step; two steps, each inset 2 units a side
+SUPERTALL_ANTENNA_MIN :: 10
+SUPERTALL_ANTENNA_MAX :: 18
+SUPERTALL_TOP_MAX :: 3 + 2 * 2 + 18 // highest point above stories: crown, pinnacle, antenna
 
 Building_Proc :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2]f32, stories: int)
 
@@ -426,4 +433,50 @@ building_warehouse :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint:
 		builder_tri(b, {xa, wall_top, r.z0}, {xm, wall_top + h, r.z0}, {xb, wall_top, r.z0}, BUILDING_ROOF)
 		builder_tri(b, {xa, wall_top, r.z1}, {xb, wall_top, r.z1}, {xm, wall_top + h, r.z1}, BUILDING_ROOF)
 	}
+}
+
+// Tiers of a supertall: about SUPERTALL_TIER_STORIES each, at least three.
+supertall_tiers :: proc(stories: int) -> int {
+	return max(3, stories / SUPERTALL_TIER_STORIES)
+}
+
+// Storey where tier i ends (its lid, if any, sits above). The last tier ends at stories.
+supertall_tier_end :: proc(stories, n, i: int) -> int {
+	return stories if i == n - 1 else (i + 1) * stories / n
+}
+
+// Tiers on black lids: each lid is a ledge one unit past the tier below (a cornice about every 40 stories).
+// Even tiers have vertical black fins, odd tiers are plain windows. Each lid tapers the next tier.
+// Crown band, two-step pinnacle, then a thin antenna.
+building_supertall :: proc(b: ^Mesh_Builder, rng: ^Rng, origin: Vec3, footprint: [2]f32, stories: int) {
+	f := building_facade(rng)
+	black := f
+	black.color = BUILDING_ROOF
+	rect := centred_rect(origin.xz, footprint / 2)
+	fins := Tower_Style{corners = true, group = rng_int(rng, 4, 8), stripe = rng_int(rng, 1, 2)}
+	n := supertall_tiers(stories)
+	y := origin.y
+	for i in 0 ..< n {
+		end := origin.y + f32(supertall_tier_end(stories, n, i))
+		style := fins if i % 2 == 0 else Tower_Style{corners = true}
+		tower_walls(b, f, rect, y, end, style)
+		y = end
+		if i == n - 1 do break
+		building_block(b, black, rect_grow(rect, 1), y, y + SUPERTALL_LID)
+		y += SUPERTALL_LID
+		rect = tower_taper(rng, rect)
+	}
+	building_block(b, black, rect_grow(rect, 1), y, y + SUPERTALL_CROWN)
+	y += SUPERTALL_CROWN
+	for _ in 0 ..< 2 {
+		if min(rect.x1 - rect.x0, rect.z1 - rect.z0) - 4 < TOWER_MIN_WIDTH do break
+		rect = rect_grow(rect, -2)
+		building_block(b, black, rect, y, y + SUPERTALL_STEP)
+		y += SUPERTALL_STEP
+	}
+	roof_clutter(b, rng, rect, y)
+	c := origin.xz
+	ax, az := math.floor(c.x), math.floor(c.y)
+	antenna := Rect{x0 = ax, x1 = ax + 1, z0 = az, z1 = az + 1}
+	building_block(b, black, antenna, y, y + f32(rng_int(rng, SUPERTALL_ANTENNA_MIN, SUPERTALL_ANTENNA_MAX)))
 }

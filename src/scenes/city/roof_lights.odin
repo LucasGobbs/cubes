@@ -63,6 +63,10 @@ roof_lights_build :: proc(p: ^Plan, seed: u32) -> (out: Mesh_Builder, beacons: i
 			beacons += 1
 		}
 
+		if plot.kind == .Supertall {
+			supertall_warning_lights(&out, vs, int(plot.stories))
+			continue
+		}
 		top := f32(plot.stories)
 		r := bounds_at(vs, top)
 		if r.x1 < r.x0 do continue // no geometry at the stories line: nothing to light
@@ -103,6 +107,21 @@ roof_light_tint :: proc(rng: ^Rng) -> [3]f32 {
 		return {1, 0.05, 0.03}
 	case:
 		return {0.2, 1, 0.7}
+	}
+}
+
+// Steady red obstruction lights at the four corners of each lid (a ledge about every 40 stories).
+supertall_warning_lights :: proc(out: ^Mesh_Builder, vs: []gfx.VertexData, stories: int) {
+	n := supertall_tiers(stories)
+	for i in 0 ..< n - 1 {
+		top := f32(supertall_tier_end(stories, n, i) + SUPERTALL_LID)
+		r := bounds_at(vs, top)
+		if r.x1 < r.x0 do continue
+		for x in ([2]f32{r.x0 + ROOF_LIGHT_INSET, r.x1 - ROOF_LIGHT_INSET}) {
+			for z in ([2]f32{r.z0 + ROOF_LIGHT_INSET, r.z1 - ROOF_LIGHT_INSET}) {
+				roof_light_add(out, Vec3{x, top + ROOF_LIGHT_LIFT, z}, {1, 0.05, 0.03}, ROOF_LIGHT_WIDTH, false, 0, 1)
+			}
+		}
 	}
 }
 

@@ -74,6 +74,10 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     // Day: the road reads as light grey-blue asphalt; night keeps the dark wet street.
     float3 day_road = float3(0.13, 0.15, 0.18) + dot(lit, float3(0.33, 0.33, 0.33)) * 4.0;
     lit = lerp(lit, day_road, input.daylight * inside);
+    // Rim haze: within 300 units of the city edge the ground fades into the fog colour, so the edge is not a hard line.
+    float2 edge = min(input.uv, 1.0 - input.uv) * float2(float(CITY_W), float(CITY_D));
+    float rim = inside * (1.0 - smoothstep(0.0, 300.0, min(edge.x, edge.y))) * step(0.0, input.fog.a);
+    lit = lerp(lit, input.fog.rgb, rim);
 
     // Puddles: the value-noise field clusters near 0.5, so stretch it around 0.5 before thresholding; wet lowers the cut.
     float field = saturate((tex.a - 0.5) * 4.0 + 0.5);
@@ -107,5 +111,5 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     // black at the view distance and the sky shows below the horizon instead of a flat dark band.
     float dist = length(input.to_camera);
     if (input.fog.a > 0.0 && dist > 1.03 * input.fog.a) discard;
-    return float4(apply_fog(lit, dist, input.fog), 1.0);
+    return float4(apply_fog_soft(lit, dist, input.fog), 1.0);
 }

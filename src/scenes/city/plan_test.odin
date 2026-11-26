@@ -65,3 +65,23 @@ test_plan_skyscraper_count :: proc(t: ^testing.T) {
 		testing.expectf(t, n >= 15, "seed %d: only %d skyscrapers placed", seed, n)
 	}
 }
+
+@(test)
+test_plan_supertalls :: proc(t: ^testing.T) {
+	rules := tier_rules[.Supertall]
+	for seed in u32(1) ..< 6 {
+		p := plan_build(seed)
+		defer plan_destroy(&p)
+		n := 0
+		for plot in p.buildings do if plot.tier == .Supertall {
+			n += 1
+			testing.expectf(t, plot.kind == .Supertall, "seed %d: supertall plot has kind %v", seed, plot.kind)
+			testing.expectf(t, plot.w >= rules.footprint_min && plot.d >= rules.footprint_min, "seed %d: footprint %v x %v too small", seed, plot.w, plot.d)
+			testing.expectf(t, plot.w <= rules.footprint_max && plot.d <= rules.footprint_max, "seed %d: footprint %v x %v too big", seed, plot.w, plot.d)
+			testing.expectf(t, int(plot.stories) >= rules.stories_min && int(plot.stories) <= rules.stories_max, "seed %d: stories %d", seed, plot.stories)
+			testing.expectf(t, plot.x >= SUPERTALL_EDGE && plot.z >= SUPERTALL_EDGE, "seed %d: supertall too near min edge", seed)
+			testing.expectf(t, plot.x + plot.w <= CITY_W - SUPERTALL_EDGE && plot.z + plot.d <= CITY_D - SUPERTALL_EDGE, "seed %d: supertall too near max edge", seed)
+		}
+		testing.expectf(t, n >= 8 && n <= 14, "seed %d: %d supertalls placed", seed, n)
+	}
+}

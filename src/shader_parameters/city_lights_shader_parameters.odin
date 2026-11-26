@@ -15,26 +15,28 @@ CITY_LIGHTS_VERTEX_UNIFORM_BUFFERS :: 1
 CityLightsVertexUniforms :: struct #max_field_align(16) {
 	mvp: matrix[4, 4]f32,
 	camera_position: [4]f32,
+	fog: [4]f32,
 	gain: [4]f32,
 }
 
 #assert(offset_of(CityLightsVertexUniforms, mvp) == 0)
 #assert(offset_of(CityLightsVertexUniforms, camera_position) == 64)
-#assert(offset_of(CityLightsVertexUniforms, gain) == 80)
-#assert(size_of(CityLightsVertexUniforms) == 96)
+#assert(offset_of(CityLightsVertexUniforms, fog) == 80)
+#assert(offset_of(CityLightsVertexUniforms, gain) == 96)
+#assert(size_of(CityLightsVertexUniforms) == 112)
 
 CityLightsVertexUniformBlock :: struct #max_field_align(16) {
 	data: CityLightsVertexUniforms,
 }
 
 #assert(offset_of(CityLightsVertexUniformBlock, data) == 0)
-#assert(size_of(CityLightsVertexUniformBlock) == 96)
+#assert(size_of(CityLightsVertexUniformBlock) == 112)
 
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SIZE :: 96
+CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SIZE :: 112
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SPACE, binding = CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_BINDING, slot = CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SLOT, count = CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -57,7 +59,7 @@ city_lights_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttribu
 }
 
 CITY_LIGHTS_VERTEX_BINDINGS := [1]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 96},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 112},
 }
 
 city_lights_vertex :: proc() -> goose.GraphicsParameters {
@@ -127,26 +129,28 @@ CITY_LIGHTS_VERTEX_UNIFORM_BUFFERS :: 1
 CityLightsVertexUniforms :: struct #max_field_align(16) {
 	mvp: matrix[4, 4]f32,
 	camera_position: [4]f32,
+	fog: [4]f32,
 	gain: [4]f32,
 }
 
 #assert(offset_of(CityLightsVertexUniforms, mvp) == 0)
 #assert(offset_of(CityLightsVertexUniforms, camera_position) == 64)
-#assert(offset_of(CityLightsVertexUniforms, gain) == 80)
-#assert(size_of(CityLightsVertexUniforms) == 96)
+#assert(offset_of(CityLightsVertexUniforms, fog) == 80)
+#assert(offset_of(CityLightsVertexUniforms, gain) == 96)
+#assert(size_of(CityLightsVertexUniforms) == 112)
 
 CityLightsVertexUniformBlock :: struct #max_field_align(16) {
 	data: CityLightsVertexUniforms,
 }
 
 #assert(offset_of(CityLightsVertexUniformBlock, data) == 0)
-#assert(size_of(CityLightsVertexUniformBlock) == 96)
+#assert(size_of(CityLightsVertexUniformBlock) == 112)
 
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SIZE :: 96
+CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SIZE :: 112
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SPACE, binding = CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_BINDING, slot = CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SLOT, count = CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -169,7 +173,7 @@ city_lights_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttribu
 }
 
 CITY_LIGHTS_VERTEX_BINDINGS := [1]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 96},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 112},
 }
 
 city_lights_vertex :: proc() -> goose.GraphicsParameters {
@@ -239,26 +243,28 @@ CITY_LIGHTS_VERTEX_UNIFORM_BUFFERS :: 1
 CityLightsVertexUniforms :: struct #max_field_align(16) {
 	mvp: matrix[4, 4]f32,
 	camera_position: [4]f32,
+	fog: [4]f32,
 	gain: [4]f32,
 }
 
 #assert(offset_of(CityLightsVertexUniforms, mvp) == 0)
 #assert(offset_of(CityLightsVertexUniforms, camera_position) == 64)
-#assert(offset_of(CityLightsVertexUniforms, gain) == 80)
-#assert(size_of(CityLightsVertexUniforms) == 96)
+#assert(offset_of(CityLightsVertexUniforms, fog) == 80)
+#assert(offset_of(CityLightsVertexUniforms, gain) == 96)
+#assert(size_of(CityLightsVertexUniforms) == 112)
 
 CityLightsVertexUniformBlock :: struct #max_field_align(16) {
 	data: CityLightsVertexUniforms,
 }
 
 #assert(offset_of(CityLightsVertexUniformBlock, data) == 0)
-#assert(size_of(CityLightsVertexUniformBlock) == 96)
+#assert(size_of(CityLightsVertexUniformBlock) == 112)
 
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SIZE :: 96
+CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SIZE :: 112
 CITY_LIGHTS_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SPACE, binding = CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_BINDING, slot = CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_SLOT, count = CITY_LIGHTS_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -281,7 +287,7 @@ city_lights_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttribu
 }
 
 CITY_LIGHTS_VERTEX_BINDINGS := [1]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 96},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 112},
 }
 
 city_lights_vertex :: proc() -> goose.GraphicsParameters {

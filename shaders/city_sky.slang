@@ -65,7 +65,8 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     day += sun_light * (pow(sd, 24.0) * 0.35 + pow(sd, 1500.0) * 4.0); // halo, then disk
 
     float3 glow = lerp(day, night, input.params.x);
-    // Vertex colour (1 at the horizon, 0 at the bottom ring) fades the part below the horizon to the fog colour, so the
-    // ground fogs into the sky.
-    return float4(lerp(input.params.yzw, glow, pow(input.color.r, 6.0)), 1.0);
+    // Below the horizon and in a thin band above it the sky is the fog colour (linear, same as the ground fog), so
+    // the ground meets the sky with no seam. Vertex colour.r is unused now; the ring data stays for the mesh.
+    float haze = smoothstep(0.0, 0.08, dir.y);
+    return float4(lerp(input.params.yzw, glow, haze), 1.0);
 }

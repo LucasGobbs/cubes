@@ -15,28 +15,30 @@ CITY_BEACONS_VERTEX_UNIFORM_BUFFERS :: 1
 CityBeaconsVertexUniforms :: struct #max_field_align(16) {
 	mvp: matrix[4, 4]f32,
 	camera_position: [4]f32,
+	fog: [4]f32,
 	time: [4]f32,
 	gain: [4]f32,
 }
 
 #assert(offset_of(CityBeaconsVertexUniforms, mvp) == 0)
 #assert(offset_of(CityBeaconsVertexUniforms, camera_position) == 64)
-#assert(offset_of(CityBeaconsVertexUniforms, time) == 80)
-#assert(offset_of(CityBeaconsVertexUniforms, gain) == 96)
-#assert(size_of(CityBeaconsVertexUniforms) == 112)
+#assert(offset_of(CityBeaconsVertexUniforms, fog) == 80)
+#assert(offset_of(CityBeaconsVertexUniforms, time) == 96)
+#assert(offset_of(CityBeaconsVertexUniforms, gain) == 112)
+#assert(size_of(CityBeaconsVertexUniforms) == 128)
 
 CityBeaconsVertexUniformBlock :: struct #max_field_align(16) {
 	data: CityBeaconsVertexUniforms,
 }
 
 #assert(offset_of(CityBeaconsVertexUniformBlock, data) == 0)
-#assert(size_of(CityBeaconsVertexUniformBlock) == 112)
+#assert(size_of(CityBeaconsVertexUniformBlock) == 128)
 
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SIZE :: 112
+CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SIZE :: 128
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SPACE, binding = CITY_BEACONS_VERTEX_UNIFORM_BLOCK_BINDING, slot = CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SLOT, count = CITY_BEACONS_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -59,7 +61,7 @@ city_beacons_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttrib
 }
 
 CITY_BEACONS_VERTEX_BINDINGS := [1]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 112},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 128},
 }
 
 city_beacons_vertex :: proc() -> goose.GraphicsParameters {
@@ -129,28 +131,30 @@ CITY_BEACONS_VERTEX_UNIFORM_BUFFERS :: 1
 CityBeaconsVertexUniforms :: struct #max_field_align(16) {
 	mvp: matrix[4, 4]f32,
 	camera_position: [4]f32,
+	fog: [4]f32,
 	time: [4]f32,
 	gain: [4]f32,
 }
 
 #assert(offset_of(CityBeaconsVertexUniforms, mvp) == 0)
 #assert(offset_of(CityBeaconsVertexUniforms, camera_position) == 64)
-#assert(offset_of(CityBeaconsVertexUniforms, time) == 80)
-#assert(offset_of(CityBeaconsVertexUniforms, gain) == 96)
-#assert(size_of(CityBeaconsVertexUniforms) == 112)
+#assert(offset_of(CityBeaconsVertexUniforms, fog) == 80)
+#assert(offset_of(CityBeaconsVertexUniforms, time) == 96)
+#assert(offset_of(CityBeaconsVertexUniforms, gain) == 112)
+#assert(size_of(CityBeaconsVertexUniforms) == 128)
 
 CityBeaconsVertexUniformBlock :: struct #max_field_align(16) {
 	data: CityBeaconsVertexUniforms,
 }
 
 #assert(offset_of(CityBeaconsVertexUniformBlock, data) == 0)
-#assert(size_of(CityBeaconsVertexUniformBlock) == 112)
+#assert(size_of(CityBeaconsVertexUniformBlock) == 128)
 
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SIZE :: 112
+CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SIZE :: 128
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SPACE, binding = CITY_BEACONS_VERTEX_UNIFORM_BLOCK_BINDING, slot = CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SLOT, count = CITY_BEACONS_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -173,7 +177,7 @@ city_beacons_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttrib
 }
 
 CITY_BEACONS_VERTEX_BINDINGS := [1]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 112},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 128},
 }
 
 city_beacons_vertex :: proc() -> goose.GraphicsParameters {
@@ -243,28 +247,30 @@ CITY_BEACONS_VERTEX_UNIFORM_BUFFERS :: 1
 CityBeaconsVertexUniforms :: struct #max_field_align(16) {
 	mvp: matrix[4, 4]f32,
 	camera_position: [4]f32,
+	fog: [4]f32,
 	time: [4]f32,
 	gain: [4]f32,
 }
 
 #assert(offset_of(CityBeaconsVertexUniforms, mvp) == 0)
 #assert(offset_of(CityBeaconsVertexUniforms, camera_position) == 64)
-#assert(offset_of(CityBeaconsVertexUniforms, time) == 80)
-#assert(offset_of(CityBeaconsVertexUniforms, gain) == 96)
-#assert(size_of(CityBeaconsVertexUniforms) == 112)
+#assert(offset_of(CityBeaconsVertexUniforms, fog) == 80)
+#assert(offset_of(CityBeaconsVertexUniforms, time) == 96)
+#assert(offset_of(CityBeaconsVertexUniforms, gain) == 112)
+#assert(size_of(CityBeaconsVertexUniforms) == 128)
 
 CityBeaconsVertexUniformBlock :: struct #max_field_align(16) {
 	data: CityBeaconsVertexUniforms,
 }
 
 #assert(offset_of(CityBeaconsVertexUniformBlock, data) == 0)
-#assert(size_of(CityBeaconsVertexUniformBlock) == 112)
+#assert(size_of(CityBeaconsVertexUniformBlock) == 128)
 
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SLOT :: 0
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SPACE :: 0
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK_BINDING :: 0
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK_COUNT :: 1
-CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SIZE :: 112
+CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SIZE :: 128
 CITY_BEACONS_VERTEX_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Vertex,
 	location = {space = CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SPACE, binding = CITY_BEACONS_VERTEX_UNIFORM_BLOCK_BINDING, slot = CITY_BEACONS_VERTEX_UNIFORM_BLOCK_SLOT, count = CITY_BEACONS_VERTEX_UNIFORM_BLOCK_COUNT},
@@ -287,7 +293,7 @@ city_beacons_vertex_attributes :: proc($Vertex: typeid) -> [4]goose.VertexAttrib
 }
 
 CITY_BEACONS_VERTEX_BINDINGS := [1]goose.Binding {
-	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 112},
+	{name = "UniformBlock", stage = .Vertex, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 128},
 }
 
 city_beacons_vertex :: proc() -> goose.GraphicsParameters {

@@ -84,13 +84,14 @@ rgb1 :: proc(c: [3]f32) -> [4]f32 {
 sky_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, parameters: gfx.Draw_Parameters) {
 	state := cast(^City_State)user_data
 	d := state.day
+	fog := gfx.color_srgb_to_linear({d.fog_color.x, d.fog_color.y, d.fog_color.z, 1}) // the ground fogs with this linear colour
 	c := parameters.camera_position
 	uniforms := shader_parameters.CitySkyVertexUniforms {
 		mvp     = parameters.view_projection * linalg.matrix4_translate_f32({c.x, c.y, c.z}) * parameters.model_transform,
 		horizon = rgb1(d.horizon_color),
 		zenith  = rgb1(d.zenith_color),
 		sun     = {d.sun_dir.x, d.sun_dir.y, d.sun_dir.z, d.daylight},
-		params  = {d.star_alpha, d.fog_color.x, d.fog_color.y, d.fog_color.z},
+		params  = {d.star_alpha, fog.x, fog.y, fog.z},
 	}
 	gfx.draw_push_uniform(draw_context, shader_parameters.CITY_SKY_VERTEX_UNIFORM_BLOCK, &uniforms)
 }

@@ -23,7 +23,7 @@ test_beacons_deterministic_inside_city_and_cover_skyscrapers :: proc(t: ^testing
 		}
 
 		skyscrapers := 0
-		for plot in p.buildings do if plot.tier == .Skyscraper do skyscrapers += 1
+		for plot in p.buildings do if plot.tier == .Skyscraper || plot.tier == .Supertall do skyscrapers += 1
 		testing.expectf(t, na >= skyscrapers, "seed %d: %d beacons for %d skyscrapers", seed, na, skyscrapers)
 	}
 }

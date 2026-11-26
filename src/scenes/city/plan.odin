@@ -21,6 +21,9 @@ STREET_LANES_MAX :: 4
 BIG_BLOCK_AREA :: 4000 // above a normal block's 56 x 56: gets one large plot or a park
 PARK_CHANCE :: 0.02 // share of big blocks left dark and empty
 ZONE_EDGE :: 256 // skyscrapers and mediums stay this far from the city edge
+SUPERTALL_COUNT :: 10 // the marco plus clustered supertalls, placed on whole street blocks before the big blocks
+SUPERTALL_EDGE :: 500 // supertall footprints stay this far from the city edge
+SUPERTALL_TRIES :: 400
 
 CLAIM_FREE :: u8(0)
 CLAIM_ROAD :: u8(1)
@@ -39,6 +42,10 @@ DENSITY_CENTRE_RADIUS :: 1280 // the centre falloff reaches zero at this distanc
 OUTLIER_CHANCE :: 0.05 // share of buildings that are 1.6x taller than their roll (capped at the tier maximum)
 OUTLIER_SCALE :: 1.6
 WAREHOUSE_EDGE :: 0.6 * CITY_CENTRE_Z // small plots beyond this distance from the centre may be warehouses
+// Height rule by distance to the city edge (for skyline work): stories are capped at
+// RIM_STORIES + (tier max - RIM_STORIES) * rim_factor(centre), so the edge stays low. Maxima are not lowered; keep this cap.
+RIM_FALL :: 320 // plot units from the edge to full height
+RIM_STORIES :: 4 // stories allowed right at the edge
 
 Building_Kind :: enum u8 {
 	Cube,
@@ -50,12 +57,14 @@ Building_Kind :: enum u8 {
 	Twin,
 	LShape,
 	Warehouse,
+	Supertall,
 }
 
 Tier :: enum u8 {
 	Skyscraper,
 	Medium,
 	Small,
+	Supertall,
 }
 
 Tier_Rules :: struct {
@@ -72,6 +81,7 @@ tier_rules := [Tier]Tier_Rules {
 	.Skyscraper = {count = 180, footprint_min = 18, footprint_max = 24, stories_min = 55, stories_max = 110, margin = 4},
 	.Medium     = {count = 300, footprint_min = 10, footprint_max = 16, stories_min = 20, stories_max = 60, margin = 3},
 	.Small      = {footprint_min = SMALL_FOOTPRINT_MIN, footprint_max = SMALL_FOOTPRINT_MAX, stories_min = 3, stories_max = 40, margin = SMALL_MARGIN},
+	.Supertall  = {count = SUPERTALL_COUNT, footprint_min = 26, footprint_max = 40, stories_min = 160, stories_max = 260, margin = 4},
 }
 
 // Min corner and size in plot units; the footprint covers [x, x+w) x [z, z+d).
@@ -109,6 +119,7 @@ plan_build :: proc(seed: u32) -> Plan {
 	blocks: [dynamic]Road_Rect
 	defer delete(blocks)
 	plan_streets(&p, &rng, &blocks)
+	plan_supertalls(&p, &rng, seed, blocks[:])
 	plan_big_blocks(&p, &rng, seed, blocks[:])
 	for tier in Tier.Skyscraper ..= Tier.Medium {
 		for _ in 0 ..< tier_rules[tier].count do plan_place_tier(&p, &rng, seed, tier)
@@ -238,6 +249,52 @@ plan_place_tier :: proc(p: ^Plan, rng: ^Rng, seed: u32, tier: Tier) {
 	}
 }
 
+// Supertalls: the marco on the block nearest the city centre, the rest on random blocks weighted by downtown density.
+// They go before the big blocks and tiers, so each one gets a whole street block.
+plan_supertalls :: proc(p: ^Plan, rng: ^Rng, seed: u32, blocks: []Road_Rect) {
+	if len(blocks) == 0 do return
+	rules := tier_rules[.Supertall]
+	marco := -1
+	best := f32(math.F32_MAX)
+	for blk, i in blocks {
+		if !plan_block_fits(blk, rules) do continue
+		d := plan_centre_distance(f32(blk.x0 + blk.x1) / 2, f32(blk.z0 + blk.z1) / 2)
+		if d < best {
+			best = d
+			marco = i
+		}
+	}
+	placed := 0
+	if marco >= 0 && plan_place_supertall(p, rng, blocks[marco], rules, true) do placed += 1
+	for _ in 0 ..< SUPERTALL_TRIES {
+		if placed >= rules.count do break
+		blk := blocks[rng_int(rng, 0, len(blocks) - 1)]
+		if !plan_block_fits(blk, rules) do continue
+		density := plan_density(seed, f32(blk.x0 + blk.x1) / 2, f32(blk.z0 + blk.z1) / 2)
+		if rng_f32(rng) > density * density do continue
+		if plan_place_supertall(p, rng, blk, rules, false) do placed += 1
+	}
+}
+
+plan_block_fits :: proc(blk: Road_Rect, rules: Tier_Rules) -> bool {
+	return blk.x1 - blk.x0 >= rules.footprint_min && blk.z1 - blk.z0 >= rules.footprint_min
+}
+
+// Footprint at a random spot inside blk. The marco takes the top of the stories range.
+plan_place_supertall :: proc(p: ^Plan, rng: ^Rng, blk: Road_Rect, rules: Tier_Rules, marco: bool) -> bool {
+	bw, bd := blk.x1 - blk.x0, blk.z1 - blk.z0
+	w := i32(rng_int(rng, int(rules.footprint_min), int(min(rules.footprint_max, bw))))
+	d := i32(rng_int(rng, int(rules.footprint_min), int(min(rules.footprint_max, bd))))
+	x := blk.x0 + i32(rng_int(rng, 0, int(bw - w)))
+	z := blk.z0 + i32(rng_int(rng, 0, int(bd - d)))
+	if x < SUPERTALL_EDGE || z < SUPERTALL_EDGE || x + w > CITY_W - SUPERTALL_EDGE || z + d > CITY_D - SUPERTALL_EDGE do return false
+	if !plan_try_place(p, x, z, w, d, rules.margin) do return false
+	stories := rng_int(rng, rules.stories_min, rules.stories_max)
+	if marco do stories = rules.stories_max
+	append(&p.buildings, Plot{kind = .Supertall, tier = .Supertall, x = x, z = z, w = w, d = d, stories = i32(stories)})
+	return true
+}
+
 // Every cell in shuffled order is a candidate min corner for a random cube footprint. Shuffled so the packing
 // has no scan-order bias.
 plan_fill_small :: proc(p: ^Plan, rng: ^Rng, seed: u32) {
@@ -277,13 +334,22 @@ plan_finish_plot :: proc(rng: ^Rng, plot: ^Plot, density: f32) {
 	top := rules.stories_min + int(f32(rules.stories_max - rules.stories_min) * (0.1 + 0.9 * density))
 	n := rng_int(rng, rules.stories_min, top)
 	if rng_f32(rng) < OUTLIER_CHANCE do n = int(f32(n) * OUTLIER_SCALE)
-	plot.stories = i32(min(n, rules.stories_max))
+	cap := max(rules.stories_min, RIM_STORIES + int(f32(rules.stories_max - RIM_STORIES) * rim_factor(cx, cz))) // never below the tier minimum: skyscrapers keep their beacon
+	plot.stories = i32(min(n, rules.stories_max, cap))
+}
+
+// 0 at the city edge, 1 at RIM_FALL inside it: scales the height cap so the skyline falls toward the border.
+rim_factor :: proc(x, z: f32) -> f32 {
+	d := min(min(x, CITY_W - x), min(z, CITY_D - z))
+	return smoothstep01(clamp(d / RIM_FALL, 0, 1))
 }
 
 // Weighted kind choice. Edge small plots are mostly cubes with some warehouses; the centre gets a mix.
 plan_kind :: proc(rng: ^Rng, tier: Tier, edge: bool) -> Building_Kind {
 	weights: [Building_Kind]int
 	switch tier {
+	case .Supertall:
+		return .Supertall
 	case .Skyscraper:
 		weights = #partial [Building_Kind]int{.Tower = 3, .Modern = 2, .Stepped = 2, .Slab = 2, .Twin = 2, .LShape = 1, .Blocky = 1}
 	case .Medium:

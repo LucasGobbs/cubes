@@ -3,6 +3,8 @@
 // in the plane facing the eye, with a minimum on-screen size. sprite_shade is the fragment: bright core plus gaussian
 // halo, discarded outside the unit disc. Drawn additively with no depth write (gfx.light_sprite_pipeline_create).
 
+import "fog";
+
 // World position of one corner of a billboard centred on `center`. width = full width in units; it grows with
 // distance (min_angular per unit) so far lights stay visible.
 float3 sprite_corner_world(float3 center, float2 corner, float width, float min_angular, float3 eye) {
@@ -29,4 +31,10 @@ float blink(float time, float phase, float period) {
     float p = frac(time / period + phase);
     float on = smoothstep(0.0, 0.06, p) * (1.0 - smoothstep(0.28, 0.35, p));
     return lerp(0.1, 1.0, on);
+}
+
+// Haze fade for a sprite centred `dist` from the eye: gain goes to 15% at the fog's far end, never to black. The
+// lights are additive, so a lower gain is the fade; the haze colour is not mixed in. Off (1) when fog is off or near.
+float sprite_fog_fade(float dist, float4 fog) {
+    return lerp(1.0, 0.15, fog_factor_soft(dist, fog));
 }

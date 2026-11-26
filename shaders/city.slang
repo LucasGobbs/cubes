@@ -76,5 +76,5 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     lit += input.day.y * 0.25 * float3(0.7, 0.8, 1.0) * albedo;
 
     // Distance fog: see src/engine/gfx/shaders/fog.slang.
-    return float4(apply_fog(lit, length(input.to_camera), input.fog), 1.0);
+    return float4(apply_fog_soft(lit, length(input.to_camera), input.fog), 1.0);
 }

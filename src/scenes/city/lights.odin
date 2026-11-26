@@ -89,6 +89,7 @@ lights_bind_draw :: proc(user_data: rawptr, draw_context: ^gfx.Draw_Context, par
 	uniforms := shader_parameters.CityLightsVertexUniforms {
 		mvp             = parameters.view_projection * parameters.model_transform,
 		camera_position = {camera.x, camera.y, camera.z, 1},
+		fog             = parameters.fog,
 		gain            = {1 - state.day.daylight, 0, 0, 0},
 	}
 	gfx.draw_push_uniform(draw_context, shader_parameters.CITY_LIGHTS_VERTEX_UNIFORM_BLOCK, &uniforms)

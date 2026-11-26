@@ -63,6 +63,8 @@ building_proc :: proc(kind: Building_Kind) -> Building_Proc {
 		return building_lshape
 	case .Warehouse:
 		return building_warehouse
+	case .Supertall:
+		return building_supertall
 	}
 	unreachable()
 }
@@ -221,8 +223,9 @@ city_plan :: proc(seed: u32) -> Plan {
 	counts: [Tier]int
 	for plot in p.buildings do counts[plot.tier] += 1
 	log.infof(
-		"city: plan %v skyscrapers, %v medium, %v small, %v roads, build %.1f ms",
+		"city: plan %v skyscrapers + %v supertalls, %v medium, %v small, %v roads, build %.1f ms",
 		counts[.Skyscraper],
+		counts[.Supertall],
 		counts[.Medium],
 		counts[.Small],
 		len(p.roads),
