@@ -888,8 +888,8 @@ set_effect_passes :: proc(world: ^World, camera: ^Camera) {
 		world.bloom.threshold = threshold
 		world.bloom.knee = 0.5 * threshold
 		world.bloom.intensity = settings.intensity if settings.intensity > 0 else 0.6
-		world.bloom.radius = settings.radius if settings.radius > 0 else 6
-		world.bloom.radius = min(world.bloom.radius, gfx.BLUR_MAX_RADIUS)
+		world.bloom.radius[0] = settings.radius if settings.radius > 0 else 6
+		world.bloom.radius[0] = min(world.bloom.radius[0], gfx.BLUR_MAX_RADIUS)
 		passes[count] = gfx.bloom_pass(world.bloom)
 		count += 1
 	}

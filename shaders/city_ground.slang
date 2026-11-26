@@ -1,5 +1,7 @@
 // Ground quad under the city: samples the ground texture (city_ground_gen) and fogs per pixel like the buildings.
 
+import "../src/engine/gfx/shaders/fog";
+
 struct Uniforms {
     float4x4 mvp;
     float4 camera_position;
@@ -48,11 +50,9 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     float inside = step(0.0, input.uv.x) * step(input.uv.x, 1.0) * step(0.0, input.uv.y) * step(input.uv.y, 1.0);
     float3 lit = lerp(float3(0.0012, 0.0012, 0.002), city, inside);
 
-    // Same ramp as city.slang: clear at 60% of the view distance, fully fogged at 100%.
-    float dist = length(input.to_camera);
-    float t = input.fog.a > 0.0 ? saturate((dist - 0.6 * input.fog.a) / (0.4 * input.fog.a)) : 0.0;
     // Past the sky dome (radius 3500 in sky.odin) the ground is dropped, not drawn over it: the fogged ground reaches
     // black at the view distance and the sky shows below the horizon instead of a flat dark band.
+    float dist = length(input.to_camera);
     if (input.fog.a > 0.0 && dist > 1.03 * input.fog.a) discard;
-    return float4(lerp(lit, input.fog.rgb, t), 1.0);
+    return float4(apply_fog(lit, dist, input.fog), 1.0);
 }

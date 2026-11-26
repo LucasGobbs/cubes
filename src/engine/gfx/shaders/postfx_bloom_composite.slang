@@ -1,13 +1,12 @@
-// Bloom composite: additive blend of the blurred half-resolution bright pass
-// over the full-resolution scene.
+// Bloom composite: sums the blurred levels (half, quarter, eighth; bilinear), subtracts a black floor, adds over the scene.
+// One-level bloom passes zero weights for the unused levels.
 //
 // SDL_GPU binding order for compute: uniforms -> sampled textures ->
-// samplers -> read-write storage textures. Each sampled texture takes its own
-// sampler; gfx_compute_dispatch binds the same sampler for both.
+// samplers -> read-write storage textures.
 
 struct CompositeParams {
-    float intensity;
-    float pad0, pad1, pad2; // float3 pads differently in MSL (32 bytes) vs HLSL (16)
+    float4 weights;     // xyz: level weights, w: intensity
+    float4 black_floor; // x: floor subtracted from the summed glow
 };
 
 [[vk::binding(0, 0)]]
@@ -18,24 +17,37 @@ cbuffer UniformBlock {
 [[vk::binding(1, 0)]]
 Texture2D scene_image;
 [[vk::binding(2, 0)]]
-Texture2D bloom_image;
+Texture2D level_half_image;
 [[vk::binding(3, 0)]]
-SamplerState scene_sampler;
+Texture2D level_quarter_image;
 [[vk::binding(4, 0)]]
-SamplerState bloom_sampler;
+Texture2D level_eighth_image;
+
 [[vk::binding(5, 0)]]
+SamplerState scene_sampler;
+[[vk::binding(6, 0)]]
+SamplerState level_half_sampler;
+[[vk::binding(7, 0)]]
+SamplerState level_quarter_sampler;
+[[vk::binding(8, 0)]]
+SamplerState level_eighth_sampler;
+
+[[vk::binding(9, 0)]]
 RWTexture2D<float4> output_image;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
-void computeMain(uint2 tid : SV_DispatchThreadID)
+void computeMain(uint3 id : SV_DispatchThreadID)
 {
-    uint width, height;
-    output_image.GetDimensions(width, height);
-    if (tid.x >= width || tid.y >= height) { return; }
+    uint w, h;
+    output_image.GetDimensions(w, h);
+    if (id.x >= w || id.y >= h) return;
 
-    float2 uv = (float2(tid) + 0.5) / float2(width, height);
+    float2 uv = (float2(id.xy) + 0.5) / float2(w, h);
     float3 scene = scene_image.SampleLevel(scene_sampler, uv, 0).rgb;
-    float3 bloom = bloom_image.SampleLevel(bloom_sampler, uv, 0).rgb;
-    output_image[tid] = float4(scene + bloom * params.intensity, 1.0);
+    float3 glow = level_half_image.SampleLevel(level_half_sampler, uv, 0).rgb * params.weights.x
+                + level_quarter_image.SampleLevel(level_quarter_sampler, uv, 0).rgb * params.weights.y
+                + level_eighth_image.SampleLevel(level_eighth_sampler, uv, 0).rgb * params.weights.z;
+    glow = max(glow - params.black_floor.x, 0.0);
+    output_image[id.xy] = float4(scene + glow * params.weights.w, 1.0);
 }

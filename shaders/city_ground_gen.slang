@@ -4,8 +4,8 @@
 //
 // SDL_GPU compute binding order: read-only storage buffers -> read-write storage textures.
 
-static const uint CITY_W = 3072; // = CITY_W in plan.odin: keep equal (x)
-static const uint CITY_D = 2048; // = CITY_D in plan.odin: keep equal (z)
+import constants;
+
 static const float PI = 3.14159265;
 static const float LAMP_SPACING = 8.0; // units between lamps along each kerb
 static const float INV_U32 = 1.0 / 4294967296.0;

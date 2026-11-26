@@ -1,0 +1,14 @@
+{
+  "constants": [
+    {"name": "CITY_W", "value": 3072, "comment": "city plot grid, x (1 plot = 1 unit)"},
+    {"name": "CITY_D", "value": 2048, "comment": "city plot grid, z"},
+    {"name": "SKY_W", "value": 2048, "comment": "night sky texture, u (wraps around the lampshade)"},
+    {"name": "SKY_H", "value": 512, "comment": "night sky texture, v (zenith row 0)"},
+    {"name": "TILE_COUNT_SIDE", "value": 6, "comment": "window atlas: tiles per side"},
+    {"name": "TILE_PX", "value": 512, "comment": "window atlas: texels per tile side"},
+    {"name": "WINDOW_PX", "value": 8, "comment": "window atlas: texels per window cell"},
+    {"name": "TILE_COUNT", "expr": "TILE_COUNT_SIDE * TILE_COUNT_SIDE", "comment": "window atlas: tiles in total"},
+    {"name": "ATLAS_SIZE", "expr": "TILE_COUNT_SIDE * TILE_PX", "comment": "window atlas: texels per side"},
+    {"name": "TILE_WINDOWS", "expr": "TILE_PX / WINDOW_PX", "comment": "windows per tile side"}
+  ]
+}

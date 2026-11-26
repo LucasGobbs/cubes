@@ -5,8 +5,6 @@ package city
 import "core:math"
 import "core:slice"
 
-CITY_W :: 3072 // x; shaders/city_ground_gen.slang and city_cars.slang repeat the sizes: keep equal
-CITY_D :: 2048 // z
 CITY_CENTRE_X :: CITY_W / 2
 CITY_CENTRE_Z :: CITY_D / 2
 CITY_CELLS :: CITY_W * CITY_D

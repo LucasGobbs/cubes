@@ -89,11 +89,6 @@
       "name": "city_ground_gen",
       "source": "shaders/city_ground_gen.slang",
       "compute": "computeMain"
-    },
-    {
-      "name": "city_bloom_composite",
-      "source": "shaders/city_bloom_composite.slang",
-      "compute": "computeMain"
     }
   ]
 }

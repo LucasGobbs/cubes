@@ -27,10 +27,8 @@
 //
 // SDL_GPU binding order for compute: uniforms -> read-write storage textures.
 
-static const uint TILE_COUNT_SIDE = 6; // must match TILE_COUNT_SIDE in window_texture.odin
-static const uint TILE_PX = 512;
-static const uint TILE_WINDOWS = 64; // windows per tile side
-static const uint WINDOW_PX = 8;
+import constants;
+
 static const uint BORDER_PX = 1;
 static const uint GLASS_PX = 6; // interior, inside the border
 static const float INV_U32 = 1.0 / 4294967296.0;

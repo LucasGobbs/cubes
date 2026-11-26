@@ -157,7 +157,7 @@ city_apply_effects :: proc(state: ^City_State, renderer: ^gfx.Renderer) {
 	env.fog = nil
 	if night && state.fog_on do env.fog = CITY_FOG
 	if night && state.bloom_on {
-		gfx.renderer_set_passes(renderer, .Post, []gfx.Render_Pass{city_bloom_pass(&state.bloom)})
+		gfx.renderer_set_passes(renderer, .Post, []gfx.Render_Pass{gfx.bloom_pass(&state.bloom)})
 	} else {
 		gfx.renderer_clear_passes(renderer, .Post)
 	}

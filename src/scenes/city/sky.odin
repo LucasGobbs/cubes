@@ -10,8 +10,6 @@ import "core:math/linalg"
 import "core:mem"
 import sdl "vendor:sdl3"
 
-SKY_W :: 2048
-SKY_H :: 512
 SKY_SEGMENTS :: 64
 SKY_RADIUS :: 3500 // beyond the city and the sun shadow box; the far plane is infinite (reverse-Z)
 SKY_DROP :: 150 // the horizon glow sits this far below eye level; the ground is dropped past 3300 units so this part of the sky shows under the horizon

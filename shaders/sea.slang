@@ -3,6 +3,8 @@
 // glint highlights, and a horizon rim. Each wave fades with distance relative
 // to its own wavelength so short waves don't alias into noise at range.
 
+import "../src/engine/gfx/shaders/fog";
+
 struct Uniforms {
     float4x4 mvp;
     float4x4 model;
@@ -117,8 +119,7 @@ VertexOutput vertexMain(VertexInput input) {
     output.world = world.xyz;
     output.to_camera = data.camera_position.xyz - world.xyz;
     output.time = data.time.x;
-    float t = data.fog.a > 0.0 ? saturate((length(output.to_camera) - 0.6 * data.fog.a) / (0.4 * data.fog.a)) : 0.0;
-    output.fog = float4(data.fog.rgb, t);
+    output.fog = float4(data.fog.rgb, fog_factor(length(output.to_camera), data.fog));
     return output;
 }
 

@@ -22,9 +22,10 @@ Bloom_Prefilter_Uniforms :: struct {
 }
 #assert(size_of(Bloom_Prefilter_Uniforms) == DEFAULT_POSTFX_BLOOM_PREFILTER_COMPUTE_UNIFORM_BLOCK_SIZE)
 
+// Level weights (xyz) and intensity (w); black floor (x) subtracted from the summed glow.
 Bloom_Composite_Uniforms :: struct {
-	intensity: f32,
-	pad:       [3]f32,
+	weights:     [4]f32,
+	black_floor: [4]f32,
 }
 #assert(size_of(Bloom_Composite_Uniforms) == DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SIZE)
 
@@ -67,54 +68,94 @@ blur_axis :: proc(
 
 Bloom :: struct {
 	prefilter, blur, composite: Compute_Pipeline_Handle, // blur = postfx_blur
-	threshold, knee, intensity: f32,
-	radius:                     i32,
+	threshold, knee, intensity, floor: f32, // floor: black floor, subtracted from the summed glow
+	levels:                            int, // 1 (half res) or 3 (half, quarter, eighth)
+	radius:                            [3]i32, // blur radius per level, in that level's texels
+	weights:                           [3]f32, // composite weight per level; unused levels zero
 }
 
+// One-level bloom: the half-res bright pass, blurred once.
 bloom_create :: proc(
 	gfx_ctx: ^Device,
 	threshold := f32(0.8),
 	intensity := f32(0.6),
 	radius := i32(6),
 ) -> Bloom {
-	return Bloom {
+	return bloom_create_multi(gfx_ctx, threshold, 0.5 * threshold, intensity, 0, 1, {radius, 0, 0}, {1, 0, 0})
+}
+
+// levels 1 or 3. Level i blurs the one above it (level 0 blurs the bright pass), so the glow widens with the level.
+bloom_create_multi :: proc(
+	gfx_ctx: ^Device,
+	threshold, knee, intensity, floor: f32,
+	levels: int,
+	radius: [3]i32,
+	weights: [3]f32,
+) -> Bloom {
+	assert(levels >= 1 && levels <= 3)
+	bloom := Bloom {
 		prefilter = compute_pipeline_create(gfx_ctx, default_postfx_bloom_prefilter_compute()),
 		blur = compute_pipeline_create(gfx_ctx, default_postfx_blur_compute()),
 		composite = compute_pipeline_create(gfx_ctx, default_postfx_bloom_composite_compute()),
 		threshold = threshold,
-		knee = 0.5 * threshold,
+		knee = knee,
 		intensity = intensity,
-		radius = min(max(radius, 1), BLUR_MAX_RADIUS),
+		floor = floor,
+		levels = levels,
+		weights = weights,
 	}
+	for r, i in radius do bloom.radius[i] = min(max(r, 1), BLUR_MAX_RADIUS)
+	return bloom
+}
+
+bloom_destroy :: proc(gfx_ctx: ^Device, bloom: ^Bloom) {
+	compute_pipeline_destroy(gfx_ctx, bloom.prefilter)
+	compute_pipeline_destroy(gfx_ctx, bloom.blur)
+	compute_pipeline_destroy(gfx_ctx, bloom.composite)
+	bloom^ = {}
 }
 
 bloom_pass :: proc(bloom: ^Bloom) -> Render_Pass {
 	return Render_Pass{name = "bloom", run = bloom_run, user = bloom}
 }
 
+// Size of blur level 0 (half), 1 (quarter), 2 (eighth). Pass_Size stops at quarter, so eighth divides here.
+bloom_level_size :: proc(level: int, width, height: u32) -> (u32, u32) {
+	if level < 2 do return pass_size_dims(Pass_Size(level + 1), width, height)
+	return max((width + 7) / 8, 1), max((height + 7) / 8, 1)
+}
+
 bloom_run :: proc(ctx: ^Pass_Ctx, user: rawptr) {
 	bloom := (^Bloom)(user)
+
+	// Bright pass into half res.
 	half := pass_acquire(ctx, .Half)
-	ping := pass_acquire(ctx, .Half)
-	pong := pass_acquire(ctx, .Half)
-	out := pass_acquire(ctx)
-
 	pre := Bloom_Prefilter_Uniforms{threshold = bloom.threshold, knee = bloom.knee}
-	pass_compute(
-		ctx,
-		bloom.prefilter,
-		[]Texture_Handle{ctx.color},
-		half,
-		mem.ptr_to_bytes(&pre),
-	)
-	blur_axis(ctx, bloom.blur, bloom.radius, half, ping, {1, 0})
-	blur_axis(ctx, bloom.blur, bloom.radius, ping, pong, {0, 1})
+	pass_compute(ctx, bloom.prefilter, []Texture_Handle{ctx.color}, half, mem.ptr_to_bytes(&pre))
 
-	comp := Bloom_Composite_Uniforms{intensity = bloom.intensity}
+	// Each level blurs the one above it, so the glow widens with the level.
+	levels := [3]Texture_Handle{}
+	src := half
+	for i in 0 ..< bloom.levels {
+		w, h := bloom_level_size(i, ctx.width, ctx.height)
+		tmp := pool_acquire(ctx.renderer, w, h)
+		levels[i] = pool_acquire(ctx.renderer, w, h)
+		blur_axis(ctx, bloom.blur, bloom.radius[i], src, tmp, {1, 0})
+		blur_axis(ctx, bloom.blur, bloom.radius[i], tmp, levels[i], {0, 1})
+		src = levels[i]
+	}
+	// Unused levels bind level 0 with weight zero.
+	for i in bloom.levels ..< 3 do levels[i] = levels[0]
+
+	out := pass_acquire(ctx)
+	comp := Bloom_Composite_Uniforms {
+		weights     = {bloom.weights[0], bloom.weights[1], bloom.weights[2], bloom.intensity},
+		black_floor = {bloom.floor, 0, 0, 0},
+	}
 	pass_compute(
 		ctx,
 		bloom.composite,
-		[]Texture_Handle{ctx.color, pong},
+		[]Texture_Handle{ctx.color, levels[0], levels[1], levels[2]},
 		out,
 		mem.ptr_to_bytes(&comp),
 	)

@@ -1,17 +1,11 @@
-// Window atlas: a compute pass writes the 3072x3072 texture of 6x6 tiles that the buildings sample.
+// Window atlas (sizes in constants_generated.odin, from shaders/constants.json): a compute pass writes the
+// ATLAS_SIZE square texture of TILE_COUNT_SIDE x TILE_COUNT_SIDE tiles that the buildings sample.
 package city
 
 import gfx "../../engine/gfx"
 import shader_parameters "../../shader_parameters"
 import "core:mem"
 import sdl "vendor:sdl3"
-
-WINDOW_PX :: 8 // one window in the atlas, see shaders/city_windows.slang
-TILE_PX :: 512
-TILE_COUNT_SIDE :: 6 // shaders/city.slang decodes the tile from this value, keep in step
-TILE_COUNT :: TILE_COUNT_SIDE * TILE_COUNT_SIDE
-TILE_WINDOWS :: TILE_PX / WINDOW_PX // windows per tile side: uv of one window is 1 / TILE_WINDOWS
-ATLAS_SIZE :: TILE_COUNT_SIDE * TILE_PX
 
 // Mips for the far field (windows average to a colour instead of shimmering). Mag stays NEAREST so near
 // windows keep their 8 px blocks. max_lod 5 = 32 texels = 4x4 windows: tiles are 16 such blocks, so the

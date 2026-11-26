@@ -1,6 +1,9 @@
 // Unlit textured geometry for the city: the window atlas times vertex colour. Vertex alpha carries the atlas tile.
 // Distance fog is per pixel: the walls are long quads, so per-vertex fog would smear across them.
 
+import "../src/engine/gfx/shaders/fog";
+import constants;
+
 struct Uniforms {
     float4x4 mvp;
     float4 camera_position;
@@ -47,13 +50,13 @@ SamplerState window_sampler;
 float4 pixelMain(VertexOutput input) : SV_Target0 {
     // The compute shader writes display-referred values into a UNORM texture (storage textures cannot be sRGB);
     // the swapchain is sRGB, so linearize here or dark windows come out washed grey.
-    // Alpha is (tile + 0.5) / 36 (see building_wall): uv wraps inside its tile, so the atlas tile is picked here.
-    // 36 = TILE_COUNT and 6 = TILE_COUNT_SIDE in window_texture.odin.
-    uint tile = min(uint(input.color.a * 36.0), 35u);
+    // Alpha is (tile + 0.5) / TILE_COUNT (see building_wall): uv wraps inside its tile, so the atlas tile is picked here.
+    // TILE_COUNT and TILE_COUNT_SIDE come from constants.slang (shaders/constants.json).
+    uint tile = min(uint(input.color.a * float(TILE_COUNT)), TILE_COUNT - 1u);
     // Mip from the unwrapped uv: frac() jumps at every window row, which would pick the coarsest mip on those lines.
-    float2 grad_x = ddx(input.uv) / 6.0;
-    float2 grad_y = ddy(input.uv) / 6.0;
-    float2 uv = (float2(tile % 6, tile / 6) + frac(input.uv)) / 6.0;
+    float2 grad_x = ddx(input.uv) / float(TILE_COUNT_SIDE);
+    float2 grad_y = ddy(input.uv) / float(TILE_COUNT_SIDE);
+    float2 uv = (float2(tile % TILE_COUNT_SIDE, tile / TILE_COUNT_SIDE) + frac(input.uv)) / float(TILE_COUNT_SIDE);
     float4 texel = window_texture.SampleGrad(window_sampler, uv, grad_x, grad_y);
     float3 lit = pow(texel.rgb, 2.2) * input.color.rgb;
     // Night grade: half-strength S-curve in linear light, only on dark values (luma < ~0.35); it sinks roofs and
@@ -64,8 +67,6 @@ float4 pixelMain(VertexOutput input) : SV_Target0 {
     lit = lerp(lit, lit * lit * (3.0 - 2.0 * lit), 0.5 * dark);
     lit *= 1.0 + 2.2 * smoothstep(0.08, 0.45, luma);
 
-    // Same ramp as sea.slang: clear at 60% of the view distance, fully fogged at 100%.
-    float dist = length(input.to_camera);
-    float t = input.fog.a > 0.0 ? saturate((dist - 0.6 * input.fog.a) / (0.4 * input.fog.a)) : 0.0;
-    return float4(lerp(lit, input.fog.rgb, t), 1.0);
+    // Distance fog: see src/engine/gfx/shaders/fog.slang.
+    return float4(apply_fog(lit, length(input.to_camera), input.fog), 1.0);
 }

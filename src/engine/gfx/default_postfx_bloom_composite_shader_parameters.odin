@@ -7,7 +7,7 @@ import goose "../../../third_party/goose/src"
 when ODIN_OS == .Darwin {
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_CODE :: #load("generated/default_postfx_bloom_composite.compute.msl")
 
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_SAMPLERS :: 2
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_SAMPLERS :: 4
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_READONLY_STORAGE_TEXTURES :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_READONLY_STORAGE_BUFFERS :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_READWRITE_STORAGE_TEXTURES :: 1
@@ -16,30 +16,26 @@ DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BUFFERS :: 1
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_THREAD_COUNT :: [3]u32{8, 8, 1}
 
 DefaultPostfxBloomCompositeComputeCompositeParams :: struct #max_field_align(16) {
-	intensity: f32,
-	pad0: f32,
-	pad1: f32,
-	pad2: f32,
+	weights: [4]f32,
+	black_floor: [4]f32,
 }
 
-#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, intensity) == 0)
-#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, pad0) == 4)
-#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, pad1) == 8)
-#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, pad2) == 12)
-#assert(size_of(DefaultPostfxBloomCompositeComputeCompositeParams) == 16)
+#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, weights) == 0)
+#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, black_floor) == 16)
+#assert(size_of(DefaultPostfxBloomCompositeComputeCompositeParams) == 32)
 
 DefaultPostfxBloomCompositeComputeUniformBlock :: struct #max_field_align(16) {
 	params: DefaultPostfxBloomCompositeComputeCompositeParams,
 }
 
 #assert(offset_of(DefaultPostfxBloomCompositeComputeUniformBlock, params) == 0)
-#assert(size_of(DefaultPostfxBloomCompositeComputeUniformBlock) == 16)
+#assert(size_of(DefaultPostfxBloomCompositeComputeUniformBlock) == 32)
 
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SLOT :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SPACE :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_BINDING :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_COUNT :: 1
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SIZE :: 16
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SIZE :: 32
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Compute,
 	location = {space = DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SPACE, binding = DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_BINDING, slot = DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SLOT, count = DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_COUNT},
@@ -53,18 +49,26 @@ DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORMS := []goose.UniformRef {
 }
 
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_SCENE_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 0, slot = 0, count = 1}}
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_BLOOM_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 1, slot = 1, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_HALF_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 1, slot = 1, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_QUARTER_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 2, slot = 2, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_EIGHTH_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 3, slot = 3, count = 1}}
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_SCENE_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 0, slot = 0, count = 1}}
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_BLOOM_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 1, slot = 1, count = 1}}
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_OUTPUT_IMAGE :: goose.Binding {name = "output_image", stage = .Compute, kind = .StorageTexture, access = .ReadWrite, location = {space = 0, binding = 2, slot = 0, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_HALF_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 1, slot = 1, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_QUARTER_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 2, slot = 2, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_EIGHTH_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 3, slot = 3, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_OUTPUT_IMAGE :: goose.Binding {name = "output_image", stage = .Compute, kind = .StorageTexture, access = .ReadWrite, location = {space = 0, binding = 4, slot = 0, count = 1}}
 
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_BINDINGS := [6]goose.Binding {
-	{name = "UniformBlock", stage = .Compute, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 16},
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_BINDINGS := [10]goose.Binding {
+	{name = "UniformBlock", stage = .Compute, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 32},
 	{name = "scene_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}},
-	{name = "bloom_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 1, slot = 1, count = 1}},
+	{name = "level_half_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 1, slot = 1, count = 1}},
+	{name = "level_quarter_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 2, slot = 2, count = 1}},
+	{name = "level_eighth_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 3, slot = 3, count = 1}},
 	{name = "scene_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}},
-	{name = "bloom_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 1, slot = 1, count = 1}},
-	{name = "output_image", stage = .Compute, kind = .StorageTexture, access = .ReadWrite, location = {space = 0, binding = 2, slot = 0, count = 1}},
+	{name = "level_half_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 1, slot = 1, count = 1}},
+	{name = "level_quarter_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 2, slot = 2, count = 1}},
+	{name = "level_eighth_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 3, slot = 3, count = 1}},
+	{name = "output_image", stage = .Compute, kind = .StorageTexture, access = .ReadWrite, location = {space = 0, binding = 4, slot = 0, count = 1}},
 }
 
 default_postfx_bloom_composite_compute :: proc() -> goose.ComputeParameters {
@@ -94,7 +98,7 @@ default_postfx_bloom_composite_compute :: proc() -> goose.ComputeParameters {
 } else when ODIN_OS == .Windows {
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_CODE :: #load("generated/default_postfx_bloom_composite.compute.hlsl")
 
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_SAMPLERS :: 2
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_SAMPLERS :: 4
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_READONLY_STORAGE_TEXTURES :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_READONLY_STORAGE_BUFFERS :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_READWRITE_STORAGE_TEXTURES :: 1
@@ -103,30 +107,26 @@ DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BUFFERS :: 1
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_THREAD_COUNT :: [3]u32{8, 8, 1}
 
 DefaultPostfxBloomCompositeComputeCompositeParams :: struct #max_field_align(16) {
-	intensity: f32,
-	pad0: f32,
-	pad1: f32,
-	pad2: f32,
+	weights: [4]f32,
+	black_floor: [4]f32,
 }
 
-#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, intensity) == 0)
-#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, pad0) == 4)
-#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, pad1) == 8)
-#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, pad2) == 12)
-#assert(size_of(DefaultPostfxBloomCompositeComputeCompositeParams) == 16)
+#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, weights) == 0)
+#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, black_floor) == 16)
+#assert(size_of(DefaultPostfxBloomCompositeComputeCompositeParams) == 32)
 
 DefaultPostfxBloomCompositeComputeUniformBlock :: struct #max_field_align(16) {
 	params: DefaultPostfxBloomCompositeComputeCompositeParams,
 }
 
 #assert(offset_of(DefaultPostfxBloomCompositeComputeUniformBlock, params) == 0)
-#assert(size_of(DefaultPostfxBloomCompositeComputeUniformBlock) == 16)
+#assert(size_of(DefaultPostfxBloomCompositeComputeUniformBlock) == 32)
 
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SLOT :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SPACE :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_BINDING :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_COUNT :: 1
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SIZE :: 16
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SIZE :: 32
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Compute,
 	location = {space = DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SPACE, binding = DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_BINDING, slot = DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SLOT, count = DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_COUNT},
@@ -140,17 +140,25 @@ DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORMS := []goose.UniformRef {
 }
 
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_SCENE_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 0, slot = 0, count = 1}}
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_BLOOM_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 1, slot = 1, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_HALF_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 1, slot = 1, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_QUARTER_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 2, slot = 2, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_EIGHTH_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 3, slot = 3, count = 1}}
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_SCENE_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 0, slot = 0, count = 1}}
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_BLOOM_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 1, slot = 1, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_HALF_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 1, slot = 1, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_QUARTER_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 2, slot = 2, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_EIGHTH_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 3, slot = 3, count = 1}}
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_OUTPUT_IMAGE :: goose.Binding {name = "output_image", stage = .Compute, kind = .StorageTexture, access = .ReadWrite, location = {space = 0, binding = 0, slot = 0, count = 1}}
 
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_BINDINGS := [6]goose.Binding {
-	{name = "UniformBlock", stage = .Compute, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 16},
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_BINDINGS := [10]goose.Binding {
+	{name = "UniformBlock", stage = .Compute, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 32},
 	{name = "scene_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}},
-	{name = "bloom_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 1, slot = 1, count = 1}},
+	{name = "level_half_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 1, slot = 1, count = 1}},
+	{name = "level_quarter_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 2, slot = 2, count = 1}},
+	{name = "level_eighth_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 3, slot = 3, count = 1}},
 	{name = "scene_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}},
-	{name = "bloom_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 1, slot = 1, count = 1}},
+	{name = "level_half_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 1, slot = 1, count = 1}},
+	{name = "level_quarter_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 2, slot = 2, count = 1}},
+	{name = "level_eighth_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 3, slot = 3, count = 1}},
 	{name = "output_image", stage = .Compute, kind = .StorageTexture, access = .ReadWrite, location = {space = 0, binding = 0, slot = 0, count = 1}},
 }
 
@@ -181,7 +189,7 @@ default_postfx_bloom_composite_compute :: proc() -> goose.ComputeParameters {
 } else {
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_CODE :: #load("generated/default_postfx_bloom_composite.compute.spv")
 
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_SAMPLERS :: 2
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_SAMPLERS :: 4
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_READONLY_STORAGE_TEXTURES :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_READONLY_STORAGE_BUFFERS :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_READWRITE_STORAGE_TEXTURES :: 1
@@ -190,30 +198,26 @@ DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BUFFERS :: 1
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_THREAD_COUNT :: [3]u32{8, 8, 1}
 
 DefaultPostfxBloomCompositeComputeCompositeParams :: struct #max_field_align(16) {
-	intensity: f32,
-	pad0: f32,
-	pad1: f32,
-	pad2: f32,
+	weights: [4]f32,
+	black_floor: [4]f32,
 }
 
-#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, intensity) == 0)
-#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, pad0) == 4)
-#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, pad1) == 8)
-#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, pad2) == 12)
-#assert(size_of(DefaultPostfxBloomCompositeComputeCompositeParams) == 16)
+#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, weights) == 0)
+#assert(offset_of(DefaultPostfxBloomCompositeComputeCompositeParams, black_floor) == 16)
+#assert(size_of(DefaultPostfxBloomCompositeComputeCompositeParams) == 32)
 
 DefaultPostfxBloomCompositeComputeUniformBlock :: struct #max_field_align(16) {
 	params: DefaultPostfxBloomCompositeComputeCompositeParams,
 }
 
 #assert(offset_of(DefaultPostfxBloomCompositeComputeUniformBlock, params) == 0)
-#assert(size_of(DefaultPostfxBloomCompositeComputeUniformBlock) == 16)
+#assert(size_of(DefaultPostfxBloomCompositeComputeUniformBlock) == 32)
 
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SLOT :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SPACE :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_BINDING :: 0
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_COUNT :: 1
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SIZE :: 16
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SIZE :: 32
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK :: goose.UniformBlock {
 	stage = .Compute,
 	location = {space = DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SPACE, binding = DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_BINDING, slot = DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_SLOT, count = DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORM_BLOCK_COUNT},
@@ -227,18 +231,26 @@ DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_UNIFORMS := []goose.UniformRef {
 }
 
 DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_SCENE_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 1, slot = 0, count = 1}}
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_BLOOM_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 2, slot = 1, count = 1}}
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_SCENE_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 3, slot = 0, count = 1}}
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_BLOOM_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 4, slot = 1, count = 1}}
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_OUTPUT_IMAGE :: goose.Binding {name = "output_image", stage = .Compute, kind = .StorageTexture, access = .ReadWrite, location = {space = 0, binding = 5, slot = 0, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_HALF_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 2, slot = 1, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_QUARTER_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 3, slot = 2, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_EIGHTH_IMAGE :: goose.TextureBinding {stage = .Compute, location = {space = 0, binding = 4, slot = 3, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_SCENE_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 5, slot = 0, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_HALF_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 6, slot = 1, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_QUARTER_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 7, slot = 2, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_LEVEL_EIGHTH_SAMPLER :: goose.SamplerBinding {stage = .Compute, location = {space = 0, binding = 8, slot = 3, count = 1}}
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_OUTPUT_IMAGE :: goose.Binding {name = "output_image", stage = .Compute, kind = .StorageTexture, access = .ReadWrite, location = {space = 0, binding = 9, slot = 0, count = 1}}
 
-DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_BINDINGS := [6]goose.Binding {
-	{name = "UniformBlock", stage = .Compute, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 16},
+DEFAULT_POSTFX_BLOOM_COMPOSITE_COMPUTE_BINDINGS := [10]goose.Binding {
+	{name = "UniformBlock", stage = .Compute, kind = .UniformBuffer, access = .ReadOnly, location = {space = 0, binding = 0, slot = 0, count = 1}, size = 32},
 	{name = "scene_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 1, slot = 0, count = 1}},
-	{name = "bloom_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 2, slot = 1, count = 1}},
-	{name = "scene_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 3, slot = 0, count = 1}},
-	{name = "bloom_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 4, slot = 1, count = 1}},
-	{name = "output_image", stage = .Compute, kind = .StorageTexture, access = .ReadWrite, location = {space = 0, binding = 5, slot = 0, count = 1}},
+	{name = "level_half_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 2, slot = 1, count = 1}},
+	{name = "level_quarter_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 3, slot = 2, count = 1}},
+	{name = "level_eighth_image", stage = .Compute, kind = .Texture, access = .ReadOnly, location = {space = 0, binding = 4, slot = 3, count = 1}},
+	{name = "scene_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 5, slot = 0, count = 1}},
+	{name = "level_half_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 6, slot = 1, count = 1}},
+	{name = "level_quarter_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 7, slot = 2, count = 1}},
+	{name = "level_eighth_sampler", stage = .Compute, kind = .Sampler, access = .ReadOnly, location = {space = 0, binding = 8, slot = 3, count = 1}},
+	{name = "output_image", stage = .Compute, kind = .StorageTexture, access = .ReadWrite, location = {space = 0, binding = 9, slot = 0, count = 1}},
 }
 
 default_postfx_bloom_composite_compute :: proc() -> goose.ComputeParameters {

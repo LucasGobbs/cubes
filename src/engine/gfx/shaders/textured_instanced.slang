@@ -6,6 +6,8 @@
 // SDL_GPU MSL binding order for vertex stage: uniform buffers first, then
 // read-only storage buffers.
 
+import fog;
+
 struct Uniforms {
     float4x4 view_projection;
  float3 camera_position;
@@ -64,7 +66,7 @@ VertexOutput vertexMain(VertexInput input, uint instance_id : SV_InstanceID) {
  output.normal = world_normal(model, input.normal);
  output.eye = data.camera_position;
  float d = distance(data.camera_position, world.xyz);
- output.fog = float4(data.fog.rgb, data.fog.a > 0.0 ? saturate((d - 0.6 * data.fog.a) / (0.4 * data.fog.a)) : 0.0);
+ output.fog = float4(data.fog.rgb, fog_factor(d, data.fog));
  return output;
 }
 

@@ -7,8 +7,8 @@
 //
 // SDL_GPU binding order for compute: uniforms -> read-write storage textures.
 
-static const uint SKY_W = 2048;
-static const uint SKY_H = 512;
+import constants;
+
 static const uint CLOUD_COUNT = 160;
 static const uint GROUP_SIDE = 8;
 static const float INV_U32 = 1.0 / 4294967296.0;

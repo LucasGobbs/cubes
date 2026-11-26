@@ -50,7 +50,7 @@ City_State :: struct {
 	beacon_material: gfx.Material, // beacon billboards, HDR, additive; the shader blinks them from time
 	beacon_pipeline: gfx.Pipeline_Handle,
 	time:         f32, // seconds, advanced in city_tick; the car shader reads it through user_data
-	bloom:        City_Bloom,
+	bloom:        gfx.Bloom,
 	dev:          bool,
 	regenerate:   bool, // the before-hook regenerates the window and sky textures when set
 	reroll:       input.Button_Action,
@@ -119,7 +119,8 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	gfx.set_unlit_color(&state.road_material, ROAD_COLOR)
 	state.lamp_pipeline = lights_pipeline_create(&ctx.gfx, state)
 	state.lamp_material = gfx.material_make(state.lamp_pipeline)
-	state.bloom = city_bloom_create(&ctx.gfx)
+	// Glow: threshold 0.45 with 0.2 soft knee; levels half/quarter/eighth weighted 1.4/1.0/0.7, blur 3/6/8 texels; 0.012 black floor.
+	state.bloom = gfx.bloom_create_multi(&ctx.gfx, 0.45, 0.2, 1.0, 0.012, 3, {3, 6, 8}, {1.4, 1.0, 0.7})
 	state.car_pipeline = cars_pipeline_create(&ctx.gfx, state)
 	state.car_material = gfx.material_make(state.car_pipeline)
 	state.beacon_pipeline = beacons_pipeline_create(&ctx.gfx, state)
@@ -195,7 +196,7 @@ city_destroy :: proc(demo: ^engine.Scene, ctx: ^engine.Context) {
 	gfx.renderer_remove_scene_hook(&ctx.gfx.renderer, state)
 	engine.world_destroy(&state.world)
 	gfx.renderer_clear_passes(&ctx.gfx.renderer, .Post)
-	city_bloom_destroy(&ctx.gfx, &state.bloom)
+	gfx.bloom_destroy(&ctx.gfx, &state.bloom)
 	plan_destroy(&state.plan)
 	gfx.material_destroy(&state.material)
 	gfx.material_destroy(&state.road_material)

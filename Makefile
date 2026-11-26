@@ -41,7 +41,7 @@ DEBUG_FLAGS   := -debug -o:none
 EDITOR        ?= false
 EDITOR_DEFINE := -define:EDITOR=$(EDITOR)
 
-.PHONY: all build run run-optimized debug debug-optimized shaders default-shaders \
+.PHONY: all build run run-optimized debug debug-optimized shaders default-shaders constants \
         submodules luajit test-input test-input-optimized test-engine \
         test-engine-optimized test test-optimized compute editor example clean \
         new-scene new-actor
@@ -56,7 +56,16 @@ submodules:
 $(GOOSE_BUILD_BIN): $(wildcard $(GOOSE_DIR)/src/tools/build/*.odin) $(wildcard $(GOOSE_DIR)/src/*.odin) | submodules
 	$(ODIN) build $(GOOSE_BUILD) -out:$(GOOSE_BUILD_BIN)
 
-shaders: default-shaders $(GOOSE_BUILD_BIN)
+# Shared Odin <-> Slang constants (shaders/constants.json). The generator rewrites each file only when its content
+# changes, so shaders importing constants.slang rebuild only when a value changes.
+CONSTANTS_GEN_BIN := constants-gen.bin
+$(CONSTANTS_GEN_BIN): $(wildcard tools/constants/*.odin)
+	$(ODIN) build tools/constants -out:$(CONSTANTS_GEN_BIN)
+
+constants: $(CONSTANTS_GEN_BIN)
+	./$(CONSTANTS_GEN_BIN)
+
+shaders: constants default-shaders $(GOOSE_BUILD_BIN)
 	./$(GOOSE_BUILD_BIN) --manifest $(GOOSE_MANIFEST) --slang $(SLANG)
 
 default-shaders: $(GOOSE_BUILD_BIN)
@@ -138,7 +147,7 @@ example: default-shaders
 	$(ODIN) build examples/hello_engine -out:hello_engine $(RELEASE_FLAGS)
 
 clean:
-	rm -f $(BIN) $(BIN_DEBUG) $(GOOSE_BUILD_BIN)
+	rm -f $(BIN) $(BIN_DEBUG) $(GOOSE_BUILD_BIN) $(CONSTANTS_GEN_BIN)
 	rm -rf shaders/generated src/engine/gfx/generated
 	rm -f src/shader_parameters/*_shader_parameters.odin \
 		src/engine/gfx/*_shader_parameters.odin
