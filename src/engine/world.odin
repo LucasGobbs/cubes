@@ -82,9 +82,11 @@ Model :: struct {
 	path: string,
 }
 
-// clip is the name of a clip in the model's skin. Needs a skinned Model.
+// clip is the name of a clip in the model's skin. Needs a skinned Model. blend is the
+// crossfade time in seconds when the clip changes; zero switches at once.
 Animator :: struct {
-	clip: string,
+	clip:  string,
+	blend: f32,
 }
 
 // Zero fields mean defaults: threshold 0.8, intensity 0.6, radius 6.
@@ -428,6 +430,13 @@ actor_set_transform :: proc(
 	scale := Vec3{1, 1, 1},
 ) {
 	actor_add_props(world, id, Transform{position = position, rotation = rotation, scale = scale})
+}
+
+// Switches the actor's Animator clip with an optional crossfade (see Animator.blend),
+// adding the Animator when absent. Changing animator.clip through actor_props does not
+// re-apply it, so use this on a live actor. Re-naming the current clip does not restart it.
+actor_play :: proc(world: ^World, id: Actor_Id, clip: string, blend: f32 = 0) {
+	actor_add_props(world, id, Animator{clip = clip, blend = blend})
 }
 
 // The actor's Particle_Emitter, nil when it has none. Mutate direction or burst through it.
@@ -1063,11 +1072,12 @@ apply_animator :: proc(slot: ^Slot) {
 		log.errorf("engine: Animator on a model without a skin")
 		return
 	}
-	if !gfx.playback_play(playback, animator.clip) {
+	if !gfx.playback_play(playback, animator.clip, animator.blend) {
 		log.errorf("engine: clip %q not found", animator.clip)
 		// Rest pose until a valid clip is named.
 		playback.clip = -1
 		playback.time = 0
+		playback.fade_total = 0
 		gfx.clip_sample(playback.skin, -1, 0, playback.pose)
 	}
 }

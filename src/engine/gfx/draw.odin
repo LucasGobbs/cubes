@@ -65,6 +65,12 @@ Playback :: struct {
 	clip: int, // -1 = rest pose
 	time: f32,
 	pose: ^Pose, // owned
+	ticked: bool, // false until the first tick, so the first switch never fades
+	// Crossfade out of prev_clip (-1 = rest pose); fade_total 0 = no fade running.
+	prev_clip:    int,
+	prev_time:    f32,
+	fade_total:   f32,
+	fade_elapsed: f32,
 }
 
 playback_create :: proc(skin: ^loader.Skin) -> Playback {
@@ -75,20 +81,41 @@ playback_create :: proc(skin: ^loader.Skin) -> Playback {
 	return playback
 }
 
-// Switches to the named clip, restarting it. Returns false and keeps the
-// current clip when the skin has no clip with that name.
-playback_play :: proc(p: ^Playback, name: string) -> bool {
+// Switches to the named clip; the new clip starts at 0. blend > 0 crossfades out of
+// the current clip over `blend` seconds while it keeps playing; otherwise the switch
+// is immediate. Retargeting mid-fade blends from the current target clip, so the pose
+// can step. Returns false and keeps the current clip when the skin has no clip with that name.
+playback_play :: proc(p: ^Playback, name: string, blend: f32 = 0) -> bool {
 	index, found := clip_find(p.skin, name)
 	if !found do return false
-	if index != p.clip {
-		p.clip = index
-		p.time = 0
+	if index == p.clip do return true
+	if blend > 0 && p.ticked {
+		p.prev_clip = p.clip
+		p.prev_time = p.time
+		p.fade_total = blend
+		p.fade_elapsed = 0
+	} else {
+		p.fade_total = 0
 	}
+	p.clip = index
+	p.time = 0
 	return true
 }
 
 playback_tick :: proc(p: ^Playback, dt: f32) {
+	p.ticked = true
 	p.time += dt
+	if p.fade_total > 0 {
+		p.prev_time += dt
+		p.fade_elapsed += dt
+		if p.fade_elapsed < p.fade_total {
+			t := p.fade_elapsed / p.fade_total
+			// smoothstep weight: eases in and out of the blend
+			clip_sample_blend(p.skin, p.prev_clip, p.prev_time, p.clip, p.time, t * t * (3 - 2 * t), p.pose)
+			return
+		}
+		p.fade_total = 0
+	}
 	clip_sample(p.skin, p.clip, p.time, p.pose)
 }
 

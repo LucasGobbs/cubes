@@ -11,21 +11,53 @@ Pose :: struct {
 	count:   int,
 }
 
+// Local TRS per joint, filled by sample_locals before composition.
+Locals :: struct {
+	translation: [loader.MAX_JOINTS]Vec3,
+	rotation:    [loader.MAX_JOINTS]quaternion128,
+	scale:       [loader.MAX_JOINTS]Vec3,
+}
+
 // Writes the palette of `skin` at `time` (seconds) for `clip_index`. Time wraps
 // modulo the clip duration. A negative clip index (or a skin without clips)
 // samples the rest pose.
 clip_sample :: proc(skin: ^loader.Skin, clip_index: int, time: f32, out: ^Pose) {
-	joint_count := len(skin.joints)
-	assert(joint_count <= loader.MAX_JOINTS)
-	out.count = joint_count
+	locals: Locals
+	sample_locals(skin, clip_index, time, &locals)
+	compose_palette(skin, &locals, out)
+}
 
-	translation: [loader.MAX_JOINTS]Vec3
-	rotation: [loader.MAX_JOINTS]quaternion128
-	scale: [loader.MAX_JOINTS]Vec3
+// Crossfade: per joint, lerps the local TRS of `from_clip` at `from_time` towards
+// `to_clip` at `to_time` (weight 0 = from, 1 = to), then composes once. Blending
+// locals instead of palettes keeps the bone hierarchy valid mid-blend.
+clip_sample_blend :: proc(
+	skin: ^loader.Skin,
+	from_clip: int,
+	from_time: f32,
+	to_clip: int,
+	to_time: f32,
+	weight: f32,
+	out: ^Pose,
+) {
+	a, b: Locals
+	sample_locals(skin, from_clip, from_time, &a)
+	sample_locals(skin, to_clip, to_time, &b)
+	for j in 0 ..< len(skin.joints) {
+		a.translation[j] = linalg.lerp(a.translation[j], b.translation[j], weight)
+		a.rotation[j] = linalg.quaternion_slerp(a.rotation[j], b.rotation[j], weight)
+		a.scale[j] = linalg.lerp(a.scale[j], b.scale[j], weight)
+	}
+	compose_palette(skin, &a, out)
+}
+
+// Local TRS of every joint: the skin's rest pose with the clip's channels applied.
+@(private = "file")
+sample_locals :: proc(skin: ^loader.Skin, clip_index: int, time: f32, out: ^Locals) {
+	assert(len(skin.joints) <= loader.MAX_JOINTS)
 	for joint, j in skin.joints {
-		translation[j] = joint.local_translation
-		rotation[j] = joint.local_rotation
-		scale[j] = joint.local_scale
+		out.translation[j] = joint.local_translation
+		out.rotation[j] = joint.local_rotation
+		out.scale[j] = joint.local_scale
 	}
 
 	if clip_index >= 0 && clip_index < len(skin.clips) {
@@ -39,21 +71,26 @@ clip_sample :: proc(skin: ^loader.Skin, clip_index: int, time: f32, out: ^Pose) 
 			j := int(channel.joint)
 			switch channel.path {
 			case .Translation:
-				translation[j] = sample_vec3(channel, t)
+				out.translation[j] = sample_vec3(channel, t)
 			case .Scale:
-				scale[j] = sample_vec3(channel, t)
+				out.scale[j] = sample_vec3(channel, t)
 			case .Rotation:
-				rotation[j] = sample_quat(channel, t)
+				out.rotation[j] = sample_quat(channel, t)
 			}
 		}
 	}
+}
 
+// Parent-to-child composition of local TRS into skinning palette matrices.
+@(private = "file")
+compose_palette :: proc(skin: ^loader.Skin, locals: ^Locals, out: ^Pose) {
+	out.count = len(skin.joints)
 	global: [loader.MAX_JOINTS]matrix[4, 4]f32
 	for joint, j in skin.joints {
 		local :=
-			linalg.matrix4_translate_f32(translation[j]) *
-			linalg.matrix4_from_quaternion(rotation[j]) *
-			linalg.matrix4_scale_f32(scale[j])
+			linalg.matrix4_translate_f32(locals.translation[j]) *
+			linalg.matrix4_from_quaternion(locals.rotation[j]) *
+			linalg.matrix4_scale_f32(locals.scale[j])
 		global[j] = joint.pre * local if joint.parent < 0 else global[joint.parent] * joint.pre * local
 		out.palette[j] = global[j] * skin.inverse_bind[j]
 	}

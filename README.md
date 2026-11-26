@@ -41,7 +41,7 @@ a few glTF models and textures.
 | Sea (boats, dragons) | ![Sea with boats and dragons](media/sea.png) | `make run ARGS=benchmark` |
 | Benchmark | ![Benchmark scene](media/scene-benchmark.png) | `make run ARGS=benchmark` |
 | Forest (instanced) | ![Toon forest](media/scene-forest.png) | `make run ARGS=forest_instanced` |
-| Skinned character | ![Rigged character](media/scene-skinned.png) | `make run ARGS=skinned` |
+| Character viewer | ![Superhero male dancing](media/scene-skinned.png) | `make run ARGS=skinned`, then `Tab` to switch character, `Left`/`Right` for clips, `Space` for auto |
 | Physics | ![Physics spheres](media/scene-physics.png) | `make run ARGS=physics` |
 
 Every scene name in `SCENES` (`src/scene.odin`) can be passed to `make run ARGS=<name>`.
@@ -213,14 +213,19 @@ how trees, rocks and bushes are drawn (`F1` shows the counts):
 
 ### Skeletal animation
 
-Rigged glTF characters use the skinned path. `make run ARGS=skinned` plays clip 0 of
-`static/models/rigged_cesiumman.glb`. The scene is `src/scenes/skinned/scene.odin`:
+`make run ARGS=skinned` opens a character viewer with three CC0 characters (Quaternius:
+`mannequin`, `superhero_male`, `superhero_female`) and 18 clips each. Clips crossfade over
+0.25 s. Tab switches character, Left/Right step clips, Space toggles auto mode (clips advance
+on their own and the view turns slowly; a left drag stops the turn). Scene code is
+`src/scenes/skinned/scene.odin`. Optional env: `CUBES_SKINNED_CHARACTER`, `CUBES_SKINNED_CLIP`,
+`CUBES_SKINNED_AUTO=0|1`.
 
 ```odin
-engine.world_add_actor(&state.world, Character{
-    model    = engine.model_create(path = SKINNED_MODEL_PATH),
-    animator = engine.Animator{clip = SKINNED_CLIP},
-})
+engine.spawn(&state.world,
+    engine.Model{path = "static/models/superhero_male.glb"},
+    engine.Animator{clip = "Idle_Loop"},
+    engine.Transform{})
+engine.actor_play(&state.world, actor, "Walk_Loop", 0.25)
 ```
 
 - Linear-blend skinning, up to 4 joints per vertex; weights are normalized at import.

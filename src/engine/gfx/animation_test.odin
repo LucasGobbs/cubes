@@ -158,3 +158,136 @@ clip_sample_applies_root_pre_transform_to_palette :: proc(t: ^testing.T) {
 		testing.expect(t, linalg.length((pose.palette[j] * p - p).xyz) < 1e-4)
 	}
 }
+
+// Clip 0 "spin" (joint 1: 0 -> 90° over 1 s, from make_two_joint_skin) and clip 1
+// "hold" (joint 1 at identity). Used by the crossfade tests.
+make_spin_hold_skin :: proc() -> loader.Skin {
+	skin := make_two_joint_skin(false)
+	clips := make([]loader.Clip, 2)
+	clips[0] = skin.clips[0]
+	delete(skin.clips)
+	skin.clips = clips
+
+	hold := loader.Clip {
+		name     = "hold",
+		duration = 1,
+		channels = make([]loader.Channel, 1),
+	}
+	hold.channels[0] = loader.Channel {
+		joint         = 1,
+		path          = .Rotation,
+		interpolation = .Linear,
+		times         = slice.clone([]f32{0, 1}),
+		values        = slice.clone([]f32{0, 0, 0, 1, 0, 0, 0, 1}),
+	}
+	skin.clips[1] = hold
+	return skin
+}
+
+// Model-space top of joint 1 when joint 1 is rotated `angle` radians about Z.
+child_top_at_angle :: proc(angle: f32) -> Vec3 {
+	return {-math.sin(angle), 1 + math.cos(angle), 0}
+}
+
+poses_equal :: proc(a, b: ^Pose) -> bool {
+	if a.count != b.count do return false
+	for j in 0 ..< a.count {
+		if a.palette[j] != b.palette[j] do return false
+	}
+	return true
+}
+
+@(test)
+clip_sample_blend_endpoints_and_midpoint :: proc(t: ^testing.T) {
+	skin := make_spin_hold_skin()
+	defer destroy_test_skin(&skin)
+	pose: Pose
+
+	// From "hold" at 0 (identity) to "spin" at 0.5 (45°).
+	clip_sample_blend(&skin, 1, 0, 0, 0.5, 0, &pose)
+	testing.expect(t, linalg.length(top_of_child(&pose) - child_top_at_angle(0)) < 1e-4)
+
+	clip_sample_blend(&skin, 1, 0, 0, 0.5, 1, &pose)
+	testing.expect(t, linalg.length(top_of_child(&pose) - child_top_at_angle(math.PI / 4)) < 1e-4)
+
+	// Halfway the rotation is the average (22.5°); x moves monotonically from 0 to -sin 45°.
+	prev_x: f32 = 1
+	for step in 0 ..= 4 {
+		w := f32(step) / 4
+		clip_sample_blend(&skin, 1, 0, 0, 0.5, w, &pose)
+		x := top_of_child(&pose).x
+		testing.expect(t, x <= prev_x + 1e-5)
+		prev_x = x
+		if step == 2 do testing.expect(t, linalg.length(top_of_child(&pose) - child_top_at_angle(math.PI / 8)) < 1e-4)
+	}
+}
+
+@(test)
+playback_blend_zero_switches_at_once :: proc(t: ^testing.T) {
+	skin := make_spin_hold_skin()
+	defer destroy_test_skin(&skin)
+	p := playback_create(&skin)
+	defer playback_destroy(&p)
+
+	playback_tick(&p, 0.25)
+	testing.expect(t, playback_play(&p, "hold"))
+	playback_tick(&p, 0.5)
+
+	// No mixing: identical to sampling "hold" alone at its own time.
+	expected: Pose
+	clip_sample(&skin, 1, 0.5, &expected)
+	testing.expect(t, p.fade_total == 0)
+	testing.expect(t, poses_equal(p.pose, &expected))
+}
+
+@(test)
+playback_first_switch_before_tick_does_not_fade :: proc(t: ^testing.T) {
+	skin := make_spin_hold_skin()
+	defer destroy_test_skin(&skin)
+	p := playback_create(&skin)
+	defer playback_destroy(&p)
+
+	testing.expect(t, playback_play(&p, "hold", 1.0))
+	testing.expect(t, p.fade_total == 0)
+}
+
+@(test)
+playback_crossfade_keeps_old_clip_playing_and_mixes_midway :: proc(t: ^testing.T) {
+	skin := make_spin_hold_skin()
+	defer destroy_test_skin(&skin)
+	p := playback_create(&skin)
+	defer playback_destroy(&p)
+
+	playback_tick(&p, 0.25) // "spin" at 22.5°
+	testing.expect(t, playback_play(&p, "hold", 1.0))
+	playback_tick(&p, 0.5)
+
+	// Old clip kept advancing 0.25 -> 0.75 (67.5°); new clip at 0.5; smoothstep(0.5) = 0.5 -> 33.75°.
+	testing.expect(t, math.abs(p.prev_time - 0.75) < 1e-5)
+	testing.expect(t, math.abs(p.time - 0.5) < 1e-5)
+	testing.expect(t, linalg.length(top_of_child(p.pose) - child_top_at_angle(math.PI * 0.1875)) < 1e-4)
+
+	// Fade done: pose is the new clip alone.
+	playback_tick(&p, 0.5)
+	testing.expect(t, p.fade_total == 0)
+	expected: Pose
+	clip_sample(&skin, 1, p.time, &expected)
+	testing.expect(t, poses_equal(p.pose, &expected))
+}
+
+@(test)
+playback_same_clip_does_not_restart :: proc(t: ^testing.T) {
+	skin := make_spin_hold_skin()
+	defer destroy_test_skin(&skin)
+	p := playback_create(&skin)
+	defer playback_destroy(&p)
+
+	playback_tick(&p, 0.5)
+	testing.expect(t, playback_play(&p, "spin", 1.0))
+	testing.expect(t, math.abs(p.time - 0.5) < 1e-5 && p.fade_total == 0)
+
+	testing.expect(t, playback_play(&p, "hold", 1.0))
+	playback_tick(&p, 0.25)
+	testing.expect(t, playback_play(&p, "hold", 1.0))
+	testing.expect(t, math.abs(p.time - 0.25) < 1e-5 && math.abs(p.fade_elapsed - 0.25) < 1e-5)
+}

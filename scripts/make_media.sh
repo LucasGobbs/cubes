@@ -56,6 +56,7 @@ done
 
 # Other scenes, default/initial camera, frame at 3.5 s.
 for s in boat forest_instanced skinned physics benchmark; do
+	[ "$s" = skinned ] && export CUBES_SKINNED_CLIP=Dance_Loop CUBES_SKINNED_AUTO=0
 	./main "$s" --render-video "$TMP/$s.mp4" --fps 60 --seconds 4 --video-size 1920x1080
 	name=$s
 	[ "$s" = forest_instanced ] && name=forest
