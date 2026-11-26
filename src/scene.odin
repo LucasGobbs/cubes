@@ -12,6 +12,7 @@ import physics "scenes/physics"
 import scriptdemo "scenes/scriptdemo"
 import skinned "scenes/skinned"
 import stencil "scenes/stencil"
+import forest "scenes/forest"
 // cubes:imports
 
 SCENES := [?]engine.Scene_Entry {
@@ -31,5 +32,6 @@ SCENES := [?]engine.Scene_Entry {
 	{name = "game", group = "demo", make = game.game_scene},
 	{name = "stencil", group = "demo", make = stencil.stencil_scene},
 	{name = "city", group = "city", make = city.city_scene},
+	{name = "forest", group = "forest", make = forest.forest_scene},
 	// cubes:scenes
 }
