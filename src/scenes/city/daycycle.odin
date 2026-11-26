@@ -52,11 +52,14 @@ sky_params :: proc(hour: f32) -> Day_Params {
 	horizon := linalg.lerp(DAY_HORIZON, DUSK_HORIZON, twilight)
 	zenith := linalg.lerp(DAY_ZENITH, DUSK_ZENITH, twilight * 0.6)
 	sun := linalg.normalize([3]f32{-math.cos(angle), height, 0.35})
+	// Dusk fog: the saturated orange band is muted and dimmed so the haze over the city reads as dusk, not paint.
+	grey := linalg.dot(horizon, [3]f32{0.2126, 0.7152, 0.0722})
+	twilight_fog := linalg.lerp(horizon, [3]f32{grey, grey, grey}, 0.7) * 0.6
 	return {
 		daylight      = day,
 		horizon_color = horizon,
 		zenith_color  = zenith,
-		fog_color     = linalg.lerp([3]f32{0.01938, 0.023256, 0.03876}, horizon, day),
+		fog_color     = linalg.lerp([3]f32{0.01938, 0.023256, 0.03876}, linalg.lerp(horizon, twilight_fog, twilight), day),
 		exposure_ev   = DAY_EXPOSURE_EV * day,
 		star_alpha    = 1 - day,
 		sun_dir       = sun,

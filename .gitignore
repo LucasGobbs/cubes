@@ -28,3 +28,4 @@ src/engine/gfx/generated/
 /shots/
 # camera path saved by the K key (engine camera_path_io.odin)
 /camera.path.json
+.DS_Store

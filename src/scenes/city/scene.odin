@@ -1,6 +1,11 @@
 // City step 15 (layout): 3072x2048 city, auto-orbit camera for recording, F1 stats. Keys: R re-roll city, G dev view (streets), B bloom, F distance fog, [ ] exposure, O auto-orbit, Y hour +1 (Shift: -1), U day cycle, V weather (clear, rain, storm), WASD/mouse fly, F1 stats, P log stats, Q/E scene.
+// Demo env vars, read in city_create (unset = the constants below): CUBES_CITY_HOUR (start hour), CUBES_CITY_HOURS_PER_SEC
+// (simulated day clock per second, 0 = frozen; non-zero runs the day cycle at that speed), CUBES_CITY_WEATHER (0 clear, 0.5 rain, 1 storm).
 package city
 
+import "core:log"
+import "core:os"
+import "core:strconv"
 import engine "../../engine"
 import gfx "../../engine/gfx"
 import input "../../engine/input"
@@ -65,6 +70,7 @@ City_State :: struct {
 	time:         f32, // seconds, advanced in city_tick; the car shader reads it through user_data
 	time_of_day:    f32, // hour 0..24; Y steps it, U runs the cycle. Sky, fog, grade and lights follow (city_apply_day)
 	cycle_on:       bool,
+	time_scale:     f32, // day clock speed: 1 = the auto cycle (DAY_CYCLE_SECONDS per day); CUBES_CITY_HOURS_PER_SEC sets it
 	weather:        f32, // 0 clear, 0.5 rain, 1 storm: drives rain density, wet street, fog, exposure and lightning
 	exposure_offset: f32, // dev keys [ ] offset in EV, on top of CITY_GRADE and the day terms
 	day:            Day_Params, // sky_params(time_of_day), set each frame by city_apply_day
@@ -95,6 +101,18 @@ city_scene :: proc() -> engine.Scene {
 		tick = city_tick,
 		destroy = city_destroy,
 	}
+}
+
+// Reads a float env var for the demo overrides; unset or empty gives fallback, a bad value logs and gives fallback.
+city_env_f32 :: proc(name: string, fallback: f32) -> f32 {
+	text := os.get_env(name, context.temp_allocator)
+	if text == "" do return fallback
+	value, ok := strconv.parse_f32(text)
+	if !ok {
+		log.warnf("city: %s=%q is not a number, using %v", name, text, fallback)
+		return fallback
+	}
+	return value
 }
 
 city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
@@ -150,8 +168,13 @@ city_create :: proc(demo: ^engine.Scene, ctx: ^engine.Context) -> bool {
 	state.beacon_material = gfx.material_make(state.beacon_pipeline)
 	state.bloom_on = true
 	state.fog_on = true
-	state.time_of_day = CITY_TIME_START
-	state.weather = CITY_WEATHER_START
+	state.time_of_day = city_env_f32("CUBES_CITY_HOUR", CITY_TIME_START)
+	state.weather = city_env_f32("CUBES_CITY_WEATHER", CITY_WEATHER_START)
+	state.time_scale = 1
+	if per_sec := city_env_f32("CUBES_CITY_HOURS_PER_SEC", 0); per_sec != 0 {
+		state.cycle_on = true
+		state.time_scale = per_sec * DAY_CYCLE_SECONDS / 24
+	}
 	rain_spawn(state)
 	state.rain_on = true
 	rain_set_intensity(state, state.weather)
@@ -230,7 +253,7 @@ city_tick :: proc(demo: ^engine.Scene, ctx: ^engine.Context, delta_time: f32) {
 	orbit_update(&state.orbit, ctx, delta_time)
 	if input.pressed(&ctx.input, state.toggle_rain) do rain_set(state, !state.rain_on)
 	state.time += delta_time
-	if state.cycle_on do state.time_of_day = day_cycle_advance(state.time_of_day, delta_time)
+	if state.cycle_on do state.time_of_day = day_cycle_advance(state.time_of_day, delta_time * state.time_scale)
 	city_apply_day(state)
 	engine.world_update(&state.world, delta_time)
 	engine.world_render(&state.world, ctx.blend)

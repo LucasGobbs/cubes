@@ -174,11 +174,23 @@ new-actor:
 	@test -n "$(NAME)" -a -n "$(SCENE)" || { echo "usage: make new-actor NAME=<name> SCENE=<scene> [DRY=1]"; exit 1; }
 	$(ODIN) run tools/cubes -- new actor $(NAME) --scene $(SCENE) $(if $(DRY),--dry-run)
 
+# Release bundle in $(DIST) (scripts/release.sh). Standalone binary built with EDITOR=false into $(DIST)/main;
+# the dev ./main is untouched. Shaders and LuaJIT are compiled in. Runtime files are read by cwd-relative path
+# (static/, src/scenes/**/scene.json, the Lua scripts), so the bundle is run from inside its folder.
+# No -microarch:native: the binary must run on any Apple Silicon Mac, not only the build host's CPU.
+# SDL3 is linked from Homebrew by default: copy it next to main and point main at it with @rpath.
+DIST ?= dist
+DIST_FLAGS := -o:aggressive -no-bounds-check -disable-assert
 .PHONY: dist
-# Release bundle: binary + static assets. Shaders are embedded at build time,
-# so run from inside dist/ (asset paths are relative to the cwd).
-dist: build
-	rm -rf dist
-	mkdir dist
-	cp $(BIN) dist/
-	cp -R static dist/
+dist: shaders luajit
+	rm -rf $(DIST)
+	mkdir -p $(DIST)/src
+	$(ODIN) build $(SRC) -out:$(DIST)/main $(DIST_FLAGS) -define:EDITOR=false
+	sdl=$$(otool -L $(DIST)/main | awk '/libSDL3/ { print $$1; exit }'); \
+	lib=$$(basename "$$sdl"); \
+	cp -L "$$sdl" $(DIST)/$$lib && \
+	install_name_tool -change "$$sdl" @rpath/$$lib $(DIST)/main && \
+	install_name_tool -id @rpath/$$lib $(DIST)/$$lib && \
+	codesign --force --sign - $(DIST)/$$lib $(DIST)/main
+	cp -R static $(DIST)/
+	cd src && find scenes -type f \( -name '*.json' -o -name '*.lua' \) -print0 | tar --null -cf - -T - | tar -xf - -C ../$(DIST)/src
